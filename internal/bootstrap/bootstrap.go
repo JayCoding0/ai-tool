@@ -15,6 +15,7 @@ import (
 	infra_model "aiProject/internal/infrastructure/model"
 	infra_session "aiProject/internal/infrastructure/session"
 	mysql_session "aiProject/internal/infrastructure/session/mysql"
+	mysql_a2a "aiProject/internal/infrastructure/a2a/mysql"
 	infra_tools "aiProject/internal/infrastructure/tools"
 	mysql_user "aiProject/internal/infrastructure/user/mysql"
 	http_handler "aiProject/internal/interfaces/http"
@@ -285,8 +286,16 @@ func InitComponents(appConfig *config.Config) (*http_handler.ChatHandler, *appli
 }
 
 // InitA2AService 初始化 A2A 服务
+// 如果数据库已连接，则使用 MySQL 持久化存储；否则退回纯内存模式
 func InitA2AService(chatService *application.ChatService, appConfig *config.Config) *application.A2AService {
 	agentCard := buildAgentCard(appConfig)
+	// 尝试使用 MySQL 持久化（database.GetDB() 不为 nil 说明数据库已初始化）
+	if database.GetDB() != nil {
+		taskRepo := mysql_a2a.NewTaskRepository()
+		shared.GetLogger().Info("A2A 任务使用 MySQL 持久化存储")
+		return application.NewA2AServiceWithPersist(chatService, agentCard, taskRepo)
+	}
+	shared.GetLogger().Info("A2A 任务使用纯内存存储（数据库未连接）")
 	return application.NewA2AService(chatService, agentCard)
 }
 

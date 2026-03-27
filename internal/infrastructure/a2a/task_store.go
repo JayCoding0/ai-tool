@@ -8,7 +8,19 @@ import (
 	domain_a2a "aiProject/internal/domain/a2a"
 )
 
-// TaskStore 任务内存存储（线程安全）
+// TaskRepository 任务存储接口（内存 / MySQL 均实现此接口）
+type TaskRepository interface {
+	// Save 保存或更新任务
+	Save(task *domain_a2a.Task) error
+	// Get 根据 ID 获取任务，不存在返回 nil, false
+	Get(id string) (*domain_a2a.Task, bool)
+	// Delete 删除任务
+	Delete(id string) error
+	// List 列出所有任务
+	List() ([]*domain_a2a.Task, error)
+}
+
+// TaskStore 任务内存存储（线程安全），实现 TaskRepository 接口
 type TaskStore struct {
 	mu    sync.RWMutex
 	tasks map[string]*domain_a2a.Task
@@ -25,10 +37,11 @@ func NewTaskStore() *TaskStore {
 }
 
 // Save 保存或更新任务
-func (s *TaskStore) Save(task *domain_a2a.Task) {
+func (s *TaskStore) Save(task *domain_a2a.Task) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.tasks[task.ID] = task
+	return nil
 }
 
 // Get 获取任务（不存在返回 nil, false）
@@ -40,21 +53,22 @@ func (s *TaskStore) Get(id string) (*domain_a2a.Task, bool) {
 }
 
 // Delete 删除任务
-func (s *TaskStore) Delete(id string) {
+func (s *TaskStore) Delete(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.tasks, id)
+	return nil
 }
 
 // List 列出所有任务（返回快照）
-func (s *TaskStore) List() []*domain_a2a.Task {
+func (s *TaskStore) List() ([]*domain_a2a.Task, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	tasks := make([]*domain_a2a.Task, 0, len(s.tasks))
 	for _, t := range s.tasks {
 		tasks = append(tasks, t)
 	}
-	return tasks
+	return tasks, nil
 }
 
 // cleanupLoop 定期清理超过 1 小时的终态任务，防止内存泄漏
