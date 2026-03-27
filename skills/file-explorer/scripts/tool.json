@@ -1,0 +1,15 @@
+{
+  "name": "list_directory",
+  "display_name": "浏览目录",
+  "description": "列出指定目录下的文件和子目录。返回文件名、类型（file/dir）和文件大小。只允许使用相对路径。",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "path": {
+        "type": "string",
+        "description": "要查看的目录路径（相对路径），如：'.' 表示当前目录，'skills' 表示 skills 子目录"
+      }
+    },
+    "required": []
+  }
+}

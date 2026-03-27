@@ -1,0 +1,20 @@
+{
+  "name": "execute_command",
+  "display_name": "执行命令",
+  "description": "在白名单范围内执行 Shell 命令，支持查看系统状态、文件操作、进程管理等只读类命令。出于安全考虑，只允许执行预定义白名单中的命令，禁止 rm、chmod、sudo 等危险操作。",
+  "script": "run.py",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "command": {
+        "type": "string",
+        "description": "要执行的 Shell 命令，例如：'ls -la'、'ps aux'、'df -h'、'cat logs/app.log'、'echo hello'"
+      },
+      "timeout": {
+        "type": "number",
+        "description": "命令执行超时时间（秒），默认 10 秒，最大 20 秒"
+      }
+    },
+    "required": ["command"]
+  }
+}

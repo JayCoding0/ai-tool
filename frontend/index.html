@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智能小助手</title>
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+    <link rel="stylesheet" href="https://unpkg.com/highlight.js@11.9.0/styles/github.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <style>
+        :root {
+            --primary: #4e6ef2;
+            --primary-light: #eef1fe;
+            --sidebar-bg: #f7f8fa;
+            --sidebar-hover: #ededf0;
+            --sidebar-active: #e8eafe;
+            --border: #e8e8e8;
+            --text-primary: #1a1a1a;
+            --text-secondary: #666;
+            --text-muted: #999;
+            --bg: #fff;
+            --msg-bg: #f4f5f7;
+            --radius: 12px;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            height: 100vh; overflow: hidden;
+            background: var(--bg);
+            color: var(--text-primary);
+            font-size: 15px;
+        }
+        #app { height: 100vh; display: flex; }
+
+        /* ===== 侧边栏 ===== */
+        .sidebar {
+            width: 240px; flex-shrink: 0;
+            background: var(--sidebar-bg);
+            border-right: 1px solid var(--border);
+            display: flex; flex-direction: column;
+            height: 100vh;
+            transition: width 0.2s;
+        }
+
+        .sidebar-header {
+            padding: 16px 14px 12px;
+            display: flex; align-items: center; gap: 10px;
+        }
+        .logo-wrap {
+            display: flex; align-items: center; gap: 9px; flex: 1;
+        }
+        .logo-icon {
+            width: 32px; height: 32px;
+            background: linear-gradient(135deg, #4e6ef2, #7c5cfc);
+            border-radius: 9px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 16px; flex-shrink: 0;
+        }
+        .logo-name { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+
+        .new-chat-btn {
+            display: flex; align-items: center; justify-content: center;
+            gap: 6px;
+            margin: 4px 12px 12px;
+            padding: 9px 14px;
+            background: var(--primary);
+            color: #fff;
+            border: none; border-radius: 10px;
+            font-size: 13px; font-weight: 500;
+            cursor: pointer;
+            transition: background 0.15s, transform 0.1s;
+        }
+        .new-chat-btn:hover { background: #3d5ce0; }
+        .new-chat-btn:active { transform: scale(0.98); }
+        .new-chat-btn svg { flex-shrink: 0; }
+
+        .sidebar-section {
+            padding: 0 8px;
+            flex: 1; overflow-y: auto;
+        }
+        .sidebar-section::-webkit-scrollbar { width: 3px; }
+        .sidebar-section::-webkit-scrollbar-thumb { background: #ddd; border-radius: 3px; }
+
+        .section-label {
+            font-size: 11px; color: var(--text-muted);
+            padding: 10px 8px 4px;
+            font-weight: 500;
+        }
+
+        .session-item {
+            display: flex; align-items: center; gap: 8px;
+            padding: 8px 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            color: var(--text-secondary);
+            font-size: 13px;
+            transition: background 0.12s;
+            margin-bottom: 1px;
+        }
+        .session-item:hover { background: var(--sidebar-hover); color: var(--text-primary); }
+        .session-item.active { background: var(--sidebar-active); color: var(--primary); }
+        .session-item .s-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .session-item svg { flex-shrink: 0; opacity: 0.5; }
+
+        .sidebar-empty { text-align: center; color: var(--text-muted); font-size: 12px; padding: 20px 0; }
+
+        .sidebar-footer {
+            padding: 10px 12px 14px;
+            border-top: 1px solid var(--border);
+        }
+        .model-row {
+            margin-bottom: 10px;
+        }
+        .model-row-label { font-size: 11px; color: var(--text-muted); margin-bottom: 5px; }
+
+        .user-row {
+            display: flex; align-items: center; gap: 9px;
+            padding: 7px 6px;
+            border-radius: 9px;
+            cursor: pointer;
+            transition: background 0.12s;
+        }
+        .user-row:hover { background: var(--sidebar-hover); }
+        .user-avatar {
+            width: 30px; height: 30px;
+            background: linear-gradient(135deg, #4e6ef2, #7c5cfc);
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            color: #fff; font-size: 13px; font-weight: 600;
+            flex-shrink: 0;
+        }
+        .user-name-text { font-size: 13px; font-weight: 500; color: var(--text-primary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .user-sub { font-size: 11px; color: var(--text-muted); }
+        .logout-btn {
+            background: none; border: none; cursor: pointer;
+            color: var(--text-muted); padding: 4px;
+            border-radius: 6px; display: flex; align-items: center;
+            transition: color 0.12s, background 0.12s;
+        }
+        .logout-btn:hover { color: #ef4444; background: #fef2f2; }
+
+        /* ===== 主区域 ===== */
+        .main-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: #fff; }
+
+        /* 顶栏 */
+        .chat-topbar {
+            height: 52px; flex-shrink: 0;
+            border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 20px;
+        }
+        .topbar-title { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+        .topbar-status { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-muted); }
+        .status-dot { width: 6px; height: 6px; border-radius: 50%; }
+        .topbar-actions { display: flex; gap: 4px; }
+        .topbar-btn {
+            display: flex; align-items: center; gap: 4px;
+            padding: 5px 10px; border-radius: 7px;
+            background: none; border: none; cursor: pointer;
+            font-size: 12px; color: var(--text-secondary);
+            transition: background 0.12s, color 0.12s;
+        }
+        .topbar-btn:hover { background: var(--msg-bg); color: var(--text-primary); }
+        .topbar-btn.danger:hover { background: #fef2f2; color: #ef4444; }
+        .topbar-btn.active { background: var(--primary-light); color: var(--primary); }
+
+        /* 消息区 */
+        .chat-body {
+            flex: 1; overflow-y: auto;
+            scroll-behavior: smooth;
+        }
+        .chat-body::-webkit-scrollbar { width: 5px; }
+        .chat-body::-webkit-scrollbar-thumb { background: #e0e0e0; border-radius: 10px; }
+
+        /* 欢迎页 */
+        .welcome-screen {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            height: 100%; padding: 40px 20px;
+            animation: fadeIn 0.4s ease;
+        }
+        .welcome-icon { font-size: 52px; margin-bottom: 16px; }
+        .welcome-title { font-size: 24px; font-weight: 700; color: var(--text-primary); margin-bottom: 8px; }
+        .welcome-sub { font-size: 14px; color: var(--text-muted); margin-bottom: 36px; }
+        .suggest-grid {
+            display: grid; grid-template-columns: 1fr 1fr;
+            gap: 10px; width: 100%; max-width: 560px;
+        }
+        .suggest-card {
+            padding: 14px 16px;
+            border: 1.5px solid var(--border);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: border-color 0.15s, background 0.15s, transform 0.1s;
+            background: #fff;
+        }
+        .suggest-card:hover { border-color: var(--primary); background: var(--primary-light); transform: translateY(-1px); }
+        .suggest-card .s-icon { font-size: 18px; margin-bottom: 6px; }
+        .suggest-card .s-text { font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
+
+        /* 消息列表 */
+        .messages-list { padding: 20px 0 8px; }
+
+        .msg-group {
+            max-width: 760px; margin: 0 auto;
+            padding: 0 24px;
+            animation: fadeInUp 0.2s ease;
+        }
+        @keyframes fadeIn { from{opacity:0} to{opacity:1} }
+        @keyframes fadeInUp { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+
+        /* 用户消息 */
+        .msg-user {
+            display: flex; justify-content: flex-end;
+            margin-bottom: 20px;
+        }
+        .msg-user-bubble {
+            max-width: 72%;
+            background: var(--primary);
+            color: #fff;
+            padding: 11px 16px;
+            border-radius: 18px 18px 4px 18px;
+            font-size: 14px; line-height: 1.65;
+            word-break: break-word;
+            box-shadow: 0 2px 8px rgba(78,110,242,0.25);
+        }
+
+        /* AI消息 - 豆包风格：无气泡，直接文字 */
+        .msg-ai { margin-bottom: 24px; }
+        .msg-ai-header {
+            display: flex; align-items: center; gap: 8px;
+            margin-bottom: 8px;
+        }
+        .ai-avatar {
+            width: 28px; height: 28px;
+            background: linear-gradient(135deg, #4e6ef2, #7c5cfc);
+            border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 14px; flex-shrink: 0;
+        }
+        .ai-name { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+        .ai-model-tag {
+            font-size: 11px; color: var(--text-muted);
+            background: var(--msg-bg);
+            padding: 2px 7px; border-radius: 20px;
+        }
+        .msg-ai-content {
+            padding-left: 36px;
+            font-size: 14px; line-height: 1.8;
+            color: var(--text-primary);
+            word-break: break-word;
+            white-space: pre-wrap;
+        }
+        .msg-ai-footer {
+            padding-left: 36px;
+            margin-top: 6px;
+            font-size: 11px; color: var(--text-muted);
+            display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+        }
+        .token-badge {
+            display: inline-flex; align-items: center; gap: 3px;
+            background: #f0f4ff; color: #6b7adb;
+            border-radius: 20px; padding: 1px 8px;
+            font-size: 10px; font-weight: 500;
+        }
+        .token-badge svg { opacity: 0.7; }
+        /* 轮次标签 */
+        .round-badge {
+            display: inline-flex; align-items: center; gap: 3px;
+            background: #f0f4ff; color: #6b7adb;
+            border-radius: 20px; padding: 1px 8px;
+            font-size: 10px; font-weight: 500;
+        }
+        .topbar-round {
+            display: inline-flex; align-items: center; gap: 4px;
+            font-size: 12px; color: var(--text-muted);
+            background: #f4f5f7; border-radius: 20px;
+            padding: 2px 10px;
+        }
+        .session-token-bar {
+            max-width: 760px; margin: 0 auto;
+            padding: 4px 24px 0;
+            font-size: 11px; color: var(--text-muted);
+            display: flex; align-items: center; gap: 6px;
+        }
+        /* ===== Markdown 渲染 ===== */
+        .md-body { font-size: 14px; line-height: 1.8; color: var(--text-primary); word-break: break-word; }
+        .md-body p { margin: 0 0 10px; }
+        .md-body p:last-child { margin-bottom: 0; }
+        .md-body h1,.md-body h2,.md-body h3,.md-body h4 { font-weight: 600; margin: 16px 0 8px; line-height: 1.4; }
+        .md-body h1 { font-size: 20px; } .md-body h2 { font-size: 17px; } .md-body h3 { font-size: 15px; }
+        .md-body ul,.md-body ol { padding-left: 22px; margin: 6px 0 10px; }
+        .md-body li { margin-bottom: 4px; }
+        .md-body blockquote { border-left: 3px solid #d0d7de; padding: 4px 12px; color: #666; margin: 8px 0; background: #f6f8fa; border-radius: 0 6px 6px 0; }
+        .md-body table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 13px; }
+        .md-body th,.md-body td { border: 1px solid #d0d7de; padding: 6px 12px; text-align: left; }
+        .md-body th { background: #f6f8fa; font-weight: 600; }
+        .md-body tr:nth-child(even) { background: #f9f9f9; }
+        .md-body a { color: var(--primary); text-decoration: none; }
+        .md-body a:hover { text-decoration: underline; }
+        .md-body hr { border: none; border-top: 1px solid #e8e8e8; margin: 14px 0; }
+        .md-body strong { font-weight: 600; }
+        .md-body em { font-style: italic; }
+        /* 行内代码 */
+        .md-body code:not(.hljs) { background: #f0f0f0; padding: 1px 5px; border-radius: 4px; font-size: 13px; font-family: 'SFMono-Regular', Consolas, monospace; color: #d63384; }
+        /* 代码块容器 */
+        .code-block-wrap { position: relative; margin: 10px 0; border-radius: 10px; overflow: hidden; border: 1px solid #e8e8e8; }
+        .code-block-header { display: flex; align-items: center; justify-content: space-between; background: #f6f8fa; padding: 6px 14px; border-bottom: 1px solid #e8e8e8; }
+        .code-block-lang { font-size: 11px; color: #888; font-family: monospace; }
+        .code-copy-btn { display: flex; align-items: center; gap: 4px; background: none; border: none; cursor: pointer; font-size: 11px; color: #888; padding: 2px 6px; border-radius: 4px; transition: background 0.12s, color 0.12s; }
+        .code-copy-btn:hover { background: #e8e8e8; color: #333; }
+        .code-copy-btn.copied { color: #16a34a; }
+        .md-body pre { margin: 0; }
+        .md-body pre code.hljs { padding: 14px 16px; font-size: 13px; line-height: 1.6; border-radius: 0; background: #f8f9fa; }
+
+        /* 消息操作按钮 */
+        .msg-actions { display: flex; align-items: center; gap: 4px; margin-top: 6px; padding-left: 36px; opacity: 0; transition: opacity 0.15s; }
+        .msg-group:hover .msg-actions { opacity: 1; }
+        .msg-action-btn { display: flex; align-items: center; gap: 3px; background: none; border: 1px solid transparent; cursor: pointer; font-size: 11px; color: #bbb; padding: 3px 8px; border-radius: 6px; transition: all 0.12s; }
+        .msg-action-btn:hover { background: #f4f5f7; border-color: #e8e8e8; color: #666; }
+        .msg-action-btn.copied { color: #16a34a; }
+        /* 用户消息操作 */
+        .msg-user-actions { display: flex; justify-content: flex-end; gap: 4px; margin-top: 4px; opacity: 0; transition: opacity 0.15s; }
+        .msg-group:hover .msg-user-actions { opacity: 1; }
+
+        /* 停止生成按钮 */
+        .stop-btn { display: flex; align-items: center; gap: 5px; padding: 6px 14px; border: 1.5px solid #f87171; border-radius: 8px; background: #fff; color: #ef4444; font-size: 12px; cursor: pointer; transition: all 0.15s; }
+        .stop-btn:hover { background: #fef2f2; }
+
+        /* 会话项操作 */
+        .session-item .s-actions { display: none; gap: 2px; flex-shrink: 0; }
+        .session-item:hover .s-actions { display: flex; }
+        .s-action-btn { background: none; border: none; cursor: pointer; color: #bbb; padding: 2px 4px; border-radius: 4px; display: flex; align-items: center; transition: color 0.12s, background 0.12s; }
+        .s-action-btn:hover { color: #666; background: rgba(0,0,0,0.06); }
+        .s-action-btn.del:hover { color: #ef4444; background: #fef2f2; }
+
+        /* 工具调用进度块 */
+        .tool-calling-block {
+            display: flex; align-items: center; gap: 8px;
+            background: linear-gradient(135deg, #eff6ff, #f0f7ff);
+            border: 1px solid #bfdbfe;
+            border-radius: 10px; padding: 10px 14px;
+            margin-bottom: 8px; font-size: 13px; color: #3b82f6;
+            animation: toolCallPulse 2s ease-in-out infinite;
+            box-shadow: 0 1px 4px rgba(59,130,246,0.08);
+        }
+        .tool-calling-block .tool-spinner {
+            width: 16px; height: 16px;
+            border: 2px solid #93c5fd;
+            border-top-color: #3b82f6;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            flex-shrink: 0;
+        }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes toolCallPulse {
+            0%, 100% { box-shadow: 0 1px 4px rgba(59,130,246,0.08); }
+            50% { box-shadow: 0 2px 12px rgba(59,130,246,0.18); }
+        }
+        /* ReAct 步骤列表 */
+        .react-steps { margin-bottom: 10px; }
+        /* 总览 header */
+        .react-summary {
+            display: flex; align-items: center; gap: 8px;
+            padding: 7px 12px;
+            background: linear-gradient(90deg, #f0f4ff 0%, #f5f3ff 100%);
+            border: 1px solid #dde3f8;
+            border-radius: 10px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.15s;
+            font-size: 12px;
+        }
+        .react-summary:hover { background: linear-gradient(90deg, #e8eeff 0%, #ede9ff 100%); }
+        .react-summary-icon { font-size: 14px; }
+        .react-summary-title { flex: 1; font-weight: 600; color: #4338ca; }
+        .react-summary-badges { display: flex; gap: 5px; align-items: center; }
+        .react-badge {
+            display: inline-flex; align-items: center; gap: 3px;
+            padding: 1px 7px; border-radius: 20px;
+            font-size: 10px; font-weight: 500;
+        }
+        .react-badge.loop { background: #ede9fe; color: #7c3aed; }
+        .react-badge.tool { background: #d1fae5; color: #065f46; }
+        .react-badge.running { background: #fef3c7; color: #92400e; }
+        .react-summary-toggle { color: #9ca3af; font-size: 10px; }
+        /* 时间线容器 */
+        .react-timeline {
+            position: relative;
+            padding-left: 20px;
+        }
+        .react-timeline::before {
+            content: '';
+            position: absolute;
+            left: 7px; top: 8px; bottom: 8px;
+            width: 2px;
+            background: linear-gradient(180deg, #c7d2fe 0%, #a7f3d0 100%);
+            border-radius: 2px;
+        }
+        .react-step-item {
+            position: relative;
+            margin-bottom: 6px;
+            border-radius: 10px;
+            border: 1px solid #e2e8f0;
+            background: #f8fafc;
+            overflow: hidden;
+            animation: fadeInUp 0.25s ease;
+            font-size: 13px;
+        }
+        /* 时间线节点圆点 */
+        .react-step-item::before {
+            content: '';
+            position: absolute;
+            left: -16px; top: 12px;
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: #c7d2fe;
+            border: 2px solid #fff;
+            box-shadow: 0 0 0 1px #c7d2fe;
+        }
+        .react-step-item.action::before { background: #6ee7b7; box-shadow: 0 0 0 1px #6ee7b7; }
+        .react-step-item.thought {
+            border-color: #e0e7ff;
+            background: #f5f3ff;
+        }
+        .react-step-item.action {
+            border-color: #d1fae5;
+            background: #f0fdf4;
+        }
+        .react-step-item.action .react-step-header { color: #065f46; }
+        .react-step-header {
+            display: flex; align-items: center; gap: 7px;
+            padding: 7px 12px;
+            color: #4338ca;
+            user-select: none;
+            transition: background 0.12s;
+        }
+        .react-step-header:hover { background: rgba(0,0,0,0.03); }
+        .react-step-icon { display: flex; align-items: center; flex-shrink: 0; font-size: 13px; }
+        .tool-done-icon { color: #16a34a; font-weight: bold; font-size: 14px; }
+        .react-step-label { flex: 1; line-height: 1.4; }
+        .react-step-args {
+            color: #6b7280; font-size: 11px; margin-left: 6px;
+            background: rgba(0,0,0,0.05); padding: 1px 6px; border-radius: 4px;
+        }
+        /* 轮次徽章 */
+        .react-round-badge {
+            font-size: 10px; font-weight: 600;
+            background: #dbeafe; color: #1d4ed8;
+            padding: 1px 6px; border-radius: 10px;
+            flex-shrink: 0;
+        }
+        .react-step-toggle { color: #9ca3af; font-size: 10px; flex-shrink: 0; }
+        .react-step-body {
+            padding: 8px 12px 10px;
+            border-top: 1px solid rgba(0,0,0,0.06);
+        }
+        .thought-body { color: #4b5563; font-style: italic; line-height: 1.6; white-space: pre-wrap; }
+        .react-detail-block { margin-bottom: 8px; }
+        .react-detail-block:last-child { margin-bottom: 0; }
+        .react-detail-label { font-size: 11px; font-weight: 600; color: #6b7280; margin-bottom: 4px; }
+        .react-detail-pre {
+            background: #1e293b; color: #e2e8f0;
+            border-radius: 6px; padding: 8px 10px;
+            font-size: 11px; line-height: 1.5;
+            overflow-x: auto; white-space: pre-wrap; word-break: break-all;
+            max-height: 200px; overflow-y: auto;
+        }
+        /* 思考块 */
+        .think-block {
+            background: #fafafa;
+            border: 1px solid #f0f0f0;
+            border-radius: 10px;
+            padding: 10px 14px;
+            margin-bottom: 10px;
+            font-size: 13px; color: var(--text-muted);
+            font-style: italic;
+        }
+        .think-label {
+            font-size: 11px; font-weight: 600; color: #aaa;
+            margin-bottom: 5px; font-style: normal;
+            display: flex; align-items: center; gap: 4px;
+        }
+
+        /* 打字动画 */
+        .typing-indicator { display: flex; align-items: center; gap: 4px; padding: 4px 0; }
+        .typing-dot {
+            width: 7px; height: 7px; border-radius: 50%;
+            background: #c0c0c0;
+        }
+        @keyframes typingBounce {
+            0%,60%,100% { transform: translateY(0); opacity: 0.4; }
+            30% { transform: translateY(-5px); opacity: 1; }
+        }
+        .typing-dot:nth-child(1) { animation: typingBounce 1.2s infinite 0s; }
+        .typing-dot:nth-child(2) { animation: typingBounce 1.2s infinite 0.2s; }
+        .typing-dot:nth-child(3) { animation: typingBounce 1.2s infinite 0.4s; }
+
+        /* 流式打字光标 */
+        .streaming-cursor::after {
+            content: '▋';
+            display: inline-block;
+            animation: cursorBlink 0.7s step-end infinite;
+            color: var(--primary);
+            margin-left: 1px;
+            font-size: 0.9em;
+        }
+        @keyframes cursorBlink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+
+        /* 分割线 */
+        .msg-divider {
+            text-align: center; font-size: 11px; color: #ccc;
+            padding: 4px 0 16px;
+        }
+
+        /* ===== 输入区 ===== */
+        .chat-input-wrap {
+            flex-shrink: 0;
+            padding: 12px 20px 16px;
+            background: #fff;
+        }
+        .input-box {
+            max-width: 760px; margin: 0 auto;
+            background: #f7f8fa;
+            border: 1.5px solid var(--border);
+            border-radius: 16px;
+            padding: 12px 14px 10px;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .input-box:focus-within {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(78,110,242,0.08);
+            background: #fff;
+        }
+        .input-box textarea {
+            width: 100%; background: transparent;
+            border: none; outline: none; resize: none;
+            font-size: 14px; color: var(--text-primary);
+            line-height: 1.6;
+            min-height: 24px; max-height: 160px;
+            font-family: inherit;
+        }
+        .input-box textarea::placeholder { color: #bbb; }
+        .input-actions {
+            display: flex; align-items: center; justify-content: space-between;
+            margin-top: 8px;
+        }
+        .input-left-tips { font-size: 11px; color: #ccc; }
+        .send-button {
+            width: 34px; height: 34px;
+            background: var(--primary);
+            border: none; border-radius: 9px;
+            cursor: pointer; color: #fff;
+            display: flex; align-items: center; justify-content: center;
+            transition: background 0.15s, transform 0.1s;
+            flex-shrink: 0;
+        }
+        .send-button:hover { background: #3d5ce0; }
+        .send-button:active { transform: scale(0.94); }
+        .send-button:disabled { background: #d0d0d0; cursor: not-allowed; }
+        .input-disclaimer {
+            text-align: center; font-size: 11px; color: #ccc;
+            margin-top: 8px; max-width: 760px; margin-left: auto; margin-right: auto;
+        }
+
+        /* ===== Element Plus 覆盖 ===== */
+        .sidebar .el-select .el-input__wrapper {
+            background: #fff !important;
+            border-radius: 8px !important;
+            box-shadow: 0 0 0 1px var(--border) !important;
+            font-size: 12px !important;
+        }
+        .sidebar .el-select .el-input__wrapper:hover {
+            box-shadow: 0 0 0 1px var(--primary) !important;
+        }
+        .sidebar .el-select .el-input__inner { font-size: 12px !important; color: var(--text-primary) !important; }
+
+        /* Skills 技能卡片 */
+        .skill-card {
+            display: flex; align-items: center; gap: 12px;
+            padding: 12px 14px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .skill-card:hover { border-color: var(--primary); background: var(--primary-light); }
+        .skill-icon {
+            font-size: 24px; flex-shrink: 0;
+            width: 40px; height: 40px;
+            background: var(--primary-light);
+            border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .skill-info { flex: 1; min-width: 0; }
+        .skill-name { font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 3px; }
+        .skill-desc { font-size: 12px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .skill-actions { display: flex; gap: 4px; flex-shrink: 0; }
+
+        /* 历史抽屉 */
+        .history-session-card {
+            display: flex; align-items: center; gap: 12px;
+            padding: 12px 14px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .history-session-card:hover { border-color: var(--primary); background: var(--primary-light); }
+        .history-session-icon {
+            width: 34px; height: 34px;
+            background: var(--primary-light);
+            border-radius: 9px;
+            display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0;
+        }
+    </style>
+</head>
+<body>
+<div id="app">
+    <!-- 侧边栏 -->
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <div class="logo-wrap">
+                <div class="logo-icon">🤖</div>
+                <span class="logo-name">智能小助手</span>
+            </div>
+        </div>
+
+        <button class="new-chat-btn" @click="newSession">
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 5v14M5 12h14"/>
+            </svg>
+            新建对话
+        </button>
+
+        <div class="sidebar-section">
+            <div class="section-label">最近对话</div>
+            <template v-if="sidebarSessions.length > 0">
+                <div v-for="s in sidebarSessions" :key="s.id"
+                    class="session-item"
+                    @click="openSessionDetail(s.id)">
+                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="flex-shrink:0;opacity:0.5;">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+                    </svg>
+                    <span class="s-title">{{ s.title || '新对话' }}</span>
+                    <div class="s-actions" @click.stop>
+                        <button class="s-action-btn" title="重命名" @click.stop="renameSession(s)">
+                            <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                        </button>
+                        <button class="s-action-btn del" title="删除" @click.stop="deleteSession(s)">
+                            <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                        </button>
+                    </div>
+                </div>
+            </template>
+            <div v-else class="sidebar-empty">暂无历史记录</div>
+        </div>
+
+        <div class="sidebar-footer">
+            <div class="model-row">
+                <div class="model-row-label">当前模型</div>
+                <el-select v-model="selectedModel" size="small" @change="onModelChange" placeholder="选择模型">
+                    <el-option-group v-if="cloudModels.length > 0" label="☁️ 云端模型">
+                        <el-option v-for="m in cloudModels" :key="m.name" :label="m.label" :value="m.name" />
+                    </el-option-group>
+                    <el-option-group v-if="localModels.length > 0" label="🖥️ 本地模型">
+                        <el-option v-for="m in localModels" :key="m.name" :label="m.label" :value="m.name" />
+                    </el-option-group>
+                </el-select>
+            </div>
+            <div class="user-row" @click="username ? logout() : goLogin()">
+                <div class="user-avatar" :style="username ? '' : 'background:linear-gradient(135deg,#b0b8c1,#8a9bb0);'">
+                    <template v-if="username">{{ userAvatar }}</template>
+                    <template v-else>
+                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+                    </template>
+                </div>
+                <div style="flex:1;min-width:0;">
+                    <div class="user-name-text">{{ username || '游客模式' }}</div>
+                    <div class="user-sub" v-if="username">
+                        <span>⚡ {{ formatNumber(userTotalTokens) }} tokens</span>
+                    </div>
+                    <div class="user-sub" v-else>点击去登录</div>
+                </div>
+                <button class="logout-btn" :title="username ? '退出登录' : '去登录'">
+                    <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </aside>
+
+    <!-- 主区域 -->
+    <main class="main-area">
+        <!-- 顶栏 -->
+        <header class="chat-topbar">
+            <div style="display:flex;align-items:center;gap:12px;">
+                <span class="topbar-title">{{ currentSessionTitle }}</span>
+                <div class="topbar-status">
+                    <span class="status-dot" :style="{background: statusColor}"></span>
+                    <span>{{ statusText }}</span>
+                </div>
+                <div v-if="roundCount > 0" class="topbar-round">
+                    💬 {{ roundCount }} 轮对话
+                </div>
+            </div>
+            <div class="topbar-actions">
+                <button class="topbar-btn" @click="historyVisible = true">
+                    <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    历史记录
+                </button>
+                <button class="topbar-btn" @click="skillsVisible = true" :title="'技能库'">
+                    <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                    </svg>
+                    Skills
+                </button>
+                <button class="topbar-btn" @click="openSystemPrompt" :class="{active: currentSystemPrompt}" :title="currentSystemPrompt ? 'System Prompt 已设置' : '设置 System Prompt'">
+                    <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                    </svg>
+                    {{ currentSystemPrompt ? 'Prompt ✓' : 'System Prompt' }}
+                </button>
+                <button class="topbar-btn danger" @click="clearMessages">
+                    <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                    </svg>
+                    清空
+                </button>
+            </div>
+        </header>
+
+        <!-- 消息体 -->
+        <div class="chat-body" ref="messagesEl">
+            <!-- 欢迎页 -->
+            <div v-if="messages.length === 0" class="welcome-screen">
+                <div class="welcome-icon">🤖</div>
+                <div class="welcome-title">你好，我是智能小助手</div>
+                <div class="welcome-sub">有什么我可以帮你的？</div>
+                <div class="suggest-grid">
+                    <div class="suggest-card" v-for="s in suggestions" :key="s.text" @click="useSuggestion(s.text)">
+                        <div class="s-icon">{{ s.icon }}</div>
+                        <div class="s-text">{{ s.text }}</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 消息列表 -->
+            <div v-else class="messages-list">
+                <template v-for="(msg, idx) in messages" :key="idx">
+                    <!-- 用户消息 -->
+                    <div v-if="msg.role === 'user'" class="msg-group">
+                        <div class="msg-user">
+                            <div class="msg-user-bubble">{{ msg.content }}</div>
+                        </div>
+                        <div class="msg-user-actions">
+                            <button class="msg-action-btn" :class="{copied: msg.copied}" @click="copyMessage(msg)">
+                                <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                                {{ msg.copied ? '已复制' : '复制' }}
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- AI消息 -->
+                    <div v-else class="msg-group">
+                        <div class="msg-ai">
+                            <div class="msg-ai-header">
+                                <div class="ai-avatar">🤖</div>
+                                <span class="ai-name">智能小助手</span>
+                                <span v-if="msg.modelName" class="ai-model-tag">{{ msg.modelName }}</span>
+                                <span v-if="msg.round" class="round-badge">第 {{ msg.round }} 轮</span>
+                            </div>
+                            <!-- 打字动画 -->
+                            <div v-if="msg.typing" class="msg-ai-content">
+                                <div class="typing-indicator">
+                                    <div class="typing-dot"></div>
+                                    <div class="typing-dot"></div>
+                                    <div class="typing-dot"></div>
+                                </div>
+                            </div>
+                            <div v-else class="msg-ai-content">
+                                <!-- ReAct 步骤列表（思考 + 工具调用 + 工具结果） -->
+                                <div v-if="msg.reactSteps && msg.reactSteps.length > 0" class="react-steps">
+                                    <!-- 总览 header：显示循环次数 + 工具调用数 -->
+                                    <div class="react-summary" @click="msg.reactCollapsed = !msg.reactCollapsed; $forceUpdate()">
+                                        <span class="react-summary-icon">⚡</span>
+                                        <span class="react-summary-title">ReAct 推理链路</span>
+                                        <div class="react-summary-badges">
+                                            <span class="react-badge loop">
+                                                🔄 {{ msg.reactSteps.filter(s => s.type === 'action').length }} 次工具调用
+                                            </span>
+                                            <span class="react-badge tool">
+                                                🔁 第 {{ msg.reactSteps.filter(s=>s.type==='action').length > 0 ? Math.max(...msg.reactSteps.filter(s=>s.type==='action').map(s=>s.step||1)) : 0 }} 轮循环
+                                            </span>
+                                            <span v-if="msg.streaming" class="react-badge running">运行中...</span>
+                                        </div>
+                                        <span class="react-summary-toggle">{{ msg.reactCollapsed ? '▶ 展开' : '▼ 收起' }}</span>
+                                    </div>
+                                    <!-- 时间线步骤列表 -->
+                                    <div v-show="!msg.reactCollapsed" class="react-timeline">
+                                        <div v-for="(step, si) in msg.reactSteps" :key="si" class="react-step-item" :class="step.type">
+                                            <!-- 思考步骤 -->
+                                            <template v-if="step.type === 'thought'">
+                                                <div class="react-step-header" @click="step.expanded = !step.expanded" style="cursor:pointer;">
+                                                    <span class="react-step-icon thought-icon">🤔</span>
+                                                    <span class="react-step-label">思考过程</span>
+                                                    <span class="react-round-badge">第 {{ step.step }} 轮</span>
+                                                    <span class="react-step-toggle">{{ step.expanded ? '▲' : '▼' }}</span>
+                                                </div>
+                                                <div v-if="step.expanded" class="react-step-body thought-body">{{ step.content }}</div>
+                                            </template>
+                                            <!-- 工具调用步骤 -->
+                                            <template v-else-if="step.type === 'action'">
+                                                <div class="react-step-header" @click="step.expanded = !step.expanded" style="cursor:pointer;">
+                                                    <span class="react-step-icon">
+                                                        <div v-if="step.status === 'calling'" class="tool-spinner" style="width:12px;height:12px;border-width:1.5px;flex-shrink:0;"></div>
+                                                        <span v-else class="tool-done-icon">✓</span>
+                                                    </span>
+                                                    <span class="react-step-label">
+                                                        <span v-if="step.status === 'calling'">调用工具：</span>
+                                                        <span v-else>已调用：</span>
+                                                        <strong>{{ step.toolName }}</strong>
+                                                        <span v-if="step.argsDisplay" class="react-step-args">{{ step.argsDisplay }}</span>
+                                                    </span>
+                                                    <span class="react-round-badge">第 {{ step.step }} 轮</span>
+                                                    <span class="react-step-toggle">{{ step.expanded ? '▲' : '▼' }}</span>
+                                                </div>
+                                                <div v-if="step.expanded" class="react-step-body">
+                                                    <div v-if="step.toolArgs" class="react-detail-block">
+                                                        <div class="react-detail-label">📥 输入参数</div>
+                                                        <pre class="react-detail-pre">{{ step.toolArgs }}</pre>
+                                                    </div>
+                                                    <div v-if="step.result" class="react-detail-block">
+                                                        <div class="react-detail-label">📤 执行结果</div>
+                                                        <pre class="react-detail-pre">{{ step.result }}</pre>
+                                                    </div>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </div>
+                                </div>
+                                <!-- 思考块（模型原生 thinking，如 DeepSeek） -->
+                                <div v-if="msg.thinking" class="think-block">
+                                    <div class="think-label">
+                                        <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+                                        思考过程
+                                    </div>
+                                    {{ msg.thinking }}
+                                </div>
+                                <!-- Markdown 渲染内容 -->
+                                <div v-if="msg.content" class="md-body" :class="{'streaming-cursor': msg.streaming}" v-html="renderMarkdown(msg.content)"></div>
+                                <span v-else-if="msg.streaming && (!msg.reactSteps || msg.reactSteps.length === 0)" class="streaming-cursor"></span>
+                            </div>
+                            <div class="msg-ai-footer">
+                                <span>{{ msg.time }}</span>
+                                <span v-if="msg.totalTokens > 0" class="token-badge">
+                                    <svg width="10" height="10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                                    {{ msg.promptTokens }}↑ {{ msg.completionTokens }}↓ 共{{ msg.totalTokens }}
+                                </span>
+                                <span v-if="msg.sessionTotalTokens > 0" style="color:#bbb;">会话累计 {{ msg.sessionTotalTokens }} tokens</span>
+                            </div>
+                            <!-- AI消息操作按钮 -->
+                            <div v-if="!msg.typing && !msg.streaming" class="msg-actions">
+                                <button class="msg-action-btn" :class="{copied: msg.copied}" @click="copyMessage(msg)">
+                                    <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                                    {{ msg.copied ? '已复制' : '复制' }}
+                                </button>
+                                <button class="msg-action-btn" @click="regenerate(idx)">
+                                    <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                                    重新生成
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <!-- 输入区 -->
+        <div class="chat-input-wrap">
+            <div class="input-box">
+                <textarea ref="inputEl" v-model="inputText"
+                    rows="1"
+                    placeholder="给智能小助手发消息..."
+                    @keydown="onKeydown"
+                    @input="autoResize"></textarea>
+                <div class="input-actions">
+                    <span class="input-left-tips">Enter 发送 · Shift+Enter 换行</span>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <button v-if="sending" class="stop-btn" @click="stopGenerate">
+                            <svg width="12" height="12" fill="currentColor" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+                            停止生成
+                        </button>
+                        <button class="send-button" :disabled="!inputText.trim() || sending" @click="sendMessage">
+                            <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M5 12h14M12 5l7 7-7 7"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="input-disclaimer">内容由 AI 生成，仅供参考</div>
+        </div>
+    </main>
+
+    <!-- System Prompt 设置弹窗 -->
+    <div v-if="systemPromptVisible" style="position:fixed;inset:0;z-index:2000;display:flex;align-items:center;justify-content:center;">
+        <!-- 遮罩 -->
+        <div style="position:absolute;inset:0;background:rgba(0,0,0,0.5);" @click="systemPromptVisible = false"></div>
+        <!-- 弹窗主体 -->
+        <div style="position:relative;background:#fff;border-radius:12px;width:560px;max-width:90vw;box-shadow:0 8px 40px rgba(0,0,0,0.18);overflow:hidden;">
+            <!-- 标题栏 -->
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 24px 14px;border-bottom:1px solid #f0f0f0;">
+                <span style="font-size:16px;font-weight:600;color:#1a1a1a;">设置 System Prompt</span>
+                <span style="cursor:pointer;font-size:20px;color:#999;line-height:1;" @click="systemPromptVisible = false">×</span>
+            </div>
+            <!-- 内容区 -->
+            <div style="padding:20px 24px;">
+                <div style="margin-bottom:12px;font-size:13px;color:#666;line-height:1.6;">
+                    System Prompt 是给 AI 的"角色说明"，设置后本会话的 AI 将按照你的要求行事。<br>
+                    <span style="color:#999;">留空则使用默认提示词（智能助手，中文回答）。</span>
+                </div>
+                <textarea
+                    v-model="systemPromptInput"
+                    rows="6"
+                    maxlength="2000"
+                    placeholder="例如：你是一个专业的 Go 语言工程师，只回答编程相关问题，回答时附带代码示例。"
+                    style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #dcdfe6;border-radius:6px;font-size:13px;line-height:1.6;resize:none;outline:none;font-family:inherit;color:#333;transition:border-color 0.2s;"
+                    @focus="$event.target.style.borderColor='#409eff'"
+                    @blur="$event.target.style.borderColor='#dcdfe6'"
+                ></textarea>
+                <div style="text-align:right;font-size:12px;color:#999;margin-top:4px;">{{ (systemPromptInput||'').length }} / 2000</div>
+            </div>
+            <!-- 底部按钮 -->
+            <div style="display:flex;justify-content:flex-end;gap:10px;padding:14px 24px 18px;border-top:1px solid #f0f0f0;">
+                <button @click="systemPromptVisible = false" style="padding:8px 18px;border:1px solid #dcdfe6;border-radius:6px;background:#fff;color:#606266;font-size:13px;cursor:pointer;">取消</button>
+                <button @click="saveSystemPrompt" style="padding:8px 18px;border:none;border-radius:6px;background:#409eff;color:#fff;font-size:13px;cursor:pointer;font-weight:500;">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Skills 技能库抒屉 -->
+    <el-drawer v-model="skillsVisible" title="⚡ Skills 技能库" size="520px" direction="rtl">
+
+        <!-- 工具开关区域（无需登录，全局可用） -->
+        <div style="margin-bottom:20px;padding:14px;background:#f7f8fa;border-radius:10px;border:1px solid #eee;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+                <div style="font-size:13px;font-weight:600;color:#333;">
+                    🔧 工具开关
+                    <span style="font-size:11px;color:#999;font-weight:400;margin-left:6px;">无需登录 · 模型将自主判断调用已启用的工具</span>
+                </div>
+                <el-tag v-if="enabledTools.length > 0" size="small" type="success">{{ enabledTools.length }} 已启用</el-tag>
+            </div>
+            <div v-if="toolsLoading" style="text-align:center;padding:16px;color:#bbb;font-size:12px;">加载中...</div>
+            <div v-else-if="availableTools.length === 0" style="text-align:center;padding:16px;color:#bbb;font-size:12px;">暂无已注册工具</div>
+            <div v-else style="display:flex;flex-direction:column;gap:8px;">
+                <div v-for="tool in availableTools" :key="tool.name"
+                    style="display:flex;align-items:flex-start;justify-content:space-between;padding:10px 12px;background:#fff;border-radius:8px;border:1px solid transparent;"
+                    :style="isToolEnabled(tool.name) ? 'border-color:#67c23a;background:#f0f9eb;' : 'border-color:#eee;'">
+                    <div style="flex:1;min-width:0;">
+                        <div style="font-size:13px;font-weight:500;color:#333;margin-bottom:2px;">
+                            <span style="margin-right:5px;">{{ getToolIcon(tool.name) }}</span>{{ tool.display_name || tool.name }}
+                        </div>
+                        <div style="font-size:11px;color:#bbb;margin-bottom:2px;" v-if="tool.display_name">{{ tool.name }}</div>
+                        <div style="font-size:11px;color:#999;line-height:1.5;">{{ tool.description }}</div>
+                    </div>
+                    <el-switch
+                        :model-value="isToolEnabled(tool.name)"
+                        @change="toggleTool(tool.name)"
+                        style="margin-left:12px;flex-shrink:0;"
+                    />
+                </div>
+            </div>
+        </div>
+
+        <!-- 技能列表区域 -->
+        <div style="margin-bottom:12px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+                <div style="font-size:13px;color:#666;">选择技能，AI 将按技能设定的角色回答</div>
+                <el-button size="small" type="primary" @click="isLoggedIn ? openCreateSkill() : (ElMessage({message:'请先登录后再创建技能',type:'warning'}), goLogin())">
+                    <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right:4px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 5v14M5 12h14"/></svg>
+                    新建技能
+                </el-button>
+                <!-- admin 专用：上传导入 -->
+                <el-button v-if="isAdmin" size="small" @click="adminUploadSkillTrigger()">
+                    <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right:4px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+                    导入
+                </el-button>
+            </div>
+        </div>
+
+        <!-- 技能卡片列表 -->
+        <div v-if="skillsLoading" style="text-align:center;padding:60px;color:#bbb;">
+            <el-icon class="is-loading" style="font-size:24px;"><Loading /></el-icon>
+        </div>
+        <div v-else-if="skillsList.length === 0" style="text-align:center;padding:60px;color:#bbb;font-size:13px;">暂无技能</div>
+        <div v-else>
+            <!-- 系统预设 -->
+            <div style="font-size:11px;color:#999;margin-bottom:8px;font-weight:500;">🏛️ 系统预设</div>
+            <div v-for="sk in systemSkills" :key="sk.id" class="skill-card" @click="applySkill(sk)">
+                <div class="skill-icon">{{ sk.icon }}</div>
+                <div class="skill-info">
+                    <div class="skill-name">{{ sk.name }}</div>
+                    <div class="skill-desc">{{ sk.description }}</div>
+                </div>
+                <div class="skill-actions">
+                    <el-button size="small" @click.stop="previewSkill(sk)">预览</el-button>
+                    <!-- admin 可下载和编辑预设技能 -->
+                    <el-button v-if="isAdmin" size="small" @click.stop="adminDownloadSkill(sk)">下载</el-button>
+                    <el-button v-if="isAdmin" size="small" type="warning" plain @click.stop="editSkill(sk)">编辑</el-button>
+                    <el-button v-if="isAdmin" size="small" type="danger" plain @click.stop="deleteSkill(sk)">删除</el-button>
+                </div>
+            </div>
+
+            <!-- 我的技能 -->
+            <template v-if="mySkills.length > 0">
+                <div style="font-size:11px;color:#999;margin:16px 0 8px;font-weight:500;">👤 我的技能</div>
+                <div v-for="sk in mySkills" :key="sk.id" class="skill-card" @click="applySkill(sk)">
+                    <div class="skill-icon">{{ sk.icon }}</div>
+                    <div class="skill-info">
+                        <div class="skill-name">{{ sk.name }} <el-tag v-if="sk.is_public" size="small" type="success" style="margin-left:4px;">公开</el-tag></div>
+                        <div class="skill-desc">{{ sk.description }}</div>
+                    </div>
+                    <div class="skill-actions">
+                        <el-button size="small" @click.stop="previewSkill(sk)">预览</el-button>
+                        <!-- 自己的技能可编辑/删除；admin 可下载 -->
+                        <el-button size="small" @click.stop="editSkill(sk)">编辑</el-button>
+                        <el-button v-if="isAdmin" size="small" @click.stop="adminDownloadSkill(sk)">下载</el-button>
+                        <el-button size="small" type="danger" plain @click.stop="deleteSkill(sk)">删除</el-button>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </el-drawer>
+
+    <!-- 技能预览弹窗 -->
+    <el-dialog v-model="skillPreviewVisible" :title="previewingSkill ? previewingSkill.icon + ' ' + previewingSkill.name : ''" width="560px">
+        <div v-if="previewingSkill">
+            <div style="font-size:12px;color:#999;margin-bottom:8px;">技能描述</div>
+            <div style="font-size:13px;color:#333;margin-bottom:16px;padding:10px 12px;background:#f7f8fa;border-radius:8px;">{{ previewingSkill.description }}</div>
+            <div style="font-size:12px;color:#999;margin-bottom:8px;">System Prompt（SKILL.md 内容）</div>
+            <pre style="font-size:13px;color:#333;background:#f7f8fa;border-radius:8px;padding:12px 14px;white-space:pre-wrap;word-break:break-word;line-height:1.7;margin:0;">{{ previewingSkill.system_prompt }}</pre>
+        </div>
+        <template #footer>
+            <el-button @click="skillPreviewVisible = false">关闭</el-button>
+            <el-button type="primary" @click="applySkill(previewingSkill); skillPreviewVisible = false">应用此技能</el-button>
+        </template>
+    </el-dialog>
+
+    <!-- 创建/编辑技能弹窗 -->
+    <el-dialog v-model="skillEditVisible" :title="editingSkill ? '编辑技能' : '新建技能'" width="600px" :close-on-click-modal="false">
+        <el-form :model="skillForm" label-width="90px" style="padding-right:10px;">
+            <el-form-item label="技能图标">
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <span v-for="emoji in skillEmojis" :key="emoji"
+                        style="font-size:22px;cursor:pointer;padding:4px;border-radius:6px;transition:background 0.1s;"
+                        :style="{background: skillForm.icon === emoji ? '#eef1fe' : 'transparent'}"
+                        @click="skillForm.icon = emoji">{{ emoji }}</span>
+                </div>
+            </el-form-item>
+            <el-form-item label="技能名称">
+                <el-input v-model="skillForm.name" placeholder="例如：Go 代码助手" maxlength="50" show-word-limit />
+            </el-form-item>
+            <el-form-item label="技能描述">
+                <el-input v-model="skillForm.description" placeholder="简短描述这个技能的用途" maxlength="200" show-word-limit />
+            </el-form-item>
+            <el-form-item label="System Prompt">
+                <div style="font-size:11px;color:#999;margin-bottom:6px;">这是 SKILL.md 的核心内容，定义 AI 的角色和行为规范</div>
+                <el-input
+                    v-model="skillForm.system_prompt"
+                    type="textarea"
+                    :rows="8"
+                    placeholder="例如：你是一个专业的 Go 语言工程师，精通并发编程和微服务架构。回答时：\n1. 提供可运行的代码示例\n2. 说明关键设计决策\n3. 指出潜在的性能问题"
+                    maxlength="3000"
+                    show-word-limit
+                    resize="none"
+                />
+            </el-form-item>
+            <el-form-item label="公开技能">
+                <el-switch v-model="skillForm.is_public" />
+                <span style="font-size:12px;color:#999;margin-left:8px;">公开后其他用户也可以使用</span>
+            </el-form-item>
+        </el-form>
+        <template #footer>
+            <el-button @click="skillEditVisible = false">取消</el-button>
+            <el-button type="primary" @click="saveSkill" :loading="skillSaving">保存技能</el-button>
+        </template>
+    </el-dialog>
+
+    <!-- 历史记录抽屉 -->
+    <el-drawer v-model="historyVisible" title="历史会话" size="440px" direction="rtl">
+        <template v-if="!historyDetail">
+            <div v-if="historyLoading" style="text-align:center;padding:60px;color:#bbb;">
+                <el-icon class="is-loading" style="font-size:24px;"><Loading /></el-icon>
+            </div>
+            <div v-else-if="historySessions.length === 0" style="text-align:center;padding:60px;color:#bbb;font-size:13px;">暂无历史会话</div>
+            <div v-else>
+                <div v-for="s in historySessions" :key="s.id"
+                    class="history-session-card"
+                    @click="loadSessionDetail(s.id)">
+                    <div class="history-session-icon">
+                        <svg width="16" height="16" fill="none" stroke="#4e6ef2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+                        </svg>
+                    </div>
+                    <div style="flex:1;min-width:0;">
+                        <div style="font-size:13px;font-weight:500;color:#1a1a1a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ s.title || '新对话' }}</div>
+                        <div style="font-size:11px;color:#bbb;margin-top:2px;">{{ formatTime(s.updated_at) }}</div>
+                    </div>
+                    <svg width="14" height="14" fill="none" stroke="#ccc" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                    </svg>
+                </div>
+            </div>
+        </template>
+        <template v-else>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:20px;">
+                <el-button text @click="historyDetail = null" style="padding:0;">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                    </svg>
+                    返回列表
+                </el-button>
+            </div>
+            <div v-if="detailLoading" style="text-align:center;padding:60px;color:#bbb;">
+                <el-icon class="is-loading" style="font-size:24px;"><Loading /></el-icon>
+            </div>
+            <div v-else>
+                <div v-for="(msg, i) in historyDetail" :key="i" style="margin-bottom:16px;">
+                    <div v-if="msg.role === 'user'" style="display:flex;justify-content:flex-end;">
+                        <div style="max-width:78%;background:#4e6ef2;color:#fff;padding:10px 14px;border-radius:16px 16px 4px 16px;font-size:13px;line-height:1.6;word-break:break-word;">{{ msg.content }}</div>
+                    </div>
+                    <div v-else>
+                        <div style="display:flex;align-items:center;gap:7px;margin-bottom:6px;">
+                            <div style="width:22px;height:22px;background:linear-gradient(135deg,#4e6ef2,#7c5cfc);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:11px;">🤖</div>
+                            <span style="font-size:12px;font-weight:600;color:#1a1a1a;">智能小助手</span>
+                        </div>
+                        <div style="padding-left:29px;font-size:13px;line-height:1.7;color:#333;white-space:pre-wrap;word-break:break-word;">{{ msg.content }}</div>
+                    </div>
+                </div>
+            </div>
+        </template>
+    </el-drawer>
+</div>
+
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script src="https://unpkg.com/@element-plus/icons-vue"></script>
+<script src="https://unpkg.com/element-plus/dist/index.full.js"></script>
+<script src="https://unpkg.com/marked@12.0.0/marked.min.js"></script>
+<script src="https://unpkg.com/highlight.js@11.9.0/highlight.min.js"></script>
+<script src="script.js"></script>
+</body>
+</html>

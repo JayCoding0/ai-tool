@@ -1,0 +1,20 @@
+{
+  "name": "mysql_query",
+  "display_name": "MySQL查询",
+  "description": "对 MySQL 数据库执行只读 SQL 查询（仅支持 SELECT 语句），返回查询结果。连接信息通过环境变量配置：DB_HOST、DB_PORT、DB_USER、DB_PASSWORD、DB_NAME。",
+  "script": "run.py",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "sql": {
+        "type": "string",
+        "description": "要执行的 SELECT SQL 语句，例如：'SELECT id, name FROM users LIMIT 10'"
+      },
+      "limit": {
+        "type": "number",
+        "description": "最大返回行数，默认 50，最大 200，防止返回过多数据"
+      }
+    },
+    "required": ["sql"]
+  }
+}

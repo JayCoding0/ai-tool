@@ -1,0 +1,16 @@
+{
+  "name": "calculate",
+  "display_name": "数学计算",
+  "description": "执行数学表达式计算，支持加减乘除、幂运算、取余、括号、以及常用数学函数（sqrt、abs、round、floor、ceil、log、sin、cos、tan、pi、e）。避免大模型算术错误，结果精确可靠。",
+  "script": "run.py",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "expression": {
+        "type": "string",
+        "description": "要计算的数学表达式，例如：'(100 + 200) * 3 / 5'、'sqrt(144)'、'2 ** 10'、'round(3.14159, 2)'"
+      }
+    },
+    "required": ["expression"]
+  }
+}

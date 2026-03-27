@@ -1,0 +1,52 @@
+{
+  "name": "create_skill",
+  "display_name": "创建 Skill",
+  "description": "根据用户描述，自动在 skills/ 目录下生成完整的 skill 目录结构，包括 SKILL.md、scripts/run.py、scripts/tool.json 三个文件。",
+  "script": "run.py",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "skill_name": {
+        "type": "string",
+        "description": "skill 的英文标识名（将作为目录名），例如：'weather-query'、'send-email'，支持字母、数字、连字符"
+      },
+      "display_name": {
+        "type": "string",
+        "description": "skill 的中文显示名称，例如：'天气查询'、'发送邮件'"
+      },
+      "description": {
+        "type": "string",
+        "description": "skill 的简短描述，用于 SKILL.md 的 description 字段，一句话说明该 skill 的功能"
+      },
+      "icon": {
+        "type": "string",
+        "description": "skill 的 emoji 图标，例如：'🌤️'、'📧'，默认 '🔧'"
+      },
+      "tool_description": {
+        "type": "string",
+        "description": "工具函数的详细描述，用于 tool.json 的 description 字段，供 AI 理解何时调用此工具"
+      },
+      "parameters": {
+        "type": "string",
+        "description": "工具参数定义，JSON 格式的 object schema，包含 type、properties、required 字段。例如：{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\",\"description\":\"城市名\"}},\"required\":[\"city\"]}"
+      },
+      "script_code": {
+        "type": "string",
+        "description": "run.py 的完整 Python 脚本代码。脚本必须从 stdin 读取 JSON 参数，将结果以 JSON 格式输出到 stdout"
+      },
+      "system_prompt": {
+        "type": "string",
+        "description": "SKILL.md 中的 system prompt 内容，指导 AI 如何使用该 skill 的工具，包括能力说明、调用规则、输出规范等"
+      },
+      "extra_tools": {
+        "type": "string",
+        "description": "（可选）除本 skill 工具外，还需要在 SKILL.md 中声明的其他工具名，多个用英文逗号分隔"
+      },
+      "overwrite": {
+        "type": "boolean",
+        "description": "是否覆盖已存在的 skill，默认 false"
+      }
+    },
+    "required": ["skill_name", "display_name", "description", "tool_description", "parameters", "script_code", "system_prompt"]
+  }
+}

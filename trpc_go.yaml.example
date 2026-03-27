@@ -1,0 +1,71 @@
+server:
+  app: ai-project
+  server: chat-server
+  admin:
+    ip: 0.0.0.0
+    port: 9028
+    enable_pprof: true
+
+plugins:
+  database:
+    mysql:
+      max_idle: 10
+      max_open: 100
+      max_lifetime: 180000
+  log:
+    default:
+      - writer: console
+        level: info
+      - writer: file
+        level: info
+        formatter: json
+        writer_config:
+          filename: ./logs/trpc.log
+          max_size: 100
+          max_age: 7
+          max_backups: 10
+          compress: true
+
+client:
+  timeout: 1000
+  service:
+    - name: trpc.mysql.ai_chat.db
+      # 替换为你的 MySQL 连接信息
+      target: dsn://YOUR_DB_USER:YOUR_DB_PASSWORD@tcp(localhost:3306)/ai_chat_db?charset=utf8mb4&parseTime=true&loc=Local&timeout=5s
+
+# 应用自定义配置
+custom:
+  # 服务器配置
+  server:
+    http_port: 8080
+    mcp_port: 8001
+    host: "localhost"
+
+  # 模型配置
+  model:
+    name: "qwen-plus"
+    type: "openai"
+    ollama_url: "http://localhost:11434"
+    timeout: 5000
+    max_context_length: 4096
+    openai_base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    # 替换为你的 API Key
+    openai_api_key: "YOUR_OPENAI_API_KEY"
+    available_models:
+      # ☁️ 云端模型（阿里云 DashScope）
+      - name: "qwen-plus"
+        label: "通义千问 Plus"
+        type: "cloud"
+      # 🖥️ 本地模型由 Ollama 实时拉取，无需在此配置
+
+  # MCP配置
+  mcp:
+    version: "1.0"
+    enabled: true
+    service_name: "ai-chat-service"
+
+  # 日志配置
+  log:
+    level: "info"
+    file_path: "./logs/app.log"
+    console: true

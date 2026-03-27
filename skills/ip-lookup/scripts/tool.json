@@ -1,0 +1,10 @@
+{
+  "name": "get_public_ip",
+  "display_name": "获取公网IP",
+  "description": "获取当前公网 IP 地址及归属地信息（国家、省份、城市、区县），同时返回对应的百度地图 district_id，可直接用于天气查询。",
+  "parameters": {
+    "type": "object",
+    "properties": {},
+    "required": []
+  }
+}

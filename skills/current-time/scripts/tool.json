@@ -1,0 +1,16 @@
+{
+  "name": "get_current_time",
+  "display_name": "获取当前时间",
+  "description": "获取当前的精确时间信息，包括日期、时间、星期、时区、Unix 时间戳。解决大模型不知道当前时间的问题，适用于时间相关问答、日程安排、计算时间差等场景。",
+  "script": "run.py",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "timezone": {
+        "type": "string",
+        "description": "时区名称，例如：'Asia/Shanghai'（默认）、'UTC'、'America/New_York'、'Europe/London'"
+      }
+    },
+    "required": []
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "name": "http_request",
+  "display_name": "HTTP请求",
+  "description": "发送 HTTP 请求到指定 URL，支持 GET/POST/PUT/DELETE 方法，可自定义请求头和请求体。用于调用第三方 REST API、获取网页内容、测试接口等场景。",
+  "script": "run.py",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "url": {
+        "type": "string",
+        "description": "请求的目标 URL，例如：'https://api.example.com/data'"
+      },
+      "method": {
+        "type": "string",
+        "description": "HTTP 方法，可选值：GET、POST、PUT、DELETE、PATCH，默认为 GET"
+      },
+      "headers": {
+        "type": "object",
+        "description": "请求头，键值对格式，例如：{\"Content-Type\": \"application/json\", \"Authorization\": \"Bearer token\"}"
+      },
+      "body": {
+        "type": "string",
+        "description": "请求体内容（字符串），POST/PUT 时使用，JSON 请求体请先序列化为字符串"
+      },
+      "timeout": {
+        "type": "number",
+        "description": "超时时间（秒），默认 15 秒，最大 30 秒"
+      }
+    },
+    "required": ["url"]
+  }
+}

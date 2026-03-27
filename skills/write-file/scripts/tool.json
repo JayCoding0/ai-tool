@@ -1,0 +1,28 @@
+{
+  "name": "write_file",
+  "display_name": "写入文件",
+  "description": "将内容写入指定文件，支持创建新文件或覆盖/追加已有文件。只允许写入相对路径，不允许访问上级目录（..）或绝对路径。",
+  "script": "run.py",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "path": {
+        "type": "string",
+        "description": "要写入的文件路径（相对路径），例如：'output/result.txt'、'report.md'"
+      },
+      "content": {
+        "type": "string",
+        "description": "要写入的文件内容"
+      },
+      "mode": {
+        "type": "string",
+        "description": "写入模式：'write'（覆盖写入，默认）或 'append'（追加到文件末尾）"
+      },
+      "encoding": {
+        "type": "string",
+        "description": "文件编码，默认 'utf-8'"
+      }
+    },
+    "required": ["path", "content"]
+  }
+}
