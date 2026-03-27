@@ -20,11 +20,12 @@ type TaskPersistRepository interface {
 // A2AService A2A 任务调度服务
 // 负责接收外部任务、驱动 ChatService 执行、通过 StreamHub 推送进度
 type A2AService struct {
-	chatService *ChatService
-	taskStore   *infra_a2a.TaskStore   // 内存缓存（高性能读写）
-	persistRepo TaskPersistRepository  // 持久化存储（可选，nil 表示纯内存模式）
-	streamHub   *infra_a2a.StreamHub
-	agentCard   *a2a.AgentCard
+	chatService   *ChatService
+	taskStore     *infra_a2a.TaskStore  // 内存缓存（高性能读写）
+	persistRepo   TaskPersistRepository // 持久化存储（可选，nil 表示纯内存模式）
+	streamHub     *infra_a2a.StreamHub
+	agentCard     *a2a.AgentCard
+	agentRegistry *AgentRegistry // 多 Agent 注册中心（可选，nil 表示单 Agent 模式）
 }
 
 // NewA2AService 创建 A2A 服务（纯内存模式）
@@ -47,6 +48,12 @@ func NewA2AServiceWithPersist(chatService *ChatService, agentCard *a2a.AgentCard
 		streamHub:   infra_a2a.NewStreamHub(),
 		agentCard:   agentCard,
 	}
+}
+
+// WithAgentRegistry 注入多 Agent 注册中心（启用多 Agent 模式）
+func (s *A2AService) WithAgentRegistry(registry *AgentRegistry) *A2AService {
+	s.agentRegistry = registry
+	return s
 }
 
 // GetAgentCard 获取 AgentCard
@@ -112,20 +119,68 @@ func (s *A2AService) executeTask(ctx context.Context, task *a2a.Task) {
 		}
 	}
 
+	// 从 metadata 中读取目标 Agent 名称（多 Agent 路由）
+	targetAgentName := extractStringMeta(task.Metadata, "agent_name")
+
+	// 解析目标 Agent 实例（多 Agent 模式）
+	var targetChatService *ChatService
+	var targetSystemPrompt string
+	var targetModelName string
+
+	if targetAgentName != "" && s.agentRegistry != nil {
+		if inst, ok := s.agentRegistry.Get(targetAgentName); ok {
+			targetChatService = inst.ChatService
+			targetSystemPrompt = inst.Def.SystemPrompt
+			targetModelName = inst.Def.ModelName
+			// 子 Agent 有自己的工具集，优先使用
+			if len(inst.Def.EnabledTools) > 0 && len(enabledTools) == 0 {
+				enabledTools = inst.Def.EnabledTools
+			}
+			logger.Info("A2A 任务路由到子 Agent",
+				zap.String("task_id", taskID),
+				zap.String("agent", targetAgentName),
+			)
+		} else {
+			logger.Warn("指定的子 Agent 不存在，回退到主 Agent",
+				zap.String("task_id", taskID),
+				zap.String("agent_name", targetAgentName),
+			)
+		}
+	}
+
+	// 回退到默认 ChatService（主 Agent 或单 Agent 模式）
+	if targetChatService == nil {
+		targetChatService = s.chatService
+		// 多 Agent 模式下，主 Agent 自动获得 call_agent 工具
+		if s.agentRegistry != nil {
+			if master, ok := s.agentRegistry.GetMaster(); ok {
+				targetSystemPrompt = master.Def.SystemPrompt
+				targetModelName = master.Def.ModelName
+				if len(master.Def.EnabledTools) > 0 && len(enabledTools) == 0 {
+					enabledTools = master.Def.EnabledTools
+				}
+			}
+		}
+	}
+
 	// 构建 ChatRequest，复用现有 ChatService
 	chatReq := ChatRequest{
-		Message:   userText,
-		SessionID: sessionIDFromA2A(task.SessionID),
-		ModelName: extractStringMeta(task.Metadata, "model_name"),
+		Message:      userText,
+		SessionID:    sessionIDFromA2A(task.SessionID),
+		ModelName:    extractStringMeta(task.Metadata, "model_name"),
+		SystemPrompt: targetSystemPrompt,
+	}
+	if chatReq.ModelName == "" {
+		chatReq.ModelName = targetModelName
 	}
 
 	// 选择处理路径：有工具 → ProcessMessageWithTools，无工具 → ProcessMessageStream
 	var streamCh <-chan StreamChatResponse
 	var err error
 	if len(enabledTools) > 0 {
-		streamCh, err = s.chatService.ProcessMessageWithTools(ctx, chatReq, enabledTools)
+		streamCh, err = targetChatService.ProcessMessageWithTools(ctx, chatReq, enabledTools)
 	} else {
-		streamCh, err = s.chatService.ProcessMessageStream(ctx, chatReq)
+		streamCh, err = targetChatService.ProcessMessageStream(ctx, chatReq)
 	}
 	if err != nil {
 		logger.Error("A2A 任务启动失败", zap.String("task_id", taskID), zap.Error(err))

@@ -11,11 +11,11 @@ import (
 	"aiProject/internal/config"
 	"aiProject/internal/domain/a2a"
 	domain_model "aiProject/internal/domain/model"
+	mysql_a2a "aiProject/internal/infrastructure/a2a/mysql"
 	"aiProject/internal/infrastructure/database"
 	infra_model "aiProject/internal/infrastructure/model"
 	infra_session "aiProject/internal/infrastructure/session"
 	mysql_session "aiProject/internal/infrastructure/session/mysql"
-	mysql_a2a "aiProject/internal/infrastructure/a2a/mysql"
 	infra_tools "aiProject/internal/infrastructure/tools"
 	mysql_user "aiProject/internal/infrastructure/user/mysql"
 	http_handler "aiProject/internal/interfaces/http"
@@ -91,7 +91,7 @@ func corsMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
 
 // ipRateLimiter 基于 IP 的令牌桶限流器
 type ipRateLimiter struct {
-	limiters sync.Map          // map[string]*rateLimiterEntry
+	limiters sync.Map // map[string]*rateLimiterEntry
 	rate     rate.Limit
 	burst    int
 }
@@ -184,8 +184,6 @@ func chain(h http.Handler, middlewares ...func(http.Handler) http.Handler) http.
 	return h
 }
 
-
-
 // newModelGenerator 根据配置创建对应的模型生成器
 func newModelGenerator(cfg *config.Config) domain_model.Generator {
 	return newModelGeneratorByName(cfg, cfg.Model.Name)
@@ -226,7 +224,7 @@ func buildAgentCard(appConfig *config.Config) *a2a.AgentCard {
 		Version:         "1.0.0",
 		URL:             "http://localhost:" + serverPort + "/a2a/tasks/send",
 		Capabilities: a2a.AgentCapabilities{
-			Streaming:    true,
+			Streaming:   true,
 			MultiTurn:   true,
 			ToolCalling: true,
 		},
@@ -285,18 +283,101 @@ func InitComponents(appConfig *config.Config) (*http_handler.ChatHandler, *appli
 	return handler, chatService
 }
 
+// InitAgentRegistry 初始化多 Agent 注册中心
+// 创建主 Agent 和各专项子 Agent，并注册 call_agent 工具
+func InitAgentRegistry(chatService *application.ChatService, appConfig *config.Config) *application.AgentRegistry {
+	registry := application.GetAgentRegistry()
+
+	// 构建模型工厂（子 Agent 可以使用不同模型）
+	modelFactory := func(modelName string) domain_model.Generator {
+		return newModelGeneratorByName(appConfig, modelName)
+	}
+	sessionRepo := mysql_session.NewMySQLRepository()
+
+	// ── 注册主 Agent（总调度，负责理解用户意图并编排子 Agent）──
+	masterChatService := application.NewChatServiceWithFactory(
+		sessionRepo,
+		newModelGenerator(appConfig),
+		appConfig.Model.Name,
+		modelFactory,
+	)
+	registry.Register(application.AgentDefinition{
+		Name:        "master_agent",
+		DisplayName: "主调度 Agent",
+		Description: "负责理解用户意图，拆解任务，并调用合适的子 Agent 完成专项工作",
+		SystemPrompt: "你是一个智能任务调度助手，请始终使用中文回答。" +
+			"你可以通过 call_agent 工具调用专项子 Agent 来完成特定任务。" +
+			"请根据用户的需求，判断是否需要调用子 Agent，并将结果汇总后回复用户。",
+		EnabledTools: []string{"call_agent"},
+		IsMaster:     true,
+	}, masterChatService)
+
+	// ── 注册天气子 Agent ──
+	weatherChatService := application.NewChatServiceWithFactory(
+		sessionRepo,
+		newModelGenerator(appConfig),
+		appConfig.Model.Name,
+		modelFactory,
+	)
+	registry.Register(application.AgentDefinition{
+		Name:        "weather_agent",
+		DisplayName: "天气查询 Agent",
+		Description: "专门负责天气查询，可以查询任意城市的实时天气和天气预报",
+		SystemPrompt: "你是一个专业的天气查询助手，请始终使用中文回答。" +
+			"你只负责天气相关的查询任务，请使用天气工具获取准确的天气信息，并以友好的方式呈现给用户。",
+		EnabledTools: []string{"weather"},
+		IsMaster:     false,
+	}, weatherChatService)
+
+	// ── 注册搜索子 Agent ──
+	searchChatService := application.NewChatServiceWithFactory(
+		sessionRepo,
+		newModelGenerator(appConfig),
+		appConfig.Model.Name,
+		modelFactory,
+	)
+	registry.Register(application.AgentDefinition{
+		Name:        "search_agent",
+		DisplayName: "搜索 Agent",
+		Description: "专门负责信息搜索，可以搜索网络信息、地点、新闻等",
+		SystemPrompt: "你是一个专业的信息搜索助手，请始终使用中文回答。" +
+			"你只负责信息搜索任务，请使用搜索工具获取相关信息，并整理成清晰的格式返回。",
+		EnabledTools: []string{"search", "map_search"},
+		IsMaster:     false,
+	}, searchChatService)
+
+	// 向全局工具注册中心注册 call_agent 工具（主 Agent 用来调用子 Agent）
+	application.RegisterCallAgentTool(registry.ListSubAgents())
+
+	shared.GetLogger().Info("多 Agent 注册中心初始化完成",
+		zap.Int("agent_count", len(registry.ListAll())),
+	)
+	return registry
+}
+
 // InitA2AService 初始化 A2A 服务
 // 如果数据库已连接，则使用 MySQL 持久化存储；否则退回纯内存模式
 func InitA2AService(chatService *application.ChatService, appConfig *config.Config) *application.A2AService {
 	agentCard := buildAgentCard(appConfig)
+	var a2aSvc *application.A2AService
+
 	// 尝试使用 MySQL 持久化（database.GetDB() 不为 nil 说明数据库已初始化）
 	if database.GetDB() != nil {
 		taskRepo := mysql_a2a.NewTaskRepository()
 		shared.GetLogger().Info("A2A 任务使用 MySQL 持久化存储")
-		return application.NewA2AServiceWithPersist(chatService, agentCard, taskRepo)
+		a2aSvc = application.NewA2AServiceWithPersist(chatService, agentCard, taskRepo)
+	} else {
+		shared.GetLogger().Info("A2A 任务使用纯内存存储（数据库未连接）")
+		a2aSvc = application.NewA2AService(chatService, agentCard)
 	}
-	shared.GetLogger().Info("A2A 任务使用纯内存存储（数据库未连接）")
-	return application.NewA2AService(chatService, agentCard)
+
+	// 如果数据库已连接，初始化多 Agent 注册中心
+	if database.GetDB() != nil {
+		registry := InitAgentRegistry(chatService, appConfig)
+		a2aSvc.WithAgentRegistry(registry)
+	}
+
+	return a2aSvc
 }
 
 // InitMCPServer 初始化 MCP Server
