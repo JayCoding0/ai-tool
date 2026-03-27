@@ -1,193 +1,329 @@
-# 智能小助手
+# AI 智能助手
 
-一个基于 Model Context Protocol (MCP) 的本地AI模型接入系统，提供前端问答界面。
+一个基于 Go 语言构建的本地 AI 对话平台，支持多模型切换、Skill 技能系统、Function Calling 工具调用、多用户权限管理，提供现代化 Web 聊天界面。
 
-## 功能特性
+## ✨ 功能特性
 
-- 🤖 基于MCP协议接入本地AI模型
-- 🎨 现代化前端聊天界面
-- 🔌 支持RESTful API接口
-- ⚡ 高性能Go语言后端
-- 📱 响应式设计，支持移动端
-- 🔧 可配置化设置
+- 🤖 **多模型支持**：同时接入云端模型（阿里云 DashScope / OpenAI 兼容接口）与本地 Ollama 模型，运行时自由切换
+- 🎯 **Skill 技能系统**：通过 `SKILL.md` 定义 AI 角色与行为，支持 5 种设计模式（工具封装、生成器、评审器、倒置、流水线）
+- 🔧 **Function Calling**：ReAct 循环架构，AI 可自主调用工具（计算器、天气查询、HTTP 请求、命令执行、文件操作、MySQL 查询等）
+- 📡 **SSE 流式输出**：Server-Sent Events 实时推送 AI 回复、思考过程、工具调用过程
+- 👥 **多用户权限系统**：三级角色（admin / user / guest），精细化权限控制
+- 💬 **多会话管理**：支持多会话并行、历史记录持久化、会话标题自动生成、会话重命名
+- 📊 **Token 统计**：按用户、按模型统计 Token 消耗
+- 🔌 **MCP 协议**：提供 Model Context Protocol 服务端接口
 
-## 技术栈
-
-### 后端
-- Go 1.24+
-- TRPC-GO框架
-- MCP协议实现
-- HTTP服务器
-
-### 前端
-- HTML5 + CSS3
-- 原生JavaScript
-- 响应式设计
-
-## 快速开始
-
-### 前置要求
-
-- Go 1.24 或更高版本
-- Git
-
-### 安装依赖
-
-```bash
-# 确保依赖已安装
-go mod tidy
-```
-
-### 运行系统
-
-```bash
-# 直接运行
-go run main.go
-
-# 或者编译后运行
-go build -o ai-chat
-./ai-chat
-```
-
-### 访问系统
-
-1. 打开浏览器访问: http://localhost:8080
-2. 在输入框中输入问题
-3. 查看AI模型的回复
-
-## API接口
-
-### 聊天接口
-
-```http
-POST /api/chat
-Content-Type: application/x-www-form-urlencoded
-
-message=你的问题
-```
-
-**响应示例:**
-```json
-{
-  "response": "AI回复内容"
-}
-```
-
-### MCP接口
-
-系统同时提供MCP协议接口，端口: 8000
-
-## 配置说明
-
-编辑 `config.yaml` 文件来自定义系统配置：
-
-```yaml
-server:
-  http_port: 8080    # HTTP服务端口
-  trpc_port: 8000    # TRPC服务端口
-
-model:
-  name: "local-ai-model"  # 模型名称
-  timeout: 5000           # 响应超时时间
-
-mcp:
-  enabled: true           # 是否启用MCP
-```
-
-## 项目结构
+## 🏗️ 技术架构
 
 ```
 aiProject/
-├── main.go          # 主程序入口
-├── go.mod           # Go模块定义
-├── go.sum           # 依赖校验
-├── config.yaml      # 配置文件
-├── README.md        # 说明文档
-└── frontend/        # 前端文件
-    ├── index.html   # 主页面
-    ├── style.css    # 样式文件
-    └── script.js    # 交互脚本
+├── main.go                          # 程序入口
+├── trpc_go.yaml.example             # 配置文件模板
+├── frontend/                        # 前端（原生 HTML + JS）
+│   ├── index.html                   # 主聊天界面
+│   ├── login.html                   # 登录/注册页面
+│   └── script.js                    # 前端交互逻辑
+├── skills/                          # 内置 Skill 技能目录
+│   ├── calculate/                   # 计算器技能
+│   ├── create-skill/                # Skill 生成器技能
+│   ├── current-time/                # 当前时间技能
+│   ├── execute-command/             # 命令执行技能
+│   ├── file-explorer/               # 文件浏览技能
+│   ├── http-request/                # HTTP 请求技能
+│   ├── ip-lookup/                   # IP 查询技能
+│   ├── mysql-query/                 # MySQL 查询技能
+│   ├── weather/                     # 天气查询技能
+│   └── write-file/                  # 文件写入技能
+├── database/                        # 数据库迁移脚本
+│   ├── schema.sql                   # 初始建表
+│   └── migrate_*.sql                # 增量迁移脚本
+└── internal/                        # 后端核心（DDD 分层架构）
+    ├── application/                 # 应用层
+    │   ├── chat_service.go          # 聊天服务（流式 + 工具调用）
+    │   ├── auth_service.go          # 认证服务（JWT）
+    │   └── skill_service.go         # 技能管理服务
+    ├── domain/                      # 领域层
+    │   ├── model/                   # AI 模型抽象
+    │   ├── session/                 # 会话聚合根
+    │   ├── skill/                   # Skill 实体
+    │   ├── tool/                    # 工具注册表
+    │   └── user/                    # 用户实体（含角色）
+    ├── infrastructure/              # 基础设施层
+    │   ├── model/                   # OpenAI / Ollama 实现
+    │   ├── session/mysql/           # 会话 MySQL 持久化
+    │   ├── skill/mysql/             # Skill MySQL 持久化
+    │   ├── tools/                   # 工具加载器（扫描 skills/*/scripts/）
+    │   └── user/mysql/              # 用户 MySQL 持久化
+    └── interfaces/
+        ├── http/handler.go          # HTTP API 处理器
+        └── mcp/server.go            # MCP 协议服务端
 ```
 
-## 开发指南
+### 后端技术栈
 
-### 扩展模型支持
+- **语言**：Go 1.24+
+- **框架**：TRPC-GO
+- **数据库**：MySQL 8.0+
+- **AI 接入**：OpenAI 兼容接口 / Ollama
+- **架构模式**：DDD（领域驱动设计）分层架构
 
-要接入真实的本地模型，修改 `LocalModelClient` 类：
+### 前端技术栈
 
-```go
-func (c *LocalModelClient) GenerateResponse(ctx context.Context, prompt string) (string, error) {
-    // 这里实现与真实模型的连接逻辑
-    // 例如: 调用本地LLM API、使用 transformers 等
-}
-```
+- 原生 HTML5 + CSS3 + JavaScript（无框架依赖）
+- SSE（Server-Sent Events）流式接收
+- 响应式设计，支持移动端
 
-### 添加新功能
-
-1. 在后端添加新的API端点
-2. 在前端添加对应的界面元素
-3. 更新配置文件（如需要）
-
-### 部署生产环境
-
-1. 编译二进制文件: `go build -ldflags="-s -w" -o ai-chat`
-2. 使用系统服务管理工具（如 systemd）部署
-3. 配置反向代理（如 Nginx）
-4. 设置日志轮转和监控
-
-## 故障排除
-
-### 常见问题
-
-1. **端口冲突**: 修改 config.yaml 中的端口配置
-2. **依赖问题**: 运行 `go mod tidy` 清理依赖
-3. **前端无法访问**: 检查 frontend 目录是否存在
-
-### 日志查看
-
-日志输出到控制台和文件（默认: ./logs/app.log）
-
-## 许可证
-
-MIT License
-
-## 贡献
-
-欢迎提交 Issue 和 Pull Request！
-
-## 更新日志
-
-### v1.0.0
-- 初始版本发布
-- 基础MCP协议支持
-- 前端聊天界面
-- RESTful API接口
-
-## Ollama 集成
-
-系统现已集成本地Ollama模型支持，可以使用您本地的AI模型进行问答。
+## 🚀 快速开始
 
 ### 前置要求
 
-1. 安装并运行 [Ollama](https://ollama.com/)
-2. 下载所需的模型，例如：
-   ```bash
-   ollama pull deepseek-r1:8b
-   ```
+- Go 1.24+
+- MySQL 8.0+
+- Python 3（用于执行 Skill 脚本工具）
+- （可选）[Ollama](https://ollama.com/) 用于本地模型
 
-### 配置模型
-
-编辑 `main.go` 文件中的模型名称：
-
-```go
-modelClient := NewLocalModelClient("您的模型名称")
-```
-
-支持的模型：deepseek-r1:8b、llama3、mistral 等Ollama支持的模型
-
-### 验证集成
+### 1. 克隆项目
 
 ```bash
-# 测试API接口
-curl -X POST http://localhost:8081/api/chat -d "message=你好"
+git clone https://github.com/JayCoding0/ai-tool.git
+cd ai-tool
+go mod tidy
 ```
+
+### 2. 初始化数据库
+
+```bash
+# 创建数据库
+mysql -u root -p -e "CREATE DATABASE ai_chat_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+
+# 执行初始化脚本
+mysql -u root -p ai_chat_db < database/schema.sql
+
+# 执行所有迁移脚本（按文件名顺序）
+mysql -u root -p ai_chat_db < database/migrate_add_users.sql
+mysql -u root -p ai_chat_db < database/migrate_add_skills.sql
+mysql -u root -p ai_chat_db < database/migrate_add_skill_tools.sql
+mysql -u root -p ai_chat_db < database/migrate_add_system_prompt.sql
+mysql -u root -p ai_chat_db < database/migrate_add_token_stats.sql
+mysql -u root -p ai_chat_db < database/migrate_add_model_name.sql
+mysql -u root -p ai_chat_db < database/migrate_add_role_20260328.sql
+```
+
+### 3. 配置文件
+
+复制配置模板并填写实际配置：
+
+```bash
+cp trpc_go.yaml.example trpc_go.yaml
+```
+
+编辑 `trpc_go.yaml`，重点配置以下内容：
+
+```yaml
+client:
+  service:
+    - name: trpc.mysql.ai_chat.db
+      # 替换为你的 MySQL 连接信息
+      target: dsn://YOUR_DB_USER:YOUR_DB_PASSWORD@tcp(localhost:3306)/ai_chat_db?...
+
+custom:
+  model:
+    name: "qwen-plus"           # 默认模型
+    type: "openai"              # openai 或 local
+    openai_base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    openai_api_key: "YOUR_API_KEY"   # 替换为你的 API Key
+    ollama_url: "http://localhost:11434"  # 本地 Ollama 地址
+```
+
+### 4. 启动服务
+
+```bash
+go run main.go
+```
+
+访问 [http://localhost:8080](http://localhost:8080) 开始使用。
+
+## 👥 用户权限系统
+
+系统内置三级角色，初始化后自动创建 `admin` 账户（密码：`admin123`，**请及时修改**）。
+
+| 角色 | 说明 | 权限 |
+|------|------|------|
+| **admin** | 超级管理员 | 查看/编辑/删除所有 Skill，下载/上传 Skill，管理所有用户数据 |
+| **user** | 普通用户 | 创建/编辑/删除自己的 Skill，只读预设 Skill，使用所有功能 |
+| **guest** | 游客（未登录） | 仅使用预设 Skill，无法创建/修改任何内容 |
+
+## 🎯 Skill 技能系统
+
+Skill 是 AI 的角色与行为定义，通过 `SKILL.md` 文件描述。每个 Skill 包含：
+
+- **System Prompt**：定义 AI 的角色、能力边界和行为规范
+- **绑定工具**：指定该 Skill 可调用的 Function Calling 工具
+- **设计模式**：5 种内置模式
+
+### Skill 设计模式
+
+| 模式 | 说明 |
+|------|------|
+| `tool-wrapper` | 工具封装：按需加载知识，调用外部工具 |
+| `generator` | 生成器：固定输出结构，批量生产内容 |
+| `reviewer` | 评审器：解耦检查规则，对内容进行评估 |
+| `inversion` | 倒置：先问清楚需求再执行 |
+| `pipeline` | 流水线：强制分步执行复杂任务 |
+
+### Skill 目录结构
+
+```
+skills/my-skill/
+├── SKILL.md          # 技能定义（YAML front matter + System Prompt 正文）
+├── scripts/
+│   ├── tool.json     # 工具定义（Function Calling 参数描述）
+│   └── run.py        # 工具执行脚本（通过 stdin 接收 JSON 参数）
+├── references/       # 参考资料（.md 文件，自动追加到 System Prompt）
+└── assets/           # 模板文件（.md 文件，自动追加到 System Prompt）
+```
+
+### SKILL.md 格式示例
+
+```markdown
+---
+name: 数据分析助手
+description: 帮助用户分析数据并生成报告
+icon: 📊
+pattern: pipeline
+tools:
+  - mysql_query
+  - calculate
+version: "1.0"
+---
+
+你是一个专业的数据分析助手...
+```
+
+### 内置 Skill 列表
+
+| Skill | 说明 | 工具 |
+|-------|------|------|
+| `calculate` | 数学计算 | Python 计算器 |
+| `create-skill` | 自动生成新 Skill | 文件写入 |
+| `current-time` | 获取当前时间 | Python 时间脚本 |
+| `execute-command` | 执行系统命令 | Shell 执行器 |
+| `file-explorer` | 文件目录浏览 | Go 原生实现 |
+| `http-request` | 发送 HTTP 请求 | Python requests |
+| `ip-lookup` | IP 归属地查询 | Go 原生实现 |
+| `mysql-query` | MySQL 数据库查询 | Python MySQL 客户端 |
+| `weather` | 天气查询 | Go 原生实现（百度地图 API）|
+| `write-file` | 写入文件 | Python 文件操作 |
+
+## 🔧 Function Calling 工具调用
+
+系统采用 **ReAct（Reason + Act）循环**架构，AI 可在单次对话中自主决策调用多个工具：
+
+1. AI 分析用户需求，决定调用哪些工具
+2. 并发执行所有工具调用
+3. 将工具结果反馈给 AI
+4. AI 根据结果继续推理或生成最终回复
+5. 最多循环 **5 轮**，超出后 AI 自动总结进度并提示用户继续
+
+工具通过扫描 `skills/*/scripts/tool.json` 自动注册，支持 Python / Shell / Node.js 脚本，参数通过 `stdin` 以 JSON 格式传入。
+
+## 📡 API 接口
+
+### 认证
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/auth/register` | 注册账户 |
+| POST | `/api/auth/login` | 登录（返回 JWT Token + Cookie）|
+| POST | `/api/auth/logout` | 登出 |
+| GET  | `/api/auth/me` | 获取当前用户信息及 Token 统计 |
+
+### 聊天
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/chat/stream` | 流式聊天（SSE），支持工具调用 |
+| POST | `/api/chat/history` | 获取会话历史 |
+| GET  | `/api/chat/sessions` | 列出会话列表 |
+| POST | `/api/chat/session/delete` | 删除会话 |
+| POST | `/api/chat/session/rename` | 重命名会话 |
+| GET  | `/api/chat/system-prompt` | 获取会话 System Prompt |
+| POST | `/api/chat/system-prompt` | 更新会话 System Prompt |
+
+### 模型 & 工具
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET  | `/api/models` | 获取可用模型列表（含 Ollama 实时拉取）|
+| GET  | `/api/tools` | 获取已注册工具列表 |
+
+### Skill 技能
+
+| 方法 | 路径 | 权限 | 说明 |
+|------|------|------|------|
+| GET  | `/api/skills` | 全部 | 列出可见 Skill |
+| POST | `/api/skills/create` | user/admin | 创建 Skill |
+| POST | `/api/skills/update?id=` | 仅本人/admin | 更新 Skill |
+| POST | `/api/skills/delete` | 仅本人/admin | 删除 Skill |
+| POST | `/api/skills/apply` | 全部 | 将 Skill 应用到会话 |
+| GET  | `/api/admin/skills/download?id=` | admin | 下载 Skill JSON |
+| POST | `/api/admin/skills/upload` | admin | 上传/导入 Skill |
+
+### SSE 流式事件类型
+
+```json
+{ "type": "chunk",       "content": "...", "thinking": "..." }   // 增量内容
+{ "type": "thought",     "content": "...", "step": 1 }           // AI 思考过程
+{ "type": "tool_call",   "tool_name": "...", "tool_args": "..." } // 工具调用
+{ "type": "tool_result", "tool_name": "...", "tool_result": "..." } // 工具结果
+{ "type": "done",        "total_tokens": 123 }                   // 完成
+{ "type": "error",       "error": "..." }                        // 错误
+```
+
+## ⚙️ 配置说明
+
+| 配置项 | 说明 | 默认值 |
+|--------|------|--------|
+| `custom.server.http_port` | HTTP 服务端口 | `8080` |
+| `custom.server.mcp_port` | MCP 服务端口 | `8001` |
+| `custom.model.name` | 默认模型名称 | `qwen-plus` |
+| `custom.model.type` | 模型类型（openai/local）| `openai` |
+| `custom.model.openai_base_url` | OpenAI 兼容接口地址 | DashScope |
+| `custom.model.openai_api_key` | API Key | — |
+| `custom.model.ollama_url` | Ollama 服务地址 | `http://localhost:11434` |
+| `custom.model.max_context_length` | 最大上下文长度 | `4096` |
+
+## 🛠️ 开发指南
+
+### 添加新 Skill
+
+1. 在 `skills/` 下创建新目录，如 `skills/my-skill/`
+2. 创建 `SKILL.md`（含 YAML front matter）
+3. 创建 `scripts/tool.json` 定义工具参数
+4. 创建 `scripts/run.py`（或 `.sh` / `.js`）实现工具逻辑
+5. 重启服务，工具自动注册，Skill 自动加载
+
+### 接入新 AI 模型
+
+实现 `internal/domain/model/Generator` 接口：
+
+```go
+type Generator interface {
+    Generate(ctx context.Context, prompt Prompt) (*Response, error)
+    GenerateStreamWithMessages(ctx context.Context, messages []Message) (<-chan StreamChunk, error)
+    GenerateWithTools(ctx context.Context, messages []Message, tools []ToolDefinition) (*ToolCallResponse, error)
+}
+```
+
+## 🔒 安全说明
+
+- 脚本执行有路径白名单校验，防止路径穿越攻击
+- 单次脚本执行超时限制：30 秒
+- 脚本输出大小限制：512 KB
+- 进程组隔离，超时后 kill 整个子进程树
+- JWT Token 认证，支持 Cookie 和 Authorization Header
+- 游客会话定期自动清理
+
+## 📄 许可证
+
+MIT License
