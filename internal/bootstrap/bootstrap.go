@@ -9,6 +9,7 @@ import (
 
 	"aiProject/internal/application"
 	"aiProject/internal/config"
+	"aiProject/internal/domain/a2a"
 	domain_model "aiProject/internal/domain/model"
 	"aiProject/internal/infrastructure/database"
 	infra_model "aiProject/internal/infrastructure/model"
@@ -211,6 +212,45 @@ func newModelGeneratorByName(cfg *config.Config, modelName string) domain_model.
 	return infra_model.NewOpenAIGenerator(cfg.Model.OpenAIBaseURL, cfg.Model.OpenAIAPIKey, modelName)
 }
 
+// buildAgentCard 根据配置构建 AgentCard
+func buildAgentCard(appConfig *config.Config) *a2a.AgentCard {
+	serverPort := "8080"
+	if appConfig != nil && appConfig.Server.HTTPPort != "" {
+		serverPort = appConfig.Server.HTTPPort
+	}
+	return &a2a.AgentCard{
+		ProtocolVersion: "0.1",
+		Name:            "AI Agent",
+		Description:     "一个支持多工具调用的智能对话 Agent，可以帮助你查询天气、搜索信息、执行代码等任务。",
+		Version:         "1.0.0",
+		URL:             "http://localhost:" + serverPort + "/a2a/tasks/send",
+		Capabilities: a2a.AgentCapabilities{
+			Streaming:    true,
+			MultiTurn:   true,
+			ToolCalling: true,
+		},
+		Skills: []a2a.AgentSkill{
+			{
+				ID:          "general_chat",
+				Name:        "通用对话",
+				Description: "支持多轮对话，可以回答各类问题",
+				Tags:        []string{"chat", "general"},
+				Examples:    []string{"你好", "帮我写一段代码", "解释一下量子计算"},
+			},
+			{
+				ID:          "tool_calling",
+				Name:        "工具调用",
+				Description: "可以调用天气查询、地图搜索、代码执行等工具",
+				Tags:        []string{"tools", "weather", "search", "code"},
+				Examples:    []string{"今天北京天气怎么样", "帮我搜索最近的咖啡店"},
+			},
+		},
+		Provider: &a2a.AgentProvider{
+			Organization: "aiProject",
+		},
+	}
+}
+
 // InitComponents 初始化应用组件，返回 ChatHandler 和 ChatService
 func InitComponents(appConfig *config.Config) (*http_handler.ChatHandler, *application.ChatService) {
 	// 构建模型工厂函数（支持动态切换模型）
@@ -244,6 +284,12 @@ func InitComponents(appConfig *config.Config) (*http_handler.ChatHandler, *appli
 	return handler, chatService
 }
 
+// InitA2AService 初始化 A2A 服务
+func InitA2AService(chatService *application.ChatService, appConfig *config.Config) *application.A2AService {
+	agentCard := buildAgentCard(appConfig)
+	return application.NewA2AService(chatService, agentCard)
+}
+
 // InitMCPServer 初始化 MCP Server
 func InitMCPServer(chatService *application.ChatService, appConfig *config.Config) *mcp.Server {
 	mcpPort := appConfig.Server.MCPPort
@@ -255,7 +301,7 @@ func InitMCPServer(chatService *application.ChatService, appConfig *config.Confi
 }
 
 // RegisterRoutes 注册所有 HTTP 路由（带中间件链）
-func RegisterRoutes(chatHandler *http_handler.ChatHandler, appConfig *config.Config) {
+func RegisterRoutes(chatHandler *http_handler.ChatHandler, appConfig *config.Config, a2aService *application.A2AService) {
 	mux := http.NewServeMux()
 
 	// 会话 & 聊天接口
@@ -276,6 +322,23 @@ func RegisterRoutes(chatHandler *http_handler.ChatHandler, appConfig *config.Con
 	mux.HandleFunc("/api/auth/login", chatHandler.HandleLogin)
 	mux.HandleFunc("/api/auth/logout", chatHandler.HandleLogout)
 	mux.HandleFunc("/api/auth/me", chatHandler.HandleMe)
+	// A2A 协议接口
+	if a2aService != nil {
+		a2aHandler := http_handler.NewA2AHandler(a2aService)
+		// AgentCard 发现接口
+		mux.HandleFunc("/.well-known/agent.json", a2aHandler.HandleAgentCard)
+		// 任务提交接口
+		mux.HandleFunc("/a2a/tasks/send", a2aHandler.HandleTaskSend)
+		// 任务状态查询 & SSE 流式订阅（通过路径后缀区分）
+		mux.HandleFunc("/a2a/tasks/", func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasSuffix(r.URL.Path, "/stream") {
+				a2aHandler.HandleTaskStream(w, r)
+			} else {
+				a2aHandler.HandleTaskGet(w, r)
+			}
+		})
+	}
+
 	// 前端静态文件
 	mux.Handle("/", http.FileServer(http.Dir("./frontend")))
 

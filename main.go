@@ -21,8 +21,11 @@ func main() {
 	// 初始化应用组件（数据库、仓储、服务、Handler）
 	chatHandler, chatService := bootstrap.InitComponents(appConfig)
 
-	// 注册 HTTP 路由
-	bootstrap.RegisterRoutes(chatHandler, appConfig)
+	// 初始化 A2A 服务
+	a2aService := bootstrap.InitA2AService(chatService, appConfig)
+
+	// 注册 HTTP 路由（含 A2A 接口）
+	bootstrap.RegisterRoutes(chatHandler, appConfig, a2aService)
 
 	// 初始化 MCP Server
 	mcpServer := bootstrap.InitMCPServer(chatService, appConfig)
