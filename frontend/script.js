@@ -113,15 +113,12 @@ const app = createApp({
         const skillsVisible = ref(false);
         const skillsLoading = ref(false);
         const skillsList = ref([]);
-        const skillPreviewVisible = ref(false);
-        const previewingSkill = ref(null);
         const skillEditVisible = ref(false);
         const editingSkill = ref(null); // null=新建，否则=编辑
         const skillSaving = ref(false);
-        const skillForm = ref({ name: '', description: '', icon: '🤖', system_prompt: '', is_public: false });
+        const skillForm = ref({ name: '', description: '', icon: '🤖', system_prompt: '', tools: [], is_public: false });
         const skillEmojis = ['🤖', '💻', '🌐', '📊', '✍️', '🗄️', '📋', '🔍', '🎯', '🧠', '⚡', '🎨', '📚', '🔧', '🚀'];
-        const systemSkills = computed(() => skillsList.value.filter(s => s.user_id === 0));
-        const mySkills = computed(() => skillsList.value.filter(s => s.user_id !== 0));
+        const mySkills = computed(() => skillsList.value);
 
         // 停止生成控制器
         let abortController = null;
@@ -759,11 +756,6 @@ const app = createApp({
             }
         }
 
-        function previewSkill(sk) {
-            previewingSkill.value = sk;
-            skillPreviewVisible.value = true;
-        }
-
         async function applySkill(sk) {
             if (!sk) return;
             // 如果有当前会话，持久化到数据库
@@ -776,8 +768,15 @@ const app = createApp({
                     });
                 } catch (e) {}
             }
-            // 无论如何都更新内存中的 system prompt
+            // 更新内存中的 system prompt
             currentSystemPrompt.value = sk.system_prompt;
+            // 如果技能绑定了工具，同步启用这些工具
+            if (sk.tools && sk.tools.length > 0) {
+                const validNames = availableTools.value.map(t => t.name);
+                const toolsToEnable = sk.tools.filter(n => validNames.includes(n));
+                enabledTools.value = toolsToEnable;
+                localStorage.setItem('enabledTools', JSON.stringify(toolsToEnable));
+            }
             skillsVisible.value = false;
             ElMessage({ message: `✅ 已应用技能「${sk.name}」`, type: 'success', duration: 2000 });
         }
@@ -795,6 +794,7 @@ const app = createApp({
                 description: sk.description,
                 icon: sk.icon,
                 system_prompt: sk.system_prompt,
+                tools: sk.tools ? [...sk.tools] : [],
                 is_public: sk.is_public,
             };
             skillEditVisible.value = true;
@@ -957,14 +957,13 @@ const app = createApp({
             suggestions, useSuggestion,
             historyVisible, historyLoading, historySessions, historyDetail, detailLoading,
             systemPromptVisible, systemPromptInput, systemPromptSaving, currentSystemPrompt,
-            skillsVisible, skillsLoading, skillsList, systemSkills, mySkills,
-            skillPreviewVisible, previewingSkill,
+            skillsVisible, skillsLoading, skillsList, mySkills,
             skillEditVisible, editingSkill, skillSaving, skillForm, skillEmojis,
             newSession, clearMessages, sendMessage, onKeydown, autoResize,
             onModelChange, goLogin, logout,
             openSessionDetail, loadSessionDetail,
             openSystemPrompt, saveSystemPrompt,
-            applySkill, previewSkill, openCreateSkill, editSkill, saveSkill, deleteSkill,
+            applySkill, openCreateSkill, editSkill, saveSkill, deleteSkill,
             adminDownloadSkill, adminUploadSkillTrigger,
             availableTools, enabledTools, toolsLoading, loadTools, toggleTool, isToolEnabled, getToolIcon,
             renderMarkdown, copyMessage, stopGenerate, regenerate,

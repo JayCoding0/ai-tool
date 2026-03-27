@@ -3,8 +3,6 @@ package application
 import (
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
 
 	"aiProject/internal/domain/model"
 	"aiProject/internal/domain/skill"
@@ -98,8 +96,8 @@ func (s *SkillService) UpdateSkill(ctx context.Context, req UpdateSkillRequest) 
 	if sk == nil {
 		return nil, errors.New("技能不存在")
 	}
-	// admin 可修改任意技能；普通用户只能修改自己的（不能修改预设和他人的）
-	if !req.IsAdmin && (sk.IsSystem() || !sk.IsOwnedBy(req.UserID)) {
+	// admin 可修改任意技能；普通用户只能修改自己的
+	if !req.IsAdmin && !sk.IsOwnedBy(req.UserID) {
 		return nil, errors.New("无权修改此技能")
 	}
 
@@ -126,7 +124,7 @@ func (s *SkillService) DeleteSkill(ctx context.Context, id skill.SkillID, userID
 	if sk == nil {
 		return errors.New("技能不存在")
 	}
-	if !isAdmin && (sk.IsSystem() || !sk.IsOwnedBy(userID)) {
+	if !isAdmin && !sk.IsOwnedBy(userID) {
 		return errors.New("无权删除此技能")
 	}
 	return s.skillRepo.Delete(ctx, id)
@@ -143,38 +141,4 @@ func (s *SkillService) ListSkills(ctx context.Context, userID int64, isAdmin boo
 // GetSkill 获取技能详情
 func (s *SkillService) GetSkill(ctx context.Context, id skill.SkillID) (*skill.Skill, error) {
 	return s.skillRepo.FindByID(ctx, id)
-}
-
-// SyncSkillsFromDirectory 从项目 skills/ 目录同步内置 Skill 到数据库
-func (s *SkillService) SyncSkillsFromDirectory(ctx context.Context, skillsDir string) error {
-	entries, err := os.ReadDir(skillsDir)
-	if err != nil {
-		return nil
-	}
-
-	existing, _ := s.skillRepo.ListSystem(ctx)
-	existingMap := make(map[string]*skill.Skill)
-	for _, sk := range existing {
-		existingMap[sk.Name] = sk
-	}
-
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		dirPath := filepath.Join(skillsDir, entry.Name())
-		sk, err := skill.LoadFromDirectory(dirPath)
-		if err != nil {
-			continue
-		}
-
-		if old, exists := existingMap[sk.Name]; exists {
-			sk.ID = old.ID
-			sk.UserID = old.UserID
-			_ = s.skillRepo.Update(ctx, sk)
-		} else {
-			_ = s.skillRepo.Create(ctx, sk)
-		}
-	}
-	return nil
 }

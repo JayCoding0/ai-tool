@@ -949,15 +949,15 @@
         </div>
     </div>
 
-    <!-- Skills 技能库抒屉 -->
-    <el-drawer v-model="skillsVisible" title="⚡ Skills 技能库" size="520px" direction="rtl">
+    <!-- 工具 & 技能抽屉 -->
+    <el-drawer v-model="skillsVisible" title="⚡ 工具 & 技能" size="520px" direction="rtl">
 
-        <!-- 工具开关区域（无需登录，全局可用） -->
-        <div style="margin-bottom:20px;padding:14px;background:#f7f8fa;border-radius:10px;border:1px solid #eee;">
+        <!-- 工具开关区域 -->
+        <div style="margin-bottom:20px;">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
                 <div style="font-size:13px;font-weight:600;color:#333;">
                     🔧 工具开关
-                    <span style="font-size:11px;color:#999;font-weight:400;margin-left:6px;">无需登录 · 模型将自主判断调用已启用的工具</span>
+                    <span style="font-size:11px;color:#999;font-weight:400;margin-left:6px;">模型将自主判断调用已启用的工具</span>
                 </div>
                 <el-tag v-if="enabledTools.length > 0" size="small" type="success">{{ enabledTools.length }} 已启用</el-tag>
             </div>
@@ -983,19 +983,26 @@
             </div>
         </div>
 
+        <el-divider style="margin:16px 0;" />
+
         <!-- 技能列表区域 -->
         <div style="margin-bottom:12px;">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-                <div style="font-size:13px;color:#666;">选择技能，AI 将按技能设定的角色回答</div>
-                <el-button size="small" type="primary" @click="isLoggedIn ? openCreateSkill() : (ElMessage({message:'请先登录后再创建技能',type:'warning'}), goLogin())">
-                    <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right:4px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 5v14M5 12h14"/></svg>
-                    新建技能
-                </el-button>
-                <!-- admin 专用：上传导入 -->
-                <el-button v-if="isAdmin" size="small" @click="adminUploadSkillTrigger()">
-                    <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right:4px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
-                    导入
-                </el-button>
+                <div style="font-size:13px;font-weight:600;color:#333;">
+                    🤖 技能
+                    <span style="font-size:11px;color:#999;font-weight:400;margin-left:6px;">选择技能，AI 将按设定的角色回答</span>
+                </div>
+                <div style="display:flex;gap:6px;">
+                    <el-button size="small" type="primary" @click="isLoggedIn ? openCreateSkill() : (ElMessage({message:'请先登录后再创建技能',type:'warning'}), goLogin())">
+                        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right:4px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 5v14M5 12h14"/></svg>
+                        新建
+                    </el-button>
+                    <!-- admin 专用：上传导入 -->
+                    <el-button v-if="isAdmin" size="small" @click="adminUploadSkillTrigger()">
+                        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right:4px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+                        导入
+                    </el-button>
+                </div>
             </div>
         </div>
 
@@ -1003,59 +1010,22 @@
         <div v-if="skillsLoading" style="text-align:center;padding:60px;color:#bbb;">
             <el-icon class="is-loading" style="font-size:24px;"><Loading /></el-icon>
         </div>
-        <div v-else-if="skillsList.length === 0" style="text-align:center;padding:60px;color:#bbb;font-size:13px;">暂无技能</div>
-        <div v-else>
-            <!-- 系统预设 -->
-            <div style="font-size:11px;color:#999;margin-bottom:8px;font-weight:500;">🏛️ 系统预设</div>
-            <div v-for="sk in systemSkills" :key="sk.id" class="skill-card" @click="applySkill(sk)">
+        <div v-else-if="skillsList.length === 0" style="text-align:center;padding:40px;color:#bbb;font-size:13px;">暂无技能，点击「新建」创建你的第一个技能</div>
+        <div v-else style="display:flex;flex-direction:column;gap:6px;">
+            <div v-for="sk in mySkills" :key="sk.id" class="skill-card" @click="applySkill(sk)">
                 <div class="skill-icon">{{ sk.icon }}</div>
                 <div class="skill-info">
-                    <div class="skill-name">{{ sk.name }}</div>
+                    <div class="skill-name">{{ sk.name }} <el-tag v-if="sk.is_public" size="small" type="success" style="margin-left:4px;">公开</el-tag></div>
                     <div class="skill-desc">{{ sk.description }}</div>
                 </div>
                 <div class="skill-actions">
-                    <el-button size="small" @click.stop="previewSkill(sk)">预览</el-button>
-                    <!-- admin 可下载和编辑预设技能 -->
+                    <el-button size="small" @click.stop="editSkill(sk)">编辑</el-button>
                     <el-button v-if="isAdmin" size="small" @click.stop="adminDownloadSkill(sk)">下载</el-button>
-                    <el-button v-if="isAdmin" size="small" type="warning" plain @click.stop="editSkill(sk)">编辑</el-button>
-                    <el-button v-if="isAdmin" size="small" type="danger" plain @click.stop="deleteSkill(sk)">删除</el-button>
+                    <el-button size="small" type="danger" plain @click.stop="deleteSkill(sk)">删除</el-button>
                 </div>
             </div>
-
-            <!-- 我的技能 -->
-            <template v-if="mySkills.length > 0">
-                <div style="font-size:11px;color:#999;margin:16px 0 8px;font-weight:500;">👤 我的技能</div>
-                <div v-for="sk in mySkills" :key="sk.id" class="skill-card" @click="applySkill(sk)">
-                    <div class="skill-icon">{{ sk.icon }}</div>
-                    <div class="skill-info">
-                        <div class="skill-name">{{ sk.name }} <el-tag v-if="sk.is_public" size="small" type="success" style="margin-left:4px;">公开</el-tag></div>
-                        <div class="skill-desc">{{ sk.description }}</div>
-                    </div>
-                    <div class="skill-actions">
-                        <el-button size="small" @click.stop="previewSkill(sk)">预览</el-button>
-                        <!-- 自己的技能可编辑/删除；admin 可下载 -->
-                        <el-button size="small" @click.stop="editSkill(sk)">编辑</el-button>
-                        <el-button v-if="isAdmin" size="small" @click.stop="adminDownloadSkill(sk)">下载</el-button>
-                        <el-button size="small" type="danger" plain @click.stop="deleteSkill(sk)">删除</el-button>
-                    </div>
-                </div>
-            </template>
         </div>
     </el-drawer>
-
-    <!-- 技能预览弹窗 -->
-    <el-dialog v-model="skillPreviewVisible" :title="previewingSkill ? previewingSkill.icon + ' ' + previewingSkill.name : ''" width="560px">
-        <div v-if="previewingSkill">
-            <div style="font-size:12px;color:#999;margin-bottom:8px;">技能描述</div>
-            <div style="font-size:13px;color:#333;margin-bottom:16px;padding:10px 12px;background:#f7f8fa;border-radius:8px;">{{ previewingSkill.description }}</div>
-            <div style="font-size:12px;color:#999;margin-bottom:8px;">System Prompt（SKILL.md 内容）</div>
-            <pre style="font-size:13px;color:#333;background:#f7f8fa;border-radius:8px;padding:12px 14px;white-space:pre-wrap;word-break:break-word;line-height:1.7;margin:0;">{{ previewingSkill.system_prompt }}</pre>
-        </div>
-        <template #footer>
-            <el-button @click="skillPreviewVisible = false">关闭</el-button>
-            <el-button type="primary" @click="applySkill(previewingSkill); skillPreviewVisible = false">应用此技能</el-button>
-        </template>
-    </el-dialog>
 
     <!-- 创建/编辑技能弹窗 -->
     <el-dialog v-model="skillEditVisible" :title="editingSkill ? '编辑技能' : '新建技能'" width="600px" :close-on-click-modal="false">
@@ -1075,7 +1045,7 @@
                 <el-input v-model="skillForm.description" placeholder="简短描述这个技能的用途" maxlength="200" show-word-limit />
             </el-form-item>
             <el-form-item label="System Prompt">
-                <div style="font-size:11px;color:#999;margin-bottom:6px;">这是 SKILL.md 的核心内容，定义 AI 的角色和行为规范</div>
+                <div style="font-size:11px;color:#999;margin-bottom:6px;">定义 AI 的角色和行为规范</div>
                 <el-input
                     v-model="skillForm.system_prompt"
                     type="textarea"
@@ -1085,6 +1055,18 @@
                     show-word-limit
                     resize="none"
                 />
+            </el-form-item>
+            <el-form-item label="绑定工具">
+                <div style="font-size:11px;color:#999;margin-bottom:6px;">应用此技能时自动启用这些工具</div>
+                <div style="display:flex;flex-wrap:wrap;gap:8px;">
+                    <el-tag
+                        v-for="tool in availableTools" :key="tool.name"
+                        :type="skillForm.tools && skillForm.tools.includes(tool.name) ? 'success' : 'info'"
+                        style="cursor:pointer;"
+                        @click="skillForm.tools = skillForm.tools || []; const idx = skillForm.tools.indexOf(tool.name); idx === -1 ? skillForm.tools.push(tool.name) : skillForm.tools.splice(idx, 1)"
+                    >{{ getToolIcon(tool.name) }} {{ tool.display_name || tool.name }}</el-tag>
+                </div>
+                <div v-if="availableTools.length === 0" style="font-size:12px;color:#bbb;">暂无可用工具</div>
             </el-form-item>
             <el-form-item label="公开技能">
                 <el-switch v-model="skillForm.is_public" />

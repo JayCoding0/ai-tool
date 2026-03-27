@@ -21,7 +21,4 @@ type Repository interface {
 
 	// ListAll 列出所有技能（admin 专用）
 	ListAll(ctx context.Context) ([]*Skill, error)
-
-	// ListSystem 列出所有系统预设技能
-	ListSystem(ctx context.Context) ([]*Skill, error)
 }

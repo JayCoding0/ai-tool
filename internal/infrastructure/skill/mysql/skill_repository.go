@@ -91,13 +91,13 @@ func (r *SkillRepository) FindByID(ctx context.Context, id skill.SkillID) (*skil
 	return &s, nil
 }
 
-// ListByUser 列出用户可见的技能（系统预设 + 公开 + 自己的）
+// ListByUser 列出用户可见的技能（公开 + 自己的）
 func (r *SkillRepository) ListByUser(ctx context.Context, userID int64) ([]*skill.Skill, error) {
 	query := `
 		SELECT id, user_id, name, description, icon, system_prompt, COALESCE(pattern,''), COALESCE(tools,'[]'), is_public, created_at, updated_at
 		FROM skills
-		WHERE user_id = 0 OR is_public = 1 OR user_id = ?
-		ORDER BY user_id ASC, id ASC
+		WHERE is_public = 1 OR user_id = ?
+		ORDER BY id ASC
 	`
 	return r.querySkills(ctx, query, userID)
 }
@@ -108,17 +108,6 @@ func (r *SkillRepository) ListAll(ctx context.Context) ([]*skill.Skill, error) {
 		SELECT id, user_id, name, description, icon, system_prompt, COALESCE(pattern,''), COALESCE(tools,'[]'), is_public, created_at, updated_at
 		FROM skills
 		ORDER BY user_id ASC, id ASC
-	`
-	return r.querySkills(ctx, query)
-}
-
-// ListSystem 列出所有系统预设技能
-func (r *SkillRepository) ListSystem(ctx context.Context) ([]*skill.Skill, error) {
-	query := `
-		SELECT id, user_id, name, description, icon, system_prompt, COALESCE(pattern,''), COALESCE(tools,'[]'), is_public, created_at, updated_at
-		FROM skills
-		WHERE user_id = 0
-		ORDER BY id ASC
 	`
 	return r.querySkills(ctx, query)
 }

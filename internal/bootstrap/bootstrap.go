@@ -1,7 +1,6 @@
 package bootstrap
 
 import (
-	"context"
 	"net/http"
 	"runtime/debug"
 	"strings"
@@ -245,15 +244,6 @@ func InitComponents(appConfig *config.Config) (*http_handler.ChatHandler, *appli
 	skillService.SetModelFactory(modelFactory, appConfig.Model.Name)
 	// 从 skills/*/scripts/ 目录加载并注册工具
 	infra_tools.LoadToolsFromSkillsDir("skills")
-
-	// 同步 skills/ 目录中的内置 Skill 到数据库
-	go func() {
-		if err := skillService.SyncSkillsFromDirectory(context.Background(), "skills"); err != nil {
-			shared.GetLogger().Warn("同步 skills 目录失败", zap.Error(err))
-		} else {
-			shared.GetLogger().Info("skills 目录同步完成")
-		}
-	}()
 	handler := http_handler.NewChatHandler(chatService, authService, appConfig)
 	handler.SetSkillService(skillService)
 	return handler, chatService
