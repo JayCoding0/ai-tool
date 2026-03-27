@@ -460,6 +460,57 @@ body {
     max-height: 200px; overflow-y: auto;
 }
 
+/* Agent 调用链专属样式 */
+.agent-call-header {
+    background: linear-gradient(135deg, #ede9fe 0%, #dbeafe 100%) !important;
+    border-left: 3px solid #7c3aed !important;
+}
+.agent-name-badge {
+    display: inline-block;
+    background: #7c3aed;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 1px 8px;
+    border-radius: 10px;
+    margin-left: 4px;
+    letter-spacing: 0.3px;
+}
+.agent-call-body {
+    background: #faf5ff;
+    border-top: 1px solid #e9d5ff !important;
+}
+.agent-task-text {
+    background: #f3f4f6;
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 12px;
+    color: #374151;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.agent-reply-text {
+    background: #fff;
+    border: 1px solid #e9d5ff;
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: 12px;
+    color: #1f2937;
+    line-height: 1.7;
+    max-height: 300px;
+    overflow-y: auto;
+}
+.agent-reply-text p { margin: 0 0 6px; }
+.agent-reply-text p:last-child { margin-bottom: 0; }
+.agent-waiting {
+    font-size: 11px;
+    color: #9ca3af;
+    padding: 4px 0;
+    display: flex;
+    align-items: center;
+}
+
 /* 思考块 */
 .think-block {
     background: #fafafa;

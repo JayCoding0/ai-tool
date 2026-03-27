@@ -209,30 +209,63 @@
                                             </template>
                                             <!-- 工具调用步骤 -->
                                             <template v-else-if="step.type === 'action'">
-                                                <div class="react-step-header" @click="step.expanded = !step.expanded" style="cursor:pointer;">
-                                                    <span class="react-step-icon">
-                                                        <div v-if="step.status === 'calling'" class="tool-spinner" style="width:12px;height:12px;border-width:1.5px;flex-shrink:0;"></div>
-                                                        <span v-else class="tool-done-icon">✓</span>
-                                                    </span>
-                                                    <span class="react-step-label">
-                                                        <span v-if="step.status === 'calling'">调用工具：</span>
-                                                        <span v-else>已调用：</span>
-                                                        <strong>{{ step.toolName }}</strong>
-                                                        <span v-if="step.argsDisplay" class="react-step-args">{{ step.argsDisplay }}</span>
-                                                    </span>
-                                                    <span class="react-round-badge">第 {{ step.step }} 轮</span>
-                                                    <span class="react-step-toggle">{{ step.expanded ? '▲' : '▼' }}</span>
-                                                </div>
-                                                <div v-if="step.expanded" class="react-step-body">
-                                                    <div v-if="step.toolArgs" class="react-detail-block">
-                                                        <div class="react-detail-label">📥 输入参数</div>
-                                                        <pre class="react-detail-pre">{{ step.toolArgs }}</pre>
+                                                <!-- call_agent 专属样式：子 Agent 调用链 -->
+                                                <template v-if="step.isAgentCall">
+                                                    <div class="react-step-header agent-call-header" @click="step.expanded = !step.expanded" style="cursor:pointer;">
+                                                        <span class="react-step-icon">
+                                                            <div v-if="step.status === 'calling'" class="tool-spinner" style="width:12px;height:12px;border-width:1.5px;flex-shrink:0;"></div>
+                                                            <span v-else class="tool-done-icon">✓</span>
+                                                        </span>
+                                                        <span class="react-step-label">
+                                                            <span v-if="step.status === 'calling'">🤖 正在调用子 Agent：</span>
+                                                            <span v-else>🤖 已调用子 Agent：</span>
+                                                            <strong class="agent-name-badge">{{ step.agentCallName }}</strong>
+                                                        </span>
+                                                        <span class="react-round-badge">第 {{ step.step }} 轮</span>
+                                                        <span class="react-step-toggle">{{ step.expanded ? '▲' : '▼' }}</span>
                                                     </div>
-                                                    <div v-if="step.result" class="react-detail-block">
-                                                        <div class="react-detail-label">📤 执行结果</div>
-                                                        <pre class="react-detail-pre">{{ step.result }}</pre>
+                                                    <div v-if="step.expanded" class="react-step-body agent-call-body">
+                                                        <div v-if="step.agentCallMsg" class="react-detail-block">
+                                                            <div class="react-detail-label">📨 发送给子 Agent 的任务</div>
+                                                            <div class="agent-task-text">{{ step.agentCallMsg }}</div>
+                                                        </div>
+                                                        <div v-if="step.result" class="react-detail-block">
+                                                            <div class="react-detail-label">💬 子 Agent 回复</div>
+                                                            <div class="agent-reply-text" v-html="renderMarkdown(step.result)"></div>
+                                                        </div>
+                                                        <div v-else-if="step.status === 'calling'" class="agent-waiting">
+                                                            <div class="tool-spinner" style="width:10px;height:10px;border-width:1.5px;display:inline-block;vertical-align:middle;margin-right:6px;"></div>
+                                                            等待子 Agent 响应...
+                                                        </div>
                                                     </div>
-                                                </div>
+                                                </template>
+                                                <!-- 普通工具调用样式 -->
+                                                <template v-else>
+                                                    <div class="react-step-header" @click="step.expanded = !step.expanded" style="cursor:pointer;">
+                                                        <span class="react-step-icon">
+                                                            <div v-if="step.status === 'calling'" class="tool-spinner" style="width:12px;height:12px;border-width:1.5px;flex-shrink:0;"></div>
+                                                            <span v-else class="tool-done-icon">✓</span>
+                                                        </span>
+                                                        <span class="react-step-label">
+                                                            <span v-if="step.status === 'calling'">调用工具：</span>
+                                                            <span v-else>已调用：</span>
+                                                            <strong>{{ step.toolName }}</strong>
+                                                            <span v-if="step.argsDisplay" class="react-step-args">{{ step.argsDisplay }}</span>
+                                                        </span>
+                                                        <span class="react-round-badge">第 {{ step.step }} 轮</span>
+                                                        <span class="react-step-toggle">{{ step.expanded ? '▲' : '▼' }}</span>
+                                                    </div>
+                                                    <div v-if="step.expanded" class="react-step-body">
+                                                        <div v-if="step.toolArgs" class="react-detail-block">
+                                                            <div class="react-detail-label">📥 输入参数</div>
+                                                            <pre class="react-detail-pre">{{ step.toolArgs }}</pre>
+                                                        </div>
+                                                        <div v-if="step.result" class="react-detail-block">
+                                                            <div class="react-detail-label">📤 执行结果</div>
+                                                            <pre class="react-detail-pre">{{ step.result }}</pre>
+                                                        </div>
+                                                    </div>
+                                                </template>
                                             </template>
                                         </div>
                                     </div>

@@ -342,10 +342,17 @@ const app = createApp({
                         } else if (event.type === 'tool_call') {
                             const reactSteps = messages.value[typingIdx].reactSteps || [];
                             let argsDisplay = '';
+                            let argsObj = {};
                             try {
-                                const argsObj = JSON.parse(event.tool_args || '{}');
+                                argsObj = JSON.parse(event.tool_args || '{}');
                                 argsDisplay = Object.entries(argsObj).map(([k,v]) => `${k}: ${v}`).join(', ');
                             } catch(e) { argsDisplay = event.tool_args || ''; }
+
+                            // call_agent 工具特殊处理：提取子 Agent 名称和任务描述
+                            const isAgentCall = event.tool_name === 'call_agent';
+                            const agentCallName = isAgentCall ? (argsObj.agent_name || '') : '';
+                            const agentCallMsg  = isAgentCall ? (argsObj.message || '') : '';
+
                             reactSteps.push({
                                 type: 'action',
                                 step: event.step || reactSteps.length + 1,
@@ -357,6 +364,10 @@ const app = createApp({
                                 status: 'calling',
                                 result: '',
                                 expanded: false,
+                                // call_agent 专属字段
+                                isAgentCall,
+                                agentCallName,
+                                agentCallMsg,
                             });
                             messages.value[typingIdx] = { ...messages.value[typingIdx], reactSteps: [...reactSteps], streaming: true };
                             scrollToBottom();

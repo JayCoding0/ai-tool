@@ -15,6 +15,9 @@ const TOOL_ICON_MAP = {
     'web_search': '🔎',
     'send_email': '📧',
     'read_file': '📖',
+    'call_agent': '🤖',
+    'search': '🔎',
+    'map_search': '🗺️',
 };
 
 function getToolIcon(name) {
