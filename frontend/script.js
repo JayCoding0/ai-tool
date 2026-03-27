@@ -109,16 +109,8 @@ const app = createApp({
         const systemPromptSaving = ref(false);
         const currentSystemPrompt = ref(''); // 当前会话已保存的 system prompt
 
-        // Skills 技能库
+        // 工具 & 技能抽屉
         const skillsVisible = ref(false);
-        const skillsLoading = ref(false);
-        const skillsList = ref([]);
-        const skillEditVisible = ref(false);
-        const editingSkill = ref(null); // null=新建，否则=编辑
-        const skillSaving = ref(false);
-        const skillForm = ref({ name: '', description: '', icon: '🤖', system_prompt: '', tools: [], is_public: false });
-        const skillEmojis = ['🤖', '💻', '🌐', '📊', '✍️', '🗄️', '📋', '🔍', '🎯', '🧠', '⚡', '🎨', '📚', '🔧', '🚀'];
-        const mySkills = computed(() => skillsList.value);
 
         // 停止生成控制器
         let abortController = null;
@@ -143,9 +135,9 @@ const app = createApp({
             return toolIconMap[name] || '🔧';
         }
 
-        // 工具列表（自动注册，前端控制启用）
+        // 工具列表（自动注册，默认全部启用）
         const availableTools = ref([]);  // 所有已注册工具
-        const enabledTools = ref(JSON.parse(localStorage.getItem('enabledTools') || '[]')); // 已启用工具名称列表
+        const enabledTools = ref([]); // 已启用工具名称列表（与 availableTools 同步）
         const toolsLoading = ref(false);
 
         async function loadTools() {
@@ -155,15 +147,8 @@ const app = createApp({
                 if (resp.ok) {
                     const data = await resp.json();
                     availableTools.value = data.tools || [];
-                    // 只有工具列表非空时才过滤，避免接口异常时误清空已启用工具
-                    if (availableTools.value.length > 0) {
-                        const validNames = availableTools.value.map(t => t.name);
-                        const filtered = enabledTools.value.filter(n => validNames.includes(n));
-                        if (filtered.length !== enabledTools.value.length) {
-                            enabledTools.value = filtered;
-                            localStorage.setItem('enabledTools', JSON.stringify(filtered));
-                        }
-                    }
+                    // 默认全部启用
+                    enabledTools.value = availableTools.value.map(t => t.name);
                 }
             } catch (e) {}
             toolsLoading.value = false;
@@ -176,7 +161,6 @@ const app = createApp({
             } else {
                 enabledTools.value.splice(idx, 1);
             }
-            localStorage.setItem('enabledTools', JSON.stringify(enabledTools.value));
         }
 
         function isToolEnabled(toolName) {
@@ -741,161 +725,7 @@ const app = createApp({
             });
         }
 
-        // ===== Skills 技能库 =====
-        async function loadSkills() {
-            skillsLoading.value = true;
-            try {
-                const resp = await fetch('/api/skills', { headers: getAuthHeaders() });
-                if (!resp.ok) throw new Error();
-                const data = await resp.json();
-                skillsList.value = data.skills || [];
-            } catch (e) {
-                skillsList.value = [];
-            } finally {
-                skillsLoading.value = false;
-            }
-        }
 
-        async function applySkill(sk) {
-            if (!sk) return;
-            // 如果有当前会话，持久化到数据库
-            if (sessionId.value) {
-                try {
-                    await fetch('/api/skills/apply', {
-                        method: 'POST',
-                        headers: getAuthHeaders(),
-                        body: JSON.stringify({ skill_id: sk.id, session_id: sessionId.value })
-                    });
-                } catch (e) {}
-            }
-            // 更新内存中的 system prompt
-            currentSystemPrompt.value = sk.system_prompt;
-            // 如果技能绑定了工具，同步启用这些工具
-            if (sk.tools && sk.tools.length > 0) {
-                const validNames = availableTools.value.map(t => t.name);
-                const toolsToEnable = sk.tools.filter(n => validNames.includes(n));
-                enabledTools.value = toolsToEnable;
-                localStorage.setItem('enabledTools', JSON.stringify(toolsToEnable));
-            }
-            skillsVisible.value = false;
-            ElMessage({ message: `✅ 已应用技能「${sk.name}」`, type: 'success', duration: 2000 });
-        }
-
-        function openCreateSkill() {
-            editingSkill.value = null;
-            skillForm.value = { name: '', description: '', icon: '🤖', system_prompt: '', is_public: false };
-            skillEditVisible.value = true;
-        }
-
-        function editSkill(sk) {
-            editingSkill.value = sk;
-            skillForm.value = {
-                name: sk.name,
-                description: sk.description,
-                icon: sk.icon,
-                system_prompt: sk.system_prompt,
-                tools: sk.tools ? [...sk.tools] : [],
-                is_public: sk.is_public,
-            };
-            skillEditVisible.value = true;
-        }
-
-        async function saveSkill() {
-            if (!skillForm.value.name.trim()) {
-                ElMessage({ message: '请填写技能名称', type: 'warning' }); return;
-            }
-            if (!skillForm.value.system_prompt.trim()) {
-                ElMessage({ message: '请填写 System Prompt', type: 'warning' }); return;
-            }
-            skillSaving.value = true;
-            try {
-                let resp;
-                if (editingSkill.value) {
-                    resp = await fetch(`/api/skills/update?id=${editingSkill.value.id}`, {
-                        method: 'POST',
-                        headers: getAuthHeaders(),
-                        body: JSON.stringify(skillForm.value)
-                    });
-                } else {
-                    resp = await fetch('/api/skills/create', {
-                        method: 'POST',
-                        headers: getAuthHeaders(),
-                        body: JSON.stringify(skillForm.value)
-                    });
-                }
-                if (!resp.ok) {
-                    const err = await resp.json();
-                    throw new Error(err.error || '保存失败');
-                }
-                skillEditVisible.value = false;
-                await loadSkills();
-                ElMessage({ message: editingSkill.value ? '技能已更新' : '技能已创建', type: 'success' });
-            } catch (e) {
-                ElMessage({ message: e.message || '保存失败', type: 'error' });
-            } finally {
-                skillSaving.value = false;
-            }
-        }
-
-        async function deleteSkill(sk) {
-            try {
-                await ElMessageBox.confirm(`确定要删除技能「${sk.name}」吗？`, '删除确认', {
-                    confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning'
-                });
-            } catch { return; }
-            try {
-                const resp = await fetch('/api/skills/delete', {
-                    method: 'POST',
-                    headers: getAuthHeaders(),
-                    body: JSON.stringify({ id: sk.id })
-                });
-                if (!resp.ok) throw new Error();
-                await loadSkills();
-                ElMessage({ message: '技能已删除', type: 'success' });
-            } catch (e) {
-                ElMessage({ message: '删除失败', type: 'error' });
-            }
-        }
-
-        // admin 下载技能
-        function adminDownloadSkill(sk) {
-            const url = `/api/admin/skills/download?id=${sk.id}`;
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `skill_${sk.id}_${sk.name}.json`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-        }
-
-        // admin 上传技能（触发文件选择）
-        function adminUploadSkillTrigger() {
-            const input = document.createElement('input');
-            input.type = 'file';
-            input.accept = '.json';
-            input.onchange = async (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-                try {
-                    const text = await file.text();
-                    const skillData = JSON.parse(text);
-                    const resp = await fetch('/api/admin/skills/upload', {
-                        method: 'POST',
-                        headers: getAuthHeaders(),
-                        body: JSON.stringify(skillData)
-                    });
-                    if (!resp.ok) {
-                        const err = await resp.json();
-                        throw new Error(err.error || '上传失败');
-                    }
-                    await loadSkills();
-                    ElMessage({ message: '技能已导入', type: 'success' });
-                } catch (e) {
-                    ElMessage({ message: e.message || '导入失败', type: 'error' });
-                }
-            };
-            input.click();
-        }
 
         // ===== 连接检测 =====
         async function checkConnection() {
@@ -938,12 +768,9 @@ const app = createApp({
                 }
             });
 
-            // 监听 skillsVisible，打开时加载技能列表和工具列表
+            // 监听 skillsVisible，打开时刷新工具列表
             watch(skillsVisible, (val) => {
-                if (val) {
-                    loadSkills();
-                    loadTools();
-                }
+                if (val) loadTools();
             });
         });
 
@@ -957,14 +784,11 @@ const app = createApp({
             suggestions, useSuggestion,
             historyVisible, historyLoading, historySessions, historyDetail, detailLoading,
             systemPromptVisible, systemPromptInput, systemPromptSaving, currentSystemPrompt,
-            skillsVisible, skillsLoading, skillsList, mySkills,
-            skillEditVisible, editingSkill, skillSaving, skillForm, skillEmojis,
+            skillsVisible,
             newSession, clearMessages, sendMessage, onKeydown, autoResize,
             onModelChange, goLogin, logout,
             openSessionDetail, loadSessionDetail,
             openSystemPrompt, saveSystemPrompt,
-            applySkill, openCreateSkill, editSkill, saveSkill, deleteSkill,
-            adminDownloadSkill, adminUploadSkillTrigger,
             availableTools, enabledTools, toolsLoading, loadTools, toggleTool, isToolEnabled, getToolIcon,
             renderMarkdown, copyMessage, stopGenerate, regenerate,
             renameSession, deleteSession,

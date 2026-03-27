@@ -14,7 +14,6 @@ import (
 	infra_model "aiProject/internal/infrastructure/model"
 	infra_session "aiProject/internal/infrastructure/session"
 	mysql_session "aiProject/internal/infrastructure/session/mysql"
-	mysql_skill "aiProject/internal/infrastructure/skill/mysql"
 	infra_tools "aiProject/internal/infrastructure/tools"
 	mysql_user "aiProject/internal/infrastructure/user/mysql"
 	http_handler "aiProject/internal/interfaces/http"
@@ -236,16 +235,12 @@ func InitComponents(appConfig *config.Config) (*http_handler.ChatHandler, *appli
 	// 使用MySQL存储
 	sessionRepo := mysql_session.NewMySQLRepository()
 	userRepo := mysql_user.NewUserRepository()
-	skillRepo := mysql_skill.NewSkillRepository()
 	modelGen := newModelGenerator(appConfig)
 	chatService := application.NewChatServiceWithFactory(sessionRepo, modelGen, appConfig.Model.Name, modelFactory)
 	authService := application.NewAuthService(userRepo)
-	skillService := application.NewSkillService(skillRepo)
-	skillService.SetModelFactory(modelFactory, appConfig.Model.Name)
-	// 从 skills/*/scripts/ 目录加载并注册工具
-	infra_tools.LoadToolsFromSkillsDir("skills")
+	// 从 skills/*/scripts/ 目录加载并注册工具（传入百度 AK，避免硬编码）
+	infra_tools.LoadToolsFromSkillsDir("skills", appConfig.Tools.BaiduAK)
 	handler := http_handler.NewChatHandler(chatService, authService, appConfig)
-	handler.SetSkillService(skillService)
 	return handler, chatService
 }
 
@@ -272,15 +267,6 @@ func RegisterRoutes(chatHandler *http_handler.ChatHandler, appConfig *config.Con
 	// System Prompt 接口
 	mux.HandleFunc("/api/sessions/system-prompt", chatHandler.HandleUpdateSystemPrompt)
 	mux.HandleFunc("/api/sessions/system-prompt/get", chatHandler.HandleGetSystemPrompt)
-	// Skills 技能接口
-	mux.HandleFunc("/api/skills", chatHandler.HandleListSkills)
-	mux.HandleFunc("/api/skills/create", chatHandler.HandleCreateSkill)
-	mux.HandleFunc("/api/skills/update", chatHandler.HandleUpdateSkill)
-	mux.HandleFunc("/api/skills/delete", chatHandler.HandleDeleteSkill)
-	mux.HandleFunc("/api/skills/apply", chatHandler.HandleApplySkill)
-	// Admin 专用技能接口（需要 admin 角色）
-	mux.HandleFunc("/api/admin/skills/download", chatHandler.HandleAdminDownloadSkill)
-	mux.HandleFunc("/api/admin/skills/upload", chatHandler.HandleAdminUploadSkill)
 	// 工具接口
 	mux.HandleFunc("/api/tools", chatHandler.HandleListTools)
 	// 模型列表接口

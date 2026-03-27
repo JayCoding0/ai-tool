@@ -2,7 +2,6 @@ package application
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"sync"
 
@@ -297,6 +296,7 @@ const maxToolCallRounds = 5
 const maxPromptMessages = 20
 
 // ProcessMessageWithTools 支持 Function Calling 的聊天处理，支持流式推送工具调用过程
+// ReAct 循环逻辑已抽取到 agentRunner（agent_runner.go）
 func (s *ChatService) ProcessMessageWithTools(ctx context.Context, req ChatRequest, toolNames []string) (<-chan StreamChatResponse, error) {
 	modelName := req.ModelName
 	if modelName == "" {
@@ -324,269 +324,35 @@ func (s *ChatService) ProcessMessageWithTools(ctx context.Context, req ChatReque
 
 	toolDefs := tool.GetDefinitions(toolNames)
 	messages := buildMessages(sess.GetHistory(), systemPrompt)
-
 	isFirstMessage := len(sess.GetHistory()) <= 1
 
 	outCh := make(chan StreamChatResponse, 64)
 	go func() {
 		defer close(outCh)
 
-		var totalUsage model.TokenUsage
-
-		for round := 0; round < maxToolCallRounds; round++ {
-			result, err := modelGen.GenerateWithTools(ctx, messages, toolDefs)
-			if err != nil {
-				sendEvent(ctx, outCh, StreamChatResponse{Type: "error", Error: fmt.Sprintf("模型调用失败: %v", err)})
-				return
-			}
-
-			totalUsage.PromptTokens += result.Usage.PromptTokens
-			totalUsage.CompletionTokens += result.Usage.CompletionTokens
-			totalUsage.TotalTokens += result.Usage.TotalTokens
-
-			shared.GetLogger().Info("ReAct轮次", zap.Int("round", round), zap.Int("tool_calls", len(result.ToolCalls)))
-
-			if len(result.ToolCalls) == 0 {
-				// 没有工具调用（首轮或工具调用结束后），统一走流式接口逐字输出
-				streamCh, streamErr := modelGen.GenerateStreamWithMessages(ctx, messages)
-				if streamErr != nil {
-					// 流式失败则降级为一次性推送（使用 GenerateWithTools 已拿到的结果）
-					if result.Content != "" {
-						sendEvent(ctx, outCh, StreamChatResponse{
-							Type: "chunk", Content: result.Content,
-							SessionID: sess.ID(), ModelName: modelName,
-						})
-					}
-				} else {
-					var streamContent strings.Builder
-					for chunk := range streamCh {
-						if chunk.Err != nil {
-							sendEvent(ctx, outCh, StreamChatResponse{Type: "error", Error: chunk.Err.Error()})
-							return
-						}
-						if chunk.Done {
-							totalUsage.PromptTokens += chunk.Usage.PromptTokens
-							totalUsage.CompletionTokens += chunk.Usage.CompletionTokens
-							totalUsage.TotalTokens += chunk.Usage.TotalTokens
-							break
-						}
-						if chunk.Content != "" {
-							streamContent.WriteString(chunk.Content)
-							if !sendEvent(ctx, outCh, StreamChatResponse{
-								Type: "chunk", Content: chunk.Content,
-								SessionID: sess.ID(), ModelName: modelName,
-							}) {
-								return
-							}
-						}
-						if chunk.Thinking != "" {
-							if !sendEvent(ctx, outCh, StreamChatResponse{
-								Type: "chunk", Thinking: chunk.Thinking,
-								SessionID: sess.ID(), ModelName: modelName,
-							}) {
-								return
-							}
-						}
-					}
-					result.Content = streamContent.String()
-				}
-
-				finalResponse := result.Content
-				if finalResponse == "" {
-					finalResponse = "（工具调用完成，但模型未生成最终回复）"
-					sendEvent(ctx, outCh, StreamChatResponse{
-						Type: "chunk", Content: finalResponse,
-						SessionID: sess.ID(), ModelName: modelName,
-					})
-				}
-
-				sess.AddMessage("ai", finalResponse)
-				if err := s.sessionRepo.SaveMessageWithTokens(ctx, sess.ID(), "ai", finalResponse, req.UserID, modelName, totalUsage); err != nil {
-					shared.GetLogger().Error("保存AI回复失败", zap.Error(err))
-				}
-				if err := s.sessionRepo.Save(sess); err != nil {
-					shared.GetLogger().Error("保存会话失败", zap.Error(err))
-				}
-
-				sessionTotal, _ := s.sessionRepo.GetSessionTotalTokens(ctx, sess.ID())
-				sendEvent(ctx, outCh, StreamChatResponse{
-					Type:               "done",
-					SessionID:          sess.ID(),
-					ModelName:          modelName,
-					Usage:              totalUsage,
-					SessionTotalTokens: sessionTotal,
-				})
-
-				if isFirstMessage && s.modelFactory != nil {
-					go s.generateSessionTitle(context.Background(), sess.ID(), req.Message, modelName)
-				}
-				return
-			}
-
-			// 有工具调用，继续下一轮
-
-			// 如果 AI 在工具调用前有思考内容，推送 thought 事件
-			if result.Content != "" {
-				if !sendEvent(ctx, outCh, StreamChatResponse{
-					Type:      "thought",
-					Content:   result.Content,
-					Step:      round + 1,
-					SessionID: sess.ID(),
-					ModelName: modelName,
-				}) {
-					return
-				}
-			}
-
-			messages = append(messages, model.Message{
-				Role:      model.RoleAssistant,
-				Content:   result.Content,
-				ToolCalls: result.ToolCalls,
-			})
-
-			// 先推送所有工具调用事件（告知前端即将并发执行哪些工具）
-			for _, tc := range result.ToolCalls {
-				if !sendEvent(ctx, outCh, StreamChatResponse{
-					Type:            "tool_call",
-					ToolName:        tc.Name,
-					ToolDisplayName: tool.GetDisplayName(tc.Name),
-					ToolCallID:      tc.ID,
-					ToolArgs:        tc.Arguments,
-					Step:            round + 1,
-					SessionID:       sess.ID(),
-					ModelName:       modelName,
-				}) {
-					return
-				}
-			}
-
-			// 并发执行所有工具调用
-			type toolExecResult struct {
-				tc     model.ToolCall
-				result string
-			}
-			execResults := make([]toolExecResult, len(result.ToolCalls))
-			var wg sync.WaitGroup
-			for i, tc := range result.ToolCalls {
-				wg.Add(1)
-				go func(idx int, call model.ToolCall) {
-					defer wg.Done()
-					res, execErr := tool.Execute(ctx, call)
-					if execErr != nil {
-						res = fmt.Sprintf("工具执行失败: %v", execErr)
-					}
-					shared.GetLogger().Info("工具调用完成", zap.String("tool", call.Name), zap.Int("result_len", len(res)))
-					execResults[idx] = toolExecResult{tc: call, result: res}
-				}(i, tc)
-			}
-			wg.Wait()
-
-			// 按原始顺序推送工具结果事件并追加消息
-			for _, er := range execResults {
-				if !sendEvent(ctx, outCh, StreamChatResponse{
-					Type:            "tool_result",
-					ToolName:        er.tc.Name,
-					ToolDisplayName: tool.GetDisplayName(er.tc.Name),
-					ToolCallID:      er.tc.ID,
-					ToolArgs:        er.tc.Arguments,
-					ToolResult:      er.result,
-					Step:            round + 1,
-					SessionID:       sess.ID(),
-					ModelName:       modelName,
-				}) {
-					return
-				}
-				messages = append(messages, model.Message{
-					Role:       model.RoleTool,
-					Content:    er.result,
-					ToolCallID: er.tc.ID,
-				})
-			}
+		runner := newAgentRunner(modelGen, modelName, sess.ID(), outCh)
+		finalContent, totalUsage, runErr := runner.runReActLoop(ctx, messages, toolDefs)
+		if runErr != nil {
+			sendEvent(ctx, outCh, StreamChatResponse{Type: "error", Error: runErr.Error()})
+			return
 		}
 
-		// 达到最大轮次仍未结束：先让 AI 总结已完成的内容，再提示用户继续对话
-		summaryHint := "你已经完成了多轮工具调用，但任务尚未完全结束。请用中文简要总结一下：\n" +
-			"1. 你已经完成了哪些步骤和操作；\n" +
-			"2. 当前进展到哪里；\n" +
-			"3. 还剩下哪些步骤尚未完成。\n" +
-			"最后告知用户：由于单次对话工具调用次数已达上限，请继续发送消息让你完成剩余任务。"
-		// 使用 copy 构造新切片，避免 append 复用底层数组污染 messages
-		summaryMessages := make([]model.Message, len(messages), len(messages)+1)
-		copy(summaryMessages, messages)
-		summaryMessages = append(summaryMessages, model.Message{
-			Role:    model.RoleUser,
-			Content: summaryHint,
-		})
-
-		var finalResponse strings.Builder
-		summaryCh, summaryErr := modelGen.GenerateStreamWithMessages(ctx, summaryMessages)
-		if summaryErr != nil {
-			// 流式调用失败，降级为固定提示
-			fallback := fmt.Sprintf("已完成 %d 轮工具调用，任务尚未结束。由于单次对话工具调用次数已达上限（%d 轮），请继续发送消息让我完成剩余任务。", maxToolCallRounds, maxToolCallRounds)
-			finalResponse.WriteString(fallback)
+		if finalContent == "" {
+			finalContent = "（工具调用完成，但模型未生成最终回复）"
 			sendEvent(ctx, outCh, StreamChatResponse{
-				Type: "chunk", Content: fallback,
-				SessionID: sess.ID(), ModelName: modelName,
-			})
-		} else {
-			for chunk := range summaryCh {
-				if chunk.Err != nil {
-					// 流式中途出错：用已收到的内容兜底，不直接丢弃
-					shared.GetLogger().Warn("总结流式出错", zap.Error(chunk.Err))
-					if finalResponse.Len() == 0 {
-						// 完全没有内容时补充固定提示
-						fallback := fmt.Sprintf("已完成 %d 轮工具调用，任务尚未结束。请继续发送消息让我完成剩余任务。", maxToolCallRounds)
-						finalResponse.WriteString(fallback)
-						sendEvent(ctx, outCh, StreamChatResponse{
-							Type: "chunk", Content: fallback,
-							SessionID: sess.ID(), ModelName: modelName,
-						})
-					}
-					break
-				}
-				if chunk.Done {
-					totalUsage.PromptTokens += chunk.Usage.PromptTokens
-					totalUsage.CompletionTokens += chunk.Usage.CompletionTokens
-					totalUsage.TotalTokens += chunk.Usage.TotalTokens
-					break
-				}
-				if chunk.Content != "" {
-					finalResponse.WriteString(chunk.Content)
-					// ctx 取消时先跳出循环，后续统一保存消息再退出
-					if !sendEvent(ctx, outCh, StreamChatResponse{
-						Type: "chunk", Content: chunk.Content,
-						SessionID: sess.ID(), ModelName: modelName,
-					}) {
-						break
-					}
-				}
-				if chunk.Thinking != "" {
-					if !sendEvent(ctx, outCh, StreamChatResponse{
-						Type: "chunk", Thinking: chunk.Thinking,
-						SessionID: sess.ID(), ModelName: modelName,
-					}) {
-						break
-					}
-				}
-			}
-		}
-
-		aiReply := finalResponse.String()
-		if aiReply == "" {
-			aiReply = fmt.Sprintf("已完成 %d 轮工具调用，任务尚未结束。请继续发送消息让我完成剩余任务。", maxToolCallRounds)
-			sendEvent(ctx, outCh, StreamChatResponse{
-				Type: "chunk", Content: aiReply,
+				Type: "chunk", Content: finalContent,
 				SessionID: sess.ID(), ModelName: modelName,
 			})
 		}
 
-		sess.AddMessage("ai", aiReply)
-		if err := s.sessionRepo.SaveMessageWithTokens(ctx, sess.ID(), "ai", aiReply, req.UserID, modelName, totalUsage); err != nil {
+		sess.AddMessage("ai", finalContent)
+		if err := s.sessionRepo.SaveMessageWithTokens(ctx, sess.ID(), "ai", finalContent, req.UserID, modelName, totalUsage); err != nil {
 			shared.GetLogger().Error("保存AI回复失败", zap.Error(err))
 		}
 		if err := s.sessionRepo.Save(sess); err != nil {
 			shared.GetLogger().Error("保存会话失败", zap.Error(err))
 		}
+
 		sessionTotal, _ := s.sessionRepo.GetSessionTotalTokens(ctx, sess.ID())
 		sendEvent(ctx, outCh, StreamChatResponse{
 			Type:               "done",
@@ -595,6 +361,10 @@ func (s *ChatService) ProcessMessageWithTools(ctx context.Context, req ChatReque
 			Usage:              totalUsage,
 			SessionTotalTokens: sessionTotal,
 		})
+
+		if isFirstMessage && s.modelFactory != nil {
+			go s.generateSessionTitle(context.Background(), sess.ID(), req.Message, modelName)
+		}
 	}()
 
 	return outCh, nil

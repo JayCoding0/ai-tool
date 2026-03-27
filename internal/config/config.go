@@ -14,6 +14,7 @@ type Config struct {
 	Log      LogConfig      `yaml:"log"`
 	Database DatabaseConfig `yaml:"database"`
 	Security SecurityConfig `yaml:"security"`
+	Tools    ToolsConfig    `yaml:"tools"`
 }
 
 // ServerConfig 服务器配置
@@ -61,6 +62,12 @@ type ModelOption struct {
 	Name  string `yaml:"name"`  // 模型标识，如 qwen-plus
 	Label string `yaml:"label"` // 展示名称，如 通义千问 Plus
 	Type  string `yaml:"type"`  // 模型类型：cloud（云端）或 local（本地Ollama），留空时自动判断
+}
+
+// ToolsConfig 工具配置
+type ToolsConfig struct {
+	// BaiduAK 百度地图 API Key，用于天气查询和逆地理编码
+	BaiduAK string `yaml:"baidu_ak"`
 }
 
 // MCPConfig MCP配置
@@ -150,6 +157,9 @@ func DefaultConfig() *Config {
 				MaxOpenConns:    100,
 				ConnMaxLifetime: 3600,
 			},
+		},
+		Tools: ToolsConfig{
+			BaiduAK: "",
 		},
 	}
 }
@@ -273,5 +283,9 @@ func mergeConfig(dst, src *Config) {
 	}
 	if src.Database.MySQL.ConnMaxLifetime != 0 {
 		dst.Database.MySQL.ConnMaxLifetime = src.Database.MySQL.ConnMaxLifetime
+	}
+	// Tools
+	if src.Tools.BaiduAK != "" {
+		dst.Tools.BaiduAK = src.Tools.BaiduAK
 	}
 }

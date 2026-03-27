@@ -41,7 +41,8 @@ type toolManifest struct {
 // LoadToolsFromSkillsDir 扫描 skillsDir 下所有技能的 scripts/ 子目录，
 // 读取 tool.json 并注册对应工具。
 // 每个工具执行时会运行 scripts/ 目录下对应的脚本文件，并将参数以 JSON 形式通过 stdin 传入。
-func LoadToolsFromSkillsDir(skillsDir string) {
+// baiduAK 为百度地图 API Key，用于天气查询和逆地理编码工具。
+func LoadToolsFromSkillsDir(skillsDir string, baiduAK string) {
 	logger := shared.GetLogger()
 
 	entries, err := os.ReadDir(skillsDir)
@@ -59,7 +60,7 @@ func LoadToolsFromSkillsDir(skillsDir string) {
 		if _, err := os.Stat(scriptsDir); os.IsNotExist(err) {
 			continue
 		}
-		n := loadToolsFromScriptsDir(scriptsDir, logger)
+		n := loadToolsFromScriptsDir(scriptsDir, baiduAK, logger)
 		loaded += n
 	}
 
@@ -67,7 +68,7 @@ func LoadToolsFromSkillsDir(skillsDir string) {
 }
 
 // loadToolsFromScriptsDir 从单个 scripts/ 目录加载所有工具
-func loadToolsFromScriptsDir(scriptsDir string, logger *zap.Logger) int {
+func loadToolsFromScriptsDir(scriptsDir string, baiduAK string, logger *zap.Logger) int {
 	manifestPath := filepath.Join(scriptsDir, "tool.json")
 	data, err := os.ReadFile(manifestPath)
 	if err != nil {
@@ -97,7 +98,7 @@ func loadToolsFromScriptsDir(scriptsDir string, logger *zap.Logger) int {
 		if m.Name == "" {
 			continue
 		}
-		registerScriptTool(m, scriptsDir, logger)
+		registerScriptTool(m, scriptsDir, baiduAK, logger)
 		count++
 	}
 	return count
@@ -120,7 +121,7 @@ func validateScriptPath(scriptsDir, scriptPath string) error {
 }
 
 // registerScriptTool 注册一个脚本驱动的工具
-func registerScriptTool(m toolManifest, scriptsDir string, logger *zap.Logger) {
+func registerScriptTool(m toolManifest, scriptsDir string, baiduAK string, logger *zap.Logger) {
 	scriptPath := filepath.Join(scriptsDir, m.Script)
 
 	// 根据内置工具名分发到对应的 Go 实现
@@ -129,9 +130,9 @@ func registerScriptTool(m toolManifest, scriptsDir string, logger *zap.Logger) {
 	case "list_directory":
 		execFunc = executeListDirectory
 	case "get_weather":
-		execFunc = executeGetWeather
+		execFunc = makeWeatherExecutor(baiduAK)
 	case "get_public_ip":
-		execFunc = executeGetPublicIP
+		execFunc = makePublicIPExecutor(baiduAK)
 	default:
 		// 通用：执行脚本文件，参数通过 stdin 以 JSON 传入
 		// 先做路径白名单校验，防止 tool.json 中配置了恶意路径
@@ -232,7 +233,13 @@ type baiduGeocodeResponse struct {
 }
 
 // executeGetPublicIP get_public_ip 工具的 Go 原生实现：获取公网 IP 及归属地，并反查 district_id
-func executeGetPublicIP(ctx context.Context, _ map[string]interface{}) (string, error) {
+func makePublicIPExecutor(baiduAK string) tool.ExecuteFunc {
+	return func(ctx context.Context, _ map[string]interface{}) (string, error) {
+		return executeGetPublicIPWithAK(ctx, baiduAK)
+	}
+}
+
+func executeGetPublicIPWithAK(ctx context.Context, baiduAK string) (string, error) {
 	// 1. 通过 ip-api.com 获取公网 IP 及归属地（lang=zh-CN 返回中文）
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
 		"http://ip-api.com/json/?lang=zh-CN&fields=status,message,country,regionName,city,district,lat,lon,query", nil)
@@ -259,10 +266,26 @@ func executeGetPublicIP(ctx context.Context, _ map[string]interface{}) (string, 
 	}
 
 	// 2. 通过百度地图逆地理编码 API，用经纬度查询 district_id（adcode）
-	const ak = "6tvFg3mhH0GcuxjWKHf1NrY3PZaLHNtn"
+	if baiduAK == "" {
+		// 未配置 AK 时，跳过逆地理编码
+		result := map[string]interface{}{
+			"ip":       ipInfo.Query,
+			"country":  ipInfo.Country,
+			"province": ipInfo.RegionName,
+			"city":     ipInfo.City,
+			"district": ipInfo.District,
+			"lat":      ipInfo.Lat,
+			"lon":      ipInfo.Lon,
+		}
+		out, err := json.Marshal(result)
+		if err != nil {
+			return "", err
+		}
+		return string(out), nil
+	}
 	geoURL := fmt.Sprintf(
 		"https://api.map.baidu.com/reverse_geocoding/v3/?ak=%s&output=json&coordtype=wgs84ll&location=%f,%f",
-		ak, ipInfo.Lat, ipInfo.Lon,
+		baiduAK, ipInfo.Lat, ipInfo.Lon,
 	)
 
 	geoReq, err := http.NewRequestWithContext(ctx, http.MethodGet, geoURL, nil)
@@ -332,16 +355,24 @@ type baiduWeatherResponse struct {
 }
 
 // executeGetWeather get_weather 工具的 Go 原生实现：查询百度天气 API
-func executeGetWeather(ctx context.Context, args map[string]interface{}) (string, error) {
-	districtID, _ := args["district_id"].(string)
-	if districtID == "" {
-		districtID = "610402" // 默认：咸阳市秦都区
+func makeWeatherExecutor(baiduAK string) tool.ExecuteFunc {
+	return func(ctx context.Context, args map[string]interface{}) (string, error) {
+		return executeGetWeatherWithAK(ctx, args, baiduAK)
 	}
+}
 
-	const ak = "6tvFg3mhH0GcuxjWKHf1NrY3PZaLHNtn"
+func executeGetWeatherWithAK(ctx context.Context, args map[string]interface{}, baiduAK string) (string, error) {
+	districtID, _ := args["district_id"].(string)
+	const defaultDistrictID = "610402" // 默认：和市秦都区
+	if districtID == "" {
+		districtID = defaultDistrictID
+	}
+	if baiduAK == "" {
+		return "", fmt.Errorf("百度天气工具未配置 baidu_ak，请在 trpc_go.yaml 的 custom.tools.baidu_ak 中配置")
+	}
 	apiURL := fmt.Sprintf(
 		"https://api.map.baidu.com/weather/v1/?district_id=%s&data_type=all&ak=%s",
-		districtID, ak,
+		districtID, baiduAK,
 	)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)

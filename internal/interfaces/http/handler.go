@@ -11,7 +11,6 @@ import (
 	"aiProject/internal/application"
 	"aiProject/internal/config"
 	"aiProject/internal/domain/session"
-	domain_skill "aiProject/internal/domain/skill"
 	domain_tool "aiProject/internal/domain/tool"
 	"aiProject/internal/shared"
 	"go.uber.org/zap"
@@ -59,11 +58,10 @@ func setAuthCookie(w http.ResponseWriter, token string, maxAge int) {
 
 // ChatHandler 聊天HTTP处理程序
 type ChatHandler struct {
-	chatService  *application.ChatService
-	authService  *application.AuthService
-	skillService *application.SkillService
-	appConfig    *config.Config
-	logger       *zap.Logger
+	chatService *application.ChatService
+	authService *application.AuthService
+	appConfig   *config.Config
+	logger      *zap.Logger
 }
 
 // NewChatHandler 创建聊天处理程序
@@ -74,11 +72,6 @@ func NewChatHandler(chatService *application.ChatService, authService *applicati
 		appConfig:   appConfig,
 		logger:      shared.GetLogger(),
 	}
-}
-
-// SetSkillService 设置技能服务
-func (h *ChatHandler) SetSkillService(skillService *application.SkillService) {
-	h.skillService = skillService
 }
 
 // HistoryRequest 历史记录请求结构体
@@ -641,222 +634,6 @@ func (h *ChatHandler) HandleGetSystemPrompt(w http.ResponseWriter, r *http.Reque
 	json.NewEncoder(w).Encode(map[string]string{"system_prompt": prompt})
 }
 
-// ===== Skills 接口 =====
-
-// SkillRequest 创建/更新技能请求
-type SkillRequest struct {
-	Name         string   `json:"name"`
-	Description  string   `json:"description"`
-	Icon         string   `json:"icon"`
-	Pattern      string   `json:"pattern"`
-	SystemPrompt string   `json:"system_prompt"`
-	Tools        []string `json:"tools"`
-	IsPublic     bool     `json:"is_public"`
-}
-
-// HandleListSkills 列出技能列表
-func (h *ChatHandler) HandleListSkills(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeJSONError(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if h.skillService == nil {
-		writeJSONError(w, "技能功能不可用（数据库未连接）", http.StatusServiceUnavailable)
-		return
-	}
-
-	userID, _, role := h.getCurrentUser(r)
-	isAdmin := role == "admin"
-	skills, err := h.skillService.ListSkills(r.Context(), userID, isAdmin)
-	if err != nil {
-		h.logger.Error("获取技能列表失败", zap.Error(err))
-		writeJSONError(w, "Failed to list skills", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"skills": skills})
-}
-
-// HandleCreateSkill 创建技能
-func (h *ChatHandler) HandleCreateSkill(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeJSONError(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if h.skillService == nil {
-		writeJSONError(w, "技能功能不可用（数据库未连接）", http.StatusServiceUnavailable)
-		return
-	}
-
-	userID, _, _ := h.getCurrentUser(r)
-	if userID == 0 {
-		writeJSONError(w, "请先登录", http.StatusUnauthorized)
-		return
-	}
-
-	var req SkillRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSONError(w, "Invalid JSON", http.StatusBadRequest)
-		return
-	}
-
-	sk, err := h.skillService.CreateSkill(r.Context(), application.CreateSkillRequest{
-		UserID:       userID,
-		Name:         req.Name,
-		Description:  req.Description,
-		Icon:         req.Icon,
-		Pattern:      domain_skill.SkillPattern(req.Pattern),
-		SystemPrompt: req.SystemPrompt,
-		Tools:        req.Tools,
-		IsPublic:     req.IsPublic,
-	})
-	if err != nil {
-		h.logger.Error("创建技能失败", zap.Error(err))
-		writeJSONError(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(sk)
-}
-
-// HandleUpdateSkill 更新技能
-func (h *ChatHandler) HandleUpdateSkill(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeJSONError(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if h.skillService == nil {
-		writeJSONError(w, "技能功能不可用（数据库未连接）", http.StatusServiceUnavailable)
-		return
-	}
-
-	userID, _, role := h.getCurrentUser(r)
-	if userID == 0 {
-		writeJSONError(w, "请先登录", http.StatusUnauthorized)
-		return
-	}
-
-	idStr := r.URL.Query().Get("id")
-	if idStr == "" {
-		writeJSONError(w, "id is required", http.StatusBadRequest)
-		return
-	}
-	var skillID int64
-	if _, err := fmt.Sscanf(idStr, "%d", &skillID); err != nil {
-		writeJSONError(w, "invalid id", http.StatusBadRequest)
-		return
-	}
-
-	var req SkillRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSONError(w, "Invalid JSON", http.StatusBadRequest)
-		return
-	}
-
-	sk, err := h.skillService.UpdateSkill(r.Context(), application.UpdateSkillRequest{
-		ID:           domain_skill.SkillID(skillID),
-		UserID:       userID,
-		IsAdmin:      role == "admin",
-		Name:         req.Name,
-		Description:  req.Description,
-		Icon:         req.Icon,
-		Pattern:      domain_skill.SkillPattern(req.Pattern),
-		SystemPrompt: req.SystemPrompt,
-		Tools:        req.Tools,
-		IsPublic:     req.IsPublic,
-	})
-	if err != nil {
-		h.logger.Error("更新技能失败", zap.Error(err))
-		writeJSONError(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(sk)
-}
-
-// HandleDeleteSkill 删除技能
-func (h *ChatHandler) HandleDeleteSkill(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeJSONError(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if h.skillService == nil {
-		writeJSONError(w, "技能功能不可用（数据库未连接）", http.StatusServiceUnavailable)
-		return
-	}
-
-	userID, _, role := h.getCurrentUser(r)
-	if userID == 0 {
-		writeJSONError(w, "请先登录", http.StatusUnauthorized)
-		return
-	}
-
-	var body struct {
-		ID int64 `json:"id"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSONError(w, "Invalid JSON", http.StatusBadRequest)
-		return
-	}
-
-	if err := h.skillService.DeleteSkill(r.Context(), domain_skill.SkillID(body.ID), userID, role == "admin"); err != nil {
-		h.logger.Error("删除技能失败", zap.Error(err))
-		writeJSONError(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"message": "技能已删除"})
-}
-
-// HandleApplySkill 将技能应用到会话
-func (h *ChatHandler) HandleApplySkill(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeJSONError(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if h.skillService == nil {
-		writeJSONError(w, "技能功能不可用（数据库未连接）", http.StatusServiceUnavailable)
-		return
-	}
-
-	var body struct {
-		SkillID   int64  `json:"skill_id"`
-		SessionID string `json:"session_id"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSONError(w, "Invalid JSON", http.StatusBadRequest)
-		return
-	}
-	if body.SessionID == "" {
-		writeJSONError(w, "session_id is required", http.StatusBadRequest)
-		return
-	}
-
-	sk, err := h.skillService.GetSkill(r.Context(), domain_skill.SkillID(body.SkillID))
-	if err != nil || sk == nil {
-		writeJSONError(w, "技能不存在", http.StatusNotFound)
-		return
-	}
-
-	if err := h.chatService.UpdateSessionSystemPrompt(r.Context(), session.SessionID(body.SessionID), sk.SystemPrompt); err != nil {
-		h.logger.Error("应用技能失败", zap.Error(err))
-		writeJSONError(w, "Failed to apply skill", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"message":       "技能已应用",
-		"skill_name":    sk.Name,
-		"system_prompt": sk.SystemPrompt,
-	})
-}
-
 // HandleListTools 列出所有已注册的工具
 func (h *ChatHandler) HandleListTools(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -872,91 +649,3 @@ func (h *ChatHandler) HandleListTools(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// requireAdmin 检查当前请求是否为 admin，不是则直接返回 403
-func (h *ChatHandler) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
-	_, _, role := h.getCurrentUser(r)
-	if role != "admin" {
-		writeJSONError(w, "需要管理员权限", http.StatusForbidden)
-		return false
-	}
-	return true
-}
-
-// HandleAdminDownloadSkill admin 下载指定技能（返回完整 JSON）
-func (h *ChatHandler) HandleAdminDownloadSkill(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeJSONError(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if h.skillService == nil {
-		writeJSONError(w, "技能功能不可用（数据库未连接）", http.StatusServiceUnavailable)
-		return
-	}
-	if !h.requireAdmin(w, r) {
-		return
-	}
-
-	idStr := r.URL.Query().Get("id")
-	if idStr == "" {
-		writeJSONError(w, "id is required", http.StatusBadRequest)
-		return
-	}
-	var skillID int64
-	if _, err := fmt.Sscanf(idStr, "%d", &skillID); err != nil {
-		writeJSONError(w, "invalid id", http.StatusBadRequest)
-		return
-	}
-
-	sk, err := h.skillService.GetSkill(r.Context(), domain_skill.SkillID(skillID))
-	if err != nil || sk == nil {
-		writeJSONError(w, "技能不存在", http.StatusNotFound)
-		return
-	}
-
-	filename := fmt.Sprintf("skill_%d_%s.json", sk.ID, sk.Name)
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
-	json.NewEncoder(w).Encode(sk)
-}
-
-// HandleAdminUploadSkill admin 上传/导入技能（JSON 格式）
-func (h *ChatHandler) HandleAdminUploadSkill(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeJSONError(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if h.skillService == nil {
-		writeJSONError(w, "技能功能不可用（数据库未连接）", http.StatusServiceUnavailable)
-		return
-	}
-	if !h.requireAdmin(w, r) {
-		return
-	}
-
-	var req SkillRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSONError(w, "Invalid JSON", http.StatusBadRequest)
-		return
-	}
-
-	// admin 上传的 skill 归属为系统预设（user_id=0）
-	sk, err := h.skillService.CreateSkill(r.Context(), application.CreateSkillRequest{
-		UserID:       0, // 系统预设
-		Name:         req.Name,
-		Description:  req.Description,
-		Icon:         req.Icon,
-		Pattern:      domain_skill.SkillPattern(req.Pattern),
-		SystemPrompt: req.SystemPrompt,
-		Tools:        req.Tools,
-		IsPublic:     req.IsPublic,
-	})
-	if err != nil {
-		h.logger.Error("admin 上传技能失败", zap.Error(err))
-		writeJSONError(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(sk)
-}
