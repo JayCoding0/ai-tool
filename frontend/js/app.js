@@ -104,6 +104,45 @@ const APP_TEMPLATE = `
                     </svg>
                     Skills
                 </button>
+                <!-- 知识库选择器 -->
+                <div style="position:relative;display:inline-block;">
+                    <button class="topbar-btn" :class="{active: selectedKbId > 0}" @click="kbSelectorVisible = !kbSelectorVisible" title="选择知识库（RAG）">
+                        📚 {{ selectedKbId > 0 ? (getSelectedKB() ? getSelectedKB().name : 'KB') : '知识库' }}
+                    </button>
+                    <div v-if="kbSelectorVisible" style="position:absolute;top:calc(100% + 6px);right:0;z-index:1000;background:#fff;border:1px solid #e8e8f0;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.12);min-width:220px;overflow:hidden;" @click.stop>
+                        <div style="padding:8px 12px;font-size:11px;color:#999;border-bottom:1px solid #f0f0f0;font-weight:600;letter-spacing:.5px;">选择知识库（RAG）</div>
+                        <div style="max-height:240px;overflow-y:auto;">
+                            <div style="display:flex;align-items:center;gap:8px;padding:9px 14px;cursor:pointer;transition:background .15s;"
+                                :style="selectedKbId === 0 ? 'background:#f0f0ff;' : ''"
+                                @click="selectKnowledgeBase(0)">
+                                <span style="font-size:14px;">🚫</span>
+                                <div>
+                                    <div style="font-size:13px;color:#333;font-weight:500;">不使用知识库</div>
+                                    <div style="font-size:11px;color:#bbb;">纯模型回答</div>
+                                </div>
+                                <span v-if="selectedKbId === 0" style="margin-left:auto;color:#667eea;font-size:12px;">✓</span>
+                            </div>
+                            <div v-if="kbLoading" style="text-align:center;padding:20px;color:#bbb;font-size:12px;">加载中...</div>
+                            <div v-else-if="knowledgeBases.length === 0" style="text-align:center;padding:16px;color:#bbb;font-size:12px;">
+                                暂无知识库，<a href="/knowledge.html" target="_blank" style="color:#667eea;">去创建</a>
+                            </div>
+                            <div v-for="kb in knowledgeBases" :key="kb.id"
+                                style="display:flex;align-items:center;gap:8px;padding:9px 14px;cursor:pointer;transition:background .15s;"
+                                :style="selectedKbId === kb.id ? 'background:#f0f0ff;' : ''"
+                                @click="selectKnowledgeBase(kb.id)">
+                                <span style="font-size:14px;">📚</span>
+                                <div style="flex:1;min-width:0;">
+                                    <div style="font-size:13px;color:#333;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ kb.name }}</div>
+                                    <div style="font-size:11px;color:#bbb;">{{ kb.doc_count }} 文档 · {{ kb.chunk_count }} 分块</div>
+                                </div>
+                                <span v-if="selectedKbId === kb.id" style="color:#667eea;font-size:12px;flex-shrink:0;">✓</span>
+                            </div>
+                        </div>
+                        <div style="padding:8px 12px;border-top:1px solid #f0f0f0;">
+                            <a href="/knowledge.html" target="_blank" style="font-size:12px;color:#667eea;text-decoration:none;">⚙️ 管理知识库</a>
+                        </div>
+                    </div>
+                </div>
                 <button class="topbar-btn" @click="openSystemPrompt" :class="{active: currentSystemPrompt}" :title="currentSystemPrompt ? 'System Prompt 已设置' : '设置 System Prompt'">
                     <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
@@ -611,6 +650,7 @@ const app = createApp({
         // ===== 引入各模块 =====
         const toolsModule = useTools();
         const sessionsModule = useSessions();
+        const knowledgeModule = useKnowledge();
 
         // ===== 工具方法 =====
         function formatTime(ts) {
@@ -831,7 +871,8 @@ const app = createApp({
                     session_id: sessionsModule.sessionId.value,
                     model_name: selectedModel.value,
                     system_prompt: currentSystemPrompt.value || undefined,
-                    enabled_tools: toolsModule.enabledTools.value.length > 0 ? toolsModule.enabledTools.value : undefined
+                    enabled_tools: toolsModule.enabledTools.value.length > 0 ? toolsModule.enabledTools.value : undefined,
+                    knowledge_base_id: knowledgeModule.selectedKbId.value || undefined
                 }, abortController.signal);
 
                 const reader = resp.body.getReader();
@@ -1038,6 +1079,12 @@ const app = createApp({
             sessionsModule.loadSidebarSessions();
             loadUserInfo();
             toolsModule.loadTools();
+            knowledgeModule.loadKnowledgeBases();
+
+            // 点击页面其他区域关闭知识库下拉
+            document.addEventListener('click', () => {
+                knowledgeModule.kbSelectorVisible.value = false;
+            });
 
             watch(sessionsModule.historyVisible, (val) => {
                 if (val && !sessionsModule.historyDetail.value) {
@@ -1071,6 +1118,8 @@ const app = createApp({
             ...toolsModule,
             getToolIcon,
             getAgentIcon,
+            // 知识库模块
+            ...knowledgeModule,
         };
     }
 });
