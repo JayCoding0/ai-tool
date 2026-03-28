@@ -1,19 +1,20 @@
--- 创建 Skills 技能表
-CREATE TABLE IF NOT EXISTS skills (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '技能ID',
-    user_id BIGINT NOT NULL DEFAULT 0 COMMENT '用户ID，0=系统预设，>0=用户自定义',
-    name VARCHAR(100) NOT NULL COMMENT '技能名称',
-    description VARCHAR(500) NOT NULL DEFAULT '' COMMENT '技能描述',
-    icon VARCHAR(20) NOT NULL DEFAULT '🤖' COMMENT '技能图标（emoji）',
-    system_prompt TEXT NOT NULL COMMENT '技能的 System Prompt（SKILL.md 核心内容）',
-    is_public TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否公开（1=公开，0=私有）',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-    INDEX idx_user_id (user_id),
-    INDEX idx_is_public (is_public)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI 技能表（Skills）';
+-- ============================================================
+-- AI Chat Platform - 预设数据初始化脚本
+-- 在 schema.sql 执行完成后运行，插入系统预设数据
+-- ============================================================
 
--- 插入系统预设技能（user_id=0）
+USE ai_chat_db;
+
+-- -----------------------------------------------------------
+-- 1. 创建 admin 管理员账户（密码: admin123，请登录后立即修改）
+-- bcrypt hash of "admin123" with cost=10
+-- -----------------------------------------------------------
+INSERT IGNORE INTO users (username, password_hash, role)
+VALUES ('admin', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'admin');
+
+-- -----------------------------------------------------------
+-- 2. 系统预设技能（user_id=0 表示系统预设）
+-- -----------------------------------------------------------
 INSERT INTO skills (user_id, name, description, icon, system_prompt, is_public) VALUES
 (0, '代码助手', '专业的编程助手，擅长多种语言，提供可运行的代码示例', '💻',
 '你是一个专业的编程助手，精通 Go、Python、JavaScript、Java 等主流编程语言。\n回答编程问题时：\n1. 始终提供可运行的代码示例\n2. 代码需要有清晰的注释\n3. 说明代码的关键逻辑和注意事项\n4. 如有多种实现方式，给出最佳实践推荐\n请用中文回答。',
