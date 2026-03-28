@@ -1,3 +1,5 @@
+// Package session 提供会话仓储的基础设施实现
+// 包括内存存储（开发/降级用）和 MySQL 持久化存储
 package session
 
 import (

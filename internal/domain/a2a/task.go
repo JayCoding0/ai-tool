@@ -1,3 +1,5 @@
+// Package a2a 定义 Agent-to-Agent 协议的核心领域模型
+// 包括任务状态机、消息格式、流式事件等
 package a2a
 
 import (

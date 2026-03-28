@@ -1,3 +1,5 @@
+// Package model 定义模型领域的核心类型和接口
+// 包括模型生成器接口、消息格式、工具调用协议等
 package model
 
 import (
@@ -100,12 +102,4 @@ type Generator interface {
 	// GenerateWithTools 支持 Function Calling 的生成（非流式）
 	// messages 为完整对话历史，tools 为可用工具列表
 	GenerateWithTools(ctx context.Context, messages []Message, tools []ToolDefinition) (GenerateWithToolsResult, error)
-}
-
-// ModelConfig 模型配置值对象
-type ModelConfig struct {
-	Name        ModelName
-	Temperature float64
-	TopP        float64
-	MaxTokens   int
 }

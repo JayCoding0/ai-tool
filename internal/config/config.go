@@ -1,3 +1,5 @@
+// Package config 应用配置管理
+// 从 trpc_go.yaml 的 custom 块加载配置，支持默认值回退和环境变量覆盖
 package config
 
 import (

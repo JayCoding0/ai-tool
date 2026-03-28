@@ -1,3 +1,4 @@
+// Package user 定义用户领域的核心实体和角色模型
 package user
 
 import "context"

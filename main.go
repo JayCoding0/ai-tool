@@ -1,3 +1,5 @@
+// Package main AI Chat Platform 应用入口
+// 负责初始化日志、加载配置、组装组件并启动 HTTP/MCP 服务
 package main
 
 import (
@@ -47,6 +49,8 @@ func main() {
 	// 启动时清理游客会话（user_id=0 的记录）
 	cleaner.CleanGuestSessions(logger)
 
-	// 启动 MCP 和 HTTP 服务器
+	logger.Info("所有组件初始化完成，准备启动服务")
+
+	// 启动 MCP 和 HTTP 服务器（阻塞）
 	bootstrap.StartServers(mcpServer, appConfig, logger)
 }

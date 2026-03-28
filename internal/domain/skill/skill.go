@@ -1,3 +1,4 @@
+// Package skill 定义技能领域的核心实体和模式
 package skill
 
 import (

@@ -1,29 +1,21 @@
+// Package application 应用服务层，编排领域对象完成业务用例
 package application
 
 import (
 	"context"
 	"errors"
 
-	"aiProject/internal/domain/model"
 	"aiProject/internal/domain/skill"
 )
 
-// SkillService 技能应用服务
+// SkillService 技能应用服务，负责技能的 CRUD 和权限控制
 type SkillService struct {
-	skillRepo    skill.Repository
-	modelFactory func(modelName string) model.Generator
-	defaultModel string
+	skillRepo skill.Repository
 }
 
 // NewSkillService 创建技能服务
 func NewSkillService(skillRepo skill.Repository) *SkillService {
 	return &SkillService{skillRepo: skillRepo}
-}
-
-// SetModelFactory 注入模型工厂（用于 AI 生成 Skill）
-func (s *SkillService) SetModelFactory(factory func(string) model.Generator, defaultModel string) {
-	s.modelFactory = factory
-	s.defaultModel = defaultModel
 }
 
 // CreateSkillRequest 创建技能请求

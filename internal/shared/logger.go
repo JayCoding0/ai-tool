@@ -1,3 +1,5 @@
+// Package shared 提供跨层共享的基础设施
+// 包括全局日志实例、通用工具函数等
 package shared
 
 import (

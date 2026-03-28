@@ -1,3 +1,4 @@
+// Package application 应用服务层，编排领域对象完成业务用例
 package application
 
 import (
@@ -153,12 +154,7 @@ func (r *AgentRegistry) CallSubAgent(agentName, message, sessionID string, event
 		zap.String("session_id", sessionID),
 		zap.Strings("enabled_tools", inst.Def.EnabledTools),
 		zap.String("model", inst.Def.ModelName),
-		zap.String("msg_preview", func() string {
-			if len(message) > 60 {
-				return message[:60] + "..."
-			}
-			return message
-		}()),
+		zap.String("msg_preview", msgPreview(message, 60)),
 	)
 	start := time.Now()
 
@@ -218,12 +214,7 @@ func (r *AgentRegistry) CallSubAgent(agentName, message, sessionID string, event
 		zap.String("agent", agentName),
 		zap.Duration("duration", time.Since(start)),
 		zap.Int("result_len", len(result)),
-		zap.String("result_preview", func() string {
-			if len(result) > 100 {
-				return result[:100] + "..."
-			}
-			return result
-		}()),
+		zap.String("result_preview", msgPreview(result, 100)),
 	)
 	return result, nil
 }

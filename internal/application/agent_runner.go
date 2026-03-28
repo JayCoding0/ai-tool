@@ -1,3 +1,4 @@
+// Package application 应用服务层，编排领域对象完成业务用例
 package application
 
 import (
@@ -98,14 +99,9 @@ func (r *agentRunner) runReActLoop(ctx context.Context, messages []model.Message
 
 		// 有工具调用：推送思考内容（若有）
 		if result.Content != "" {
-			logger.Debug("[ReAct] 模型思考过程",
+		logger.Debug("[ReAct] 模型思考过程",
 				zap.Int("round", round),
-				zap.String("thought_preview", func() string {
-					if len(result.Content) > 80 {
-						return result.Content[:80] + "..."
-					}
-					return result.Content
-				}()),
+				zap.String("thought_preview", msgPreview(result.Content, 80)),
 			)
 			if !sendEvent(ctx, r.outCh, StreamChatResponse{
 				Type:      "thought",
@@ -127,16 +123,11 @@ func (r *agentRunner) runReActLoop(ctx context.Context, messages []model.Message
 
 		// 推送所有 tool_call 事件
 		for _, tc := range result.ToolCalls {
-			logger.Info("[ReAct] 工具调用",
+		logger.Info("[ReAct] 工具调用",
 				zap.Int("round", round),
 				zap.String("tool_name", tc.Name),
 				zap.String("tool_call_id", tc.ID),
-				zap.String("args_preview", func() string {
-					if len(tc.Arguments) > 120 {
-						return tc.Arguments[:120] + "..."
-					}
-					return tc.Arguments
-				}()),
+				zap.String("args_preview", msgPreview(tc.Arguments, 120)),
 			)
 			if !sendEvent(ctx, r.outCh, StreamChatResponse{
 				Type:            "tool_call",
@@ -253,12 +244,7 @@ func (r *agentRunner) executeToolsConcurrently(ctx context.Context, toolCalls []
 					zap.String("tool_call_id", call.ID),
 					zap.Duration("duration", duration),
 					zap.Int("result_len", len(res)),
-					zap.String("result_preview", func() string {
-						if len(res) > 120 {
-							return res[:120] + "..."
-						}
-						return res
-					}()),
+					zap.String("result_preview", msgPreview(res, 120)),
 				)
 			}
 			results[idx] = toolExecResult{tc: call, result: res}

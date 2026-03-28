@@ -1,3 +1,4 @@
+// Package knowledge 定义知识库领域的核心实体、仓储接口和向量化接口
 package knowledge
 
 import (
@@ -55,7 +56,7 @@ type Chunk struct {
 
 // ScoredChunk 带相似度分数的分块（检索结果）
 type ScoredChunk struct {
-	Chunk    *Chunk
+	Chunk   *Chunk
 	Score    float32
 	DocName  string // 来源文档名称
 }

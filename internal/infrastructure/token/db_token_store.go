@@ -1,3 +1,4 @@
+// Package token 提供认证 Token 的持久化存储实现
 package token
 
 import (

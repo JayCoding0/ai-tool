@@ -1,3 +1,5 @@
+// Package tool 提供全局工具注册中心
+// 管理所有可供 Agent 调用的工具定义和执行函数
 package tool
 
 import (

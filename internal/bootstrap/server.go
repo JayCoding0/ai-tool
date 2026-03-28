@@ -1,3 +1,4 @@
+// Package bootstrap 应用启动编排层
 package bootstrap
 
 import (

@@ -106,20 +106,11 @@ go mod tidy
 ### 2. 初始化数据库
 
 ```bash
-# 创建数据库
-mysql -u root -p -e "CREATE DATABASE ai_chat_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+# 执行完整建库脚本（包含建库 + 所有表结构）
+mysql -u root -p < database/schema.sql
 
-# 执行初始化脚本
-mysql -u root -p ai_chat_db < database/schema.sql
-
-# 执行所有迁移脚本（按文件名顺序）
-mysql -u root -p ai_chat_db < database/migrate_add_users.sql
-mysql -u root -p ai_chat_db < database/migrate_add_skills.sql
-mysql -u root -p ai_chat_db < database/migrate_add_skill_tools.sql
-mysql -u root -p ai_chat_db < database/migrate_add_system_prompt.sql
-mysql -u root -p ai_chat_db < database/migrate_add_token_stats.sql
-mysql -u root -p ai_chat_db < database/migrate_add_model_name.sql
-mysql -u root -p ai_chat_db < database/migrate_add_role_20260328.sql
+# 插入预设数据（admin 账户 + 系统预设技能）
+mysql -u root -p ai_chat_db < database/seed.sql
 ```
 
 ### 3. 配置文件

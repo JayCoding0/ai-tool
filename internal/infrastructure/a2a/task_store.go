@@ -1,3 +1,5 @@
+// Package a2a 提供 A2A 任务的基础设施实现
+// 包括内存任务存储、流式推送中心等
 package a2a
 
 import (

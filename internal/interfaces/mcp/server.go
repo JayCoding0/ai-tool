@@ -1,3 +1,5 @@
+// Package mcp 提供 MCP (Model Context Protocol) 服务器实现
+// 将 ChatService 的能力通过 MCP 协议暴露给外部工具调用
 package mcp
 
 import (

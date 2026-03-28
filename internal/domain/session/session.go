@@ -1,3 +1,5 @@
+// Package session 定义会话领域的核心实体和值对象
+// 包括会话、消息、会话信息等
 package session
 
 import (

@@ -1,3 +1,4 @@
+// Package application 应用服务层，编排领域对象完成业务用例
 package application
 
 import (
@@ -11,6 +12,14 @@ import (
 	"aiProject/internal/shared"
 	"go.uber.org/zap"
 )
+
+// msgPreview 截取消息前 N 个字符作为日志预览，避免日志过长
+func msgPreview(msg string, maxLen int) string {
+	if len(msg) > maxLen {
+		return msg[:maxLen] + "..."
+	}
+	return msg
+}
 
 // ChatRequest 聊天请求值对象
 type ChatRequest struct {
@@ -117,17 +126,12 @@ func (s *ChatService) ProcessMessageStream(ctx context.Context, req ChatRequest)
 		modelName = s.defaultModel
 	}
 
-	shared.GetLogger().Info("[ProcessMessageStream] 收到请求",
+	shared.GetLogger().Info("[流式聊天] 收到请求",
 		zap.String("session_id", string(req.SessionID)),
 		zap.String("model", modelName),
 		zap.Int64("user_id", req.UserID),
 		zap.Int("msg_len", len(req.Message)),
-		zap.String("msg_preview", func() string {
-			if len(req.Message) > 60 {
-				return req.Message[:60] + "..."
-			}
-			return req.Message
-		}()),
+		zap.String("msg_preview", msgPreview(req.Message, 60)),
 		zap.Bool("has_system_prompt", req.SystemPrompt != ""),
 	)
 
@@ -326,18 +330,13 @@ func (s *ChatService) ProcessMessageWithTools(ctx context.Context, req ChatReque
 		modelName = s.defaultModel
 	}
 
-	shared.GetLogger().Info("[ProcessMessageWithTools] 收到请求",
+	shared.GetLogger().Info("[工具聊天] 收到请求",
 		zap.String("session_id", string(req.SessionID)),
 		zap.String("model", modelName),
 		zap.Int64("user_id", req.UserID),
 		zap.Strings("enabled_tools", toolNames),
 		zap.Int("msg_len", len(req.Message)),
-		zap.String("msg_preview", func() string {
-			if len(req.Message) > 60 {
-				return req.Message[:60] + "..."
-			}
-			return req.Message
-		}()),
+		zap.String("msg_preview", msgPreview(req.Message, 60)),
 		zap.Bool("has_system_prompt", req.SystemPrompt != ""),
 		zap.Int64("kb_id", req.KnowledgeBaseID),
 	)
@@ -364,24 +363,19 @@ func (s *ChatService) ProcessMessageWithTools(ctx context.Context, req ChatReque
 
 	toolDefs := tool.GetDefinitions(toolNames)
 
-	// 详细调试日志：打印实际使用的 systemPrompt、工具列表、历史消息数
+	// 调试日志：工具解析结果
 	{
 		toolNames2 := make([]string, len(toolDefs))
 		for i, d := range toolDefs {
 			toolNames2[i] = d.Name
 		}
-		shared.GetLogger().Info("[ProcessMessageWithTools] 工具解析完成",
+		shared.GetLogger().Debug("[工具聊天] 工具解析完成",
 			zap.String("session_id", string(sess.ID())),
 			zap.Int("history_msgs", len(sess.GetHistory())),
 			zap.Strings("requested_tools", toolNames),
 			zap.Strings("resolved_tool_defs", toolNames2),
 			zap.Int("tool_def_count", len(toolDefs)),
-			zap.String("system_prompt_prefix", func() string {
-				if len(systemPrompt) > 100 {
-					return systemPrompt[:100] + "..."
-				}
-				return systemPrompt
-			}()),
+			zap.String("system_prompt_prefix", msgPreview(systemPrompt, 100)),
 		)
 	}
 

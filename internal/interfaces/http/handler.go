@@ -1,3 +1,5 @@
+// Package http 提供 HTTP 接口层实现
+// 包括聊天、认证、会话管理、工具、Agent、知识库等 RESTful API
 package http
 
 import (
@@ -59,6 +61,14 @@ func setAuthCookie(w http.ResponseWriter, token string, maxAge int) {
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 	})
+}
+
+// truncate 截取字符串前 maxLen 个字符，用于日志预览
+func truncate(s string, maxLen int) string {
+	if len(s) > maxLen {
+		return s[:maxLen] + "..."
+	}
+	return s
 }
 
 // ChatHandler 聊天HTTP处理程序
@@ -313,14 +323,9 @@ func (h *ChatHandler) HandleChatStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 调试日志：打印 handler 层实际注入的参数
-	h.logger.Info("HandleChatStream 调试",
+	h.logger.Debug("HandleChatStream 参数",
 		zap.Strings("enabled_tools", enabledTools),
-		zap.String("system_prompt_prefix", func() string {
-			if len(systemPrompt) > 80 {
-				return systemPrompt[:80]
-			}
-			return systemPrompt
-		}()),
+		zap.String("system_prompt_prefix", truncate(systemPrompt, 80)),
 		zap.Bool("using_master_chatSvc", chatSvc != h.chatService),
 	)
 

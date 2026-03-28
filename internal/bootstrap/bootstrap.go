@@ -1,3 +1,7 @@
+// Package bootstrap 应用启动编排层
+// 负责初始化数据库、仓储、服务、中间件、路由注册和服务器启动
+// Package bootstrap 应用启动编排层
+// 负责初始化数据库、仓储、服务、中间件、路由注册和服务器启动
 package bootstrap
 
 import (

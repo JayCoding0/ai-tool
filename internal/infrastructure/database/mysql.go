@@ -1,3 +1,5 @@
+// Package database 提供数据库连接管理
+// 基于 trpc-database/mysql 封装，支持 DSN 连接和连接探活
 package database
 
 import (
