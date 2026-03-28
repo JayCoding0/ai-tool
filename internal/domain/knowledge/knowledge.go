@@ -57,8 +57,8 @@ type Chunk struct {
 // ScoredChunk 带相似度分数的分块（检索结果）
 type ScoredChunk struct {
 	Chunk   *Chunk
-	Score    float32
-	DocName  string // 来源文档名称
+	Score   float32
+	DocName string // 来源文档名称
 }
 
 // Embedder 向量化接口（与具体模型解耦）
