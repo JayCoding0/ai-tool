@@ -201,10 +201,7 @@
             <button class="submit-btn" :disabled="loginLoading" @click="doLogin">
                 {{ loginLoading ? '登录中...' : '登 录' }}
             </button>
-        </div>
-
-        <!-- 注册 -->
-        <div v-else class="form-wrap">
+        </div><div v-else class="form-wrap">
             <div class="form-field">
                 <label class="field-label">用户名 <span class="field-hint">（3-50个字符）</span></label>
                 <el-input v-model="regForm.username" placeholder="请输入用户名"

@@ -58,10 +58,11 @@ func setAuthCookie(w http.ResponseWriter, token string, maxAge int) {
 
 // ChatHandler 聊天HTTP处理程序
 type ChatHandler struct {
-	chatService *application.ChatService
-	authService *application.AuthService
-	appConfig   *config.Config
-	logger      *zap.Logger
+	chatService   *application.ChatService
+	authService   *application.AuthService
+	agentRegistry *application.AgentRegistry
+	appConfig     *config.Config
+	logger        *zap.Logger
 }
 
 // NewChatHandler 创建聊天处理程序
@@ -72,6 +73,11 @@ func NewChatHandler(chatService *application.ChatService, authService *applicati
 		appConfig:   appConfig,
 		logger:      shared.GetLogger(),
 	}
+}
+
+// SetAgentRegistry 注入 Agent 注册中心（多 Agent 模式下调用）
+func (h *ChatHandler) SetAgentRegistry(registry *application.AgentRegistry) {
+	h.agentRegistry = registry
 }
 
 // HistoryRequest 历史记录请求结构体
@@ -646,6 +652,78 @@ func (h *ChatHandler) HandleListTools(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"tools": defs,
 		"count": len(defs),
+	})
+}
+
+// AgentToolInfo Agent 工具信息（用于前端展示）
+type AgentToolInfo struct {
+	Name        string `json:"name"`
+	DisplayName string `json:"display_name"`
+	Description string `json:"description"`
+}
+
+// AgentInfo Agent 信息（用于前端展示）
+type AgentInfo struct {
+	Name         string          `json:"name"`
+	DisplayName  string          `json:"display_name"`
+	Description  string          `json:"description"`
+	IsMaster     bool            `json:"is_master"`
+	DefaultTools []string        `json:"default_tools"` // 该 Agent 默认启用的工具名称列表
+	Tools        []AgentToolInfo `json:"tools"`         // 该 Agent 可用工具的详细信息
+}
+
+// HandleListAgents 列出所有 Agent 及其工具信息
+func (h *ChatHandler) HandleListAgents(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSONError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	// 无多 Agent 模式，返回空列表
+	if h.agentRegistry == nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"agents": []AgentInfo{},
+			"count":  0,
+		})
+		return
+	}
+
+	instances := h.agentRegistry.ListAll()
+	agents := make([]AgentInfo, 0, len(instances))
+	for _, inst := range instances {
+		// 获取该 Agent 每个工具的详细信息
+		tools := make([]AgentToolInfo, 0, len(inst.Def.EnabledTools))
+		for _, toolName := range inst.Def.EnabledTools {
+			if t, ok := domain_tool.Get(toolName); ok {
+				tools = append(tools, AgentToolInfo{
+					Name:        t.Definition.Name,
+					DisplayName: t.Definition.DisplayName,
+					Description: t.Definition.Description,
+				})
+			} else {
+				// 工具未注册时仍返回名称（如 call_agent 是动态注册的）
+				tools = append(tools, AgentToolInfo{
+					Name:        toolName,
+					DisplayName: domain_tool.GetDisplayName(toolName),
+					Description: "",
+				})
+			}
+		}
+		agents = append(agents, AgentInfo{
+			Name:         inst.Def.Name,
+			DisplayName:  inst.Def.DisplayName,
+			Description:  inst.Def.Description,
+			IsMaster:     inst.Def.IsMaster,
+			DefaultTools: inst.Def.EnabledTools,
+			Tools:        tools,
+		})
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"agents": agents,
+		"count":  len(agents),
 	})
 }
 

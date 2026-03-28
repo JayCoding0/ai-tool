@@ -168,11 +168,19 @@ type toolExecResult struct {
 func (r *agentRunner) executeToolsConcurrently(ctx context.Context, toolCalls []model.ToolCall, step int) []toolExecResult {
 	results := make([]toolExecResult, len(toolCalls))
 	var wg sync.WaitGroup
+
+	// 将子 Agent 事件回调注入 context，使 call_agent 工具能透传子 Agent 的中间事件
+	ctxWithCallback := context.WithValue(ctx, SubAgentEventCallbackKey, SubAgentEventCallback(func(event StreamChatResponse) {
+		// 给子 Agent 事件加上当前步骤编号后透传到主 Agent 输出流
+		event.Step = step
+		sendEvent(ctx, r.outCh, event) //nolint:errcheck
+	}))
+
 	for i, tc := range toolCalls {
 		wg.Add(1)
 		go func(idx int, call model.ToolCall) {
 			defer wg.Done()
-			res, execErr := tool.Execute(ctx, call)
+			res, execErr := tool.Execute(ctxWithCallback, call)
 			if execErr != nil {
 				res = fmt.Sprintf("工具执行失败: %v", execErr)
 			}

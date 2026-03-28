@@ -22,6 +22,13 @@ async function apiLoadTools() {
     return await resp.json();
 }
 
+// 加载 Agent 列表（含各 Agent 的工具信息）
+async function apiLoadAgents() {
+    const resp = await fetch('/api/agents', { headers: getAuthHeaders() });
+    if (!resp.ok) throw new Error('加载 Agent 列表失败');
+    return await resp.json();
+}
+
 // 加载会话列表
 async function apiLoadSessions() {
     const resp = await fetch('/api/sessions', { headers: getAuthHeaders() });

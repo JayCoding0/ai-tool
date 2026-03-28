@@ -9,6 +9,14 @@ import (
 	"aiProject/internal/domain/tool"
 )
 
+// subAgentContextKey context key 类型，避免与其他包冲突
+type subAgentContextKey struct{}
+
+// SubAgentEventCallbackKey 用于在 context 中传递子 Agent 事件回调的 key
+// 主 Agent 的 agentRunner 在调用工具前将回调注入 context，
+// call_agent 工具从 context 中取出并传给 CallSubAgent
+var SubAgentEventCallbackKey = subAgentContextKey{}
+
 // RegisterCallAgentTool 向全局工具注册中心注册 call_agent 工具
 // 该工具让主 Agent 可以通过 LLM 工具调用的方式调用子 Agent
 // subAgents: 子 Agent 列表，用于生成工具描述（告知 LLM 有哪些子 Agent 可用）
@@ -65,7 +73,13 @@ func RegisterCallAgentTool(subAgents []*AgentInstance) {
 				return "", fmt.Errorf("message 不能为空")
 			}
 
-			result, err := GetAgentRegistry().CallSubAgent(agentName, message, sessionID)
+			// 从 context 中取出事件回调（由主 Agent 的 agentRunner 注入）
+			var callback SubAgentEventCallback
+			if cb, ok := ctx.Value(SubAgentEventCallbackKey).(SubAgentEventCallback); ok {
+				callback = cb
+			}
+
+			result, err := GetAgentRegistry().CallSubAgent(agentName, message, sessionID, callback)
 			if err != nil {
 				return "", err
 			}

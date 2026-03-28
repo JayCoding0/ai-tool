@@ -106,9 +106,13 @@ func (r *AgentRegistry) ListAll() []*AgentInstance {
 	return all
 }
 
+// SubAgentEventCallback 子 Agent 事件透传回调函数类型
+// 主 Agent 可通过此回调实时接收子 Agent 的思考/工具调用过程
+type SubAgentEventCallback func(event StreamChatResponse)
+
 // CallSubAgent 调用指定子 Agent 执行任务，返回文本结果
-// 这是主 Agent 调用子 Agent 的核心方法
-func (r *AgentRegistry) CallSubAgent(agentName, message, sessionID string) (string, error) {
+// eventCallback: 可选，用于实时接收子 Agent 的 tool_call/tool_result/thought 事件（传 nil 则忽略）
+func (r *AgentRegistry) CallSubAgent(agentName, message, sessionID string, eventCallback SubAgentEventCallback) (string, error) {
 	inst, ok := r.Get(agentName)
 	if !ok {
 		return "", fmt.Errorf("子 Agent %q 未注册", agentName)
@@ -135,12 +139,17 @@ func (r *AgentRegistry) CallSubAgent(agentName, message, sessionID string) (stri
 		return "", fmt.Errorf("子 Agent %q 启动失败: %w", agentName, err)
 	}
 
-	// 收集子 Agent 的完整输出
+	// 收集子 Agent 的完整输出，并透传中间事件
 	var result string
 	for event := range streamCh {
 		switch event.Type {
 		case "chunk":
 			result += event.Content
+		case "thought", "tool_call", "tool_result":
+			// 透传子 Agent 的思考/工具调用过程给调用方
+			if eventCallback != nil {
+				eventCallback(event)
+			}
 		case "error":
 			return result, fmt.Errorf("子 Agent %q 执行失败: %s", agentName, event.Error)
 		}

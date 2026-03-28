@@ -279,8 +279,18 @@ func InitComponents(appConfig *config.Config) (*http_handler.ChatHandler, *appli
 	authService := application.NewAuthService(userRepo)
 	// 从 skills/*/scripts/ 目录加载并注册工具（传入百度 AK，避免硬编码）
 	infra_tools.LoadToolsFromSkillsDir("skills", appConfig.Tools.BaiduAK)
-	handler := http_handler.NewChatHandler(chatService, authService, appConfig)
-	return handler, chatService
+
+	// 初始化多 Agent 注册中心，让前端聊天也走主 Agent（call_agent 编排模式）
+	registry := InitAgentRegistry(chatService, appConfig)
+	// 前端聊天使用主 Agent 的 ChatService
+	frontendChatService := chatService
+	if master, ok := registry.GetMaster(); ok {
+		frontendChatService = master.ChatService
+	}
+
+	handler := http_handler.NewChatHandler(frontendChatService, authService, appConfig)
+	handler.SetAgentRegistry(registry)
+	return handler, frontendChatService
 }
 
 // InitAgentRegistry 初始化多 Agent 注册中心
@@ -306,7 +316,11 @@ func InitAgentRegistry(chatService *application.ChatService, appConfig *config.C
 		DisplayName: "主调度 Agent",
 		Description: "负责理解用户意图，拆解任务，并调用合适的子 Agent 完成专项工作",
 		SystemPrompt: "你是一个智能任务调度助手，请始终使用中文回答。" +
-			"你可以通过 call_agent 工具调用专项子 Agent 来完成特定任务。" +
+			"你只有一个工具可以使用：call_agent。" +
+			"当用户需要查天气、搜索信息、执行代码、计算等专项任务时，必须通过 call_agent 工具调用对应的子 Agent，" +
+			"绝对不能直接调用子 Agent 的名称（如 weather_agent、search_agent、code_agent）作为工具名，" +
+			"只能调用 call_agent 并在参数 agent_name 中指定子 Agent 名称。" +
+			"对于简单的问候、闲聊等不需要工具的问题，直接回复即可，无需调用任何工具。" +
 			"请根据用户的需求，判断是否需要调用子 Agent，并将结果汇总后回复用户。",
 		EnabledTools: []string{"call_agent"},
 		IsMaster:     true,
@@ -346,6 +360,24 @@ func InitAgentRegistry(chatService *application.ChatService, appConfig *config.C
 		IsMaster:     false,
 	}, searchChatService)
 
+	// ── 注册代码/工具子 Agent ──
+	codeChatService := application.NewChatServiceWithFactory(
+		sessionRepo,
+		newModelGenerator(appConfig),
+		appConfig.Model.Name,
+		modelFactory,
+	)
+	registry.Register(application.AgentDefinition{
+		Name:        "code_agent",
+		DisplayName: "代码工具 Agent",
+		Description: "负责代码查询、数学计算、文件写入、执行命令及数据库查询等工具类任务",
+		SystemPrompt: "你是一个专业的代码与工具执行助手，请始终使用中文回答。" +
+			"你可以执行数学计算、写入文件、执行 Shell 命令、查询 MySQL 数据库等操作。" +
+			"请根据用户需求选择合适的工具，并将结果以清晰易读的格式返回。",
+		EnabledTools: []string{"calculate", "write_file", "execute_command", "mysql_query"},
+		IsMaster:     false,
+	}, codeChatService)
+
 	// 向全局工具注册中心注册 call_agent 工具（主 Agent 用来调用子 Agent）
 	application.RegisterCallAgentTool(registry.ListSubAgents())
 
@@ -371,10 +403,14 @@ func InitA2AService(chatService *application.ChatService, appConfig *config.Conf
 		a2aSvc = application.NewA2AService(chatService, agentCard)
 	}
 
-	// 如果数据库已连接，初始化多 Agent 注册中心
-	if database.GetDB() != nil {
-		registry := InitAgentRegistry(chatService, appConfig)
+	// 复用已在 InitComponents 中初始化的多 Agent 注册中心（避免重复注册）
+	registry := application.GetAgentRegistry()
+	if len(registry.ListAll()) > 0 {
 		a2aSvc.WithAgentRegistry(registry)
+	} else if database.GetDB() != nil {
+		// 数据库已连接但注册中心为空（单独调用 InitA2AService 的场景），则初始化
+		reg := InitAgentRegistry(chatService, appConfig)
+		a2aSvc.WithAgentRegistry(reg)
 	}
 
 	return a2aSvc
@@ -405,6 +441,8 @@ func RegisterRoutes(chatHandler *http_handler.ChatHandler, appConfig *config.Con
 	mux.HandleFunc("/api/sessions/system-prompt/get", chatHandler.HandleGetSystemPrompt)
 	// 工具接口
 	mux.HandleFunc("/api/tools", chatHandler.HandleListTools)
+	// Agent 列表接口
+	mux.HandleFunc("/api/agents", chatHandler.HandleListAgents)
 	// 模型列表接口
 	mux.HandleFunc("/api/models", chatHandler.HandleListModels)
 	// 认证相关接口

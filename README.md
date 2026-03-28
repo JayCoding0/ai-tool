@@ -12,6 +12,7 @@
 - 💬 **多会话管理**：支持多会话并行、历史记录持久化、会话标题自动生成、会话重命名
 - 📊 **Token 统计**：按用户、按模型统计 Token 消耗
 - 🔌 **MCP 协议**：提供 Model Context Protocol 服务端接口
+- 🤝 **多 Agent 编排**：内置 Agent 注册中心，支持主 Agent 编排多个子 Agent 协同完成复杂任务，子 Agent 思考/工具调用过程实时透传
 
 ## 🏗️ 技术架构
 
@@ -19,10 +20,16 @@
 aiProject/
 ├── main.go                          # 程序入口
 ├── trpc_go.yaml.example             # 配置文件模板
-├── frontend/                        # 前端（原生 HTML + JS）
+├── frontend/                        # 前端（Vue 3 + Element Plus）
 │   ├── index.html                   # 主聊天界面
 │   ├── login.html                   # 登录/注册页面
-│   └── script.js                    # 前端交互逻辑
+│   ├── style.css                    # 全局样式
+│   └── js/
+│       ├── app.js                   # 主应用逻辑（Vue 3 组件）
+│       ├── api.js                   # API 请求封装
+│       ├── markdown.js              # Markdown 渲染（marked + highlight.js）
+│       ├── session.js               # 会话管理逻辑
+│       └── tools.js                 # 工具调用展示逻辑
 ├── skills/                          # 内置 Skill 技能目录
 │   ├── calculate/                   # 计算器技能
 │   ├── create-skill/                # Skill 生成器技能
@@ -54,6 +61,9 @@ aiProject/
     │   ├── skill/mysql/             # Skill MySQL 持久化
     │   ├── tools/                   # 工具加载器（扫描 skills/*/scripts/）
     │   └── user/mysql/              # 用户 MySQL 持久化
+    ├── application/
+    │   ├── agent_registry.go        # Agent 注册中心（多 Agent 编排）
+    │   └── agent_runner.go          # ReAct 循环执行器
     └── interfaces/
         ├── http/handler.go          # HTTP API 处理器
         └── mcp/server.go            # MCP 协议服务端
@@ -69,8 +79,11 @@ aiProject/
 
 ### 前端技术栈
 
-- 原生 HTML5 + CSS3 + JavaScript（无框架依赖）
+- **Vue 3**（CDN 引入，无构建工具依赖）
+- **Element Plus**：UI 组件库（按钮、对话框、下拉菜单等）
+- **marked.js + highlight.js**：Markdown 渲染与代码高亮
 - SSE（Server-Sent Events）流式接收
+- 模块化 JS（`api.js` / `markdown.js` / `session.js` / `tools.js` / `app.js`）
 - 响应式设计，支持移动端
 
 ## 🚀 快速开始
@@ -214,6 +227,51 @@ version: "1.0"
 | `mysql-query` | MySQL 数据库查询 | Python MySQL 客户端 |
 | `weather` | 天气查询 | Go 原生实现（百度地图 API）|
 | `write-file` | 写入文件 | Python 文件操作 |
+
+## 🤝 多 Agent 编排
+
+系统内置 **Agent 注册中心**（`AgentRegistry`），支持将多个专职 AI Agent 组合成协作团队：
+
+### 工作原理
+
+```
+用户请求
+    │
+    ▼
+主 Agent（Master）
+    │  通过 call_agent 工具调用子 Agent
+    ├──► 子 Agent A（专职工具调用）
+    │        └── 思考/工具调用过程实时透传给主 Agent
+    ├──► 子 Agent B（专职内容生成）
+    │        └── 思考/工具调用过程实时透传给主 Agent
+    └──► 子 Agent C（专职评审）
+             └── 思考/工具调用过程实时透传给主 Agent
+```
+
+### Agent 定义示例
+
+```go
+// 注册一个子 Agent
+registry.Register(application.AgentDefinition{
+    Name:         "data-analyst",
+    DisplayName:  "数据分析师",
+    Description:  "负责查询数据库并分析数据，当需要数据查询或统计时调用",
+    SystemPrompt: "你是一个专业的数据分析师...",
+    EnabledTools: []string{"mysql_query", "calculate"},
+    ModelName:    "qwen-plus",
+    IsMaster:     false,
+}, chatService)
+```
+
+### 特性
+
+| 特性 | 说明 |
+|------|------|
+| **主 Agent 编排** | 主 Agent 自动获得 `call_agent` 工具，可按需调用任意子 Agent |
+| **事件透传** | 子 Agent 的思考过程、工具调用、工具结果实时透传到前端展示 |
+| **独立模型** | 每个子 Agent 可配置不同的模型（如主 Agent 用 GPT-4，子 Agent 用 qwen-plus）|
+| **独立工具集** | 每个子 Agent 只能使用其配置的工具，职责边界清晰 |
+| **并发安全** | 注册中心使用读写锁保护，支持并发访问 |
 
 ## 🔧 Function Calling 工具调用
 

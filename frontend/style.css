@@ -21,6 +21,7 @@ body {
     font-size: 15px;
 }
 #app { height: 100vh; display: flex; }
+#app > div { height: 100vh; display: flex; flex: 1; overflow: hidden; }
 
 /* ===== 侧边栏 ===== */
 .sidebar {
