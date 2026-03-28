@@ -219,7 +219,7 @@ custom:
 # 方式二：直接运行
 go run main.go
 
-# 方式三：Docker 一键部署（含 MySQL）
+# 方式三：Docker 一键部署（Nginx + 应用 + MySQL）
 cp .env.example .env
 docker-compose up -d
 ```
@@ -307,6 +307,7 @@ aiProject/
 │   ├── current-time/                    # 当前时间
 │   ├── ip-lookup/                       # IP 查询
 │   └── skill-creator/                   # Skill 生成器（元技能）
+├── nginx/                               # 🌐 Nginx 配置（前端 + 反向代理）
 ├── scripts/                             # 🔧 运维脚本（启动/停止/重启）
 ├── database/                            # 🗄️ 数据库脚本（schema + seed）
 ├── Dockerfile                           # 🐳 Docker 多阶段构建
@@ -330,7 +331,7 @@ aiProject/
 | [🎯 Skill 开发指南](docs/skill-guide.md) | Skill 目录结构、SKILL.md 格式、5 种设计模式、工具开发 |
 | [🤖 多 Agent 编排指南](docs/agent-orchestration.md) | Agent 注册、主/子 Agent 配置、call_agent 工具、动态工具管理 |
 | [⚙️ 配置说明](docs/configuration.md) | 完整配置项说明、模型类型判断规则、环境变量 |
-| [🚀 部署指南](docs/deployment.md) | 生产环境部署、Docker、Nginx 反代、安全加固 |
+| [🚀 部署指南](docs/deployment.md) | 生产环境部署、Docker、Nginx 前端配置、安全加固 |
 | [🖥️ 前端功能说明](docs/frontend-guide.md) | 页面功能模块、模块化设计、主题系统 |
 
 ---

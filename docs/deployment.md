@@ -9,7 +9,7 @@
 - [本地开发部署](#本地开发部署)
 - [生产环境部署](#生产环境部署)
 - [Docker 容器化部署](#docker-容器化部署)
-- [Nginx 反向代理](#nginx-反向代理)
+- [Nginx 前端配置](#nginx-前端配置)
 - [安全加固](#安全加固)
 - [监控与运维](#监控与运维)
 
@@ -219,7 +219,7 @@ sudo systemctl start ai-agent
 
 ### 快速开始（推荐）
 
-只需 3 步即可通过 Docker 启动完整服务（应用 + MySQL）：
+只需 3 步即可通过 Docker 启动完整服务（Nginx + 应用 + MySQL）：
 
 ```bash
 # 1. 准备配置文件
@@ -239,7 +239,7 @@ docker-compose up -d
 docker-compose ps
 ```
 
-访问 http://localhost:8080 🎉
+访问 http://localhost 🎉（默认 80 端口，通过 Nginx 代理）
 
 > ⚠️ **注意**：`trpc_go.yaml` 中的 MySQL 连接地址需要改为 Docker 内部网络地址：
 > ```yaml
@@ -253,10 +253,11 @@ docker-compose ps
 
 ```bash
 # .env
-HTTP_PORT=8080              # HTTP 服务端口映射
-MCP_PORT=8001               # MCP 服务端口映射
+HTTP_PORT=80                # Nginx 对外端口（浏览器访问）
+MCP_PORT=8001               # MCP 服务端口（直连后端）
 MYSQL_PORT=3306             # MySQL 端口映射
 MYSQL_ROOT_PASSWORD=ai_agent_2024  # MySQL root 密码
+# HTTPS_PORT=443            # HTTPS 端口（生产环境取消注释）
 ```
 
 ### 常用命令
@@ -270,6 +271,9 @@ docker-compose ps
 
 # 查看应用日志
 docker-compose logs -f ai-agent
+
+# 查看 Nginx 日志
+docker-compose logs -f nginx
 
 # 查看 MySQL 日志
 docker-compose logs -f mysql
@@ -296,33 +300,34 @@ docker-compose exec mysql mysql -u root -p ai_chat_db
 ### 架构说明
 
 ```
-┌─────────────────────────────────────────────┐
-│              Docker Network                  │
-│                                              │
-│  ┌──────────────┐    ┌──────────────────┐   │
-│  │  ai-agent    │    │  mysql           │   │
-│  │  :8080 HTTP  │───▶│  :3306           │   │
-│  │  :8001 MCP   │    │                  │   │
-│  └──────────────┘    └──────────────────┘   │
-│        │                      │              │
-└────────┼──────────────────────┼──────────────┘
-         │                      │
-    ┌────┴────┐           ┌─────┴─────┐
-    │ volumes │           │  volumes  │
-    │ logs/   │           │ mysql_data│
-    │ skills/ │           └───────────┘
-    │ config  │
-    └─────────┘
+                    ┌─────────────────────────────────────────────────────────┐
+                    │                    Docker Network                       │
+                    │                                                         │
+  浏览器 ──:80──▶  │  ┌─────────┐    ┌──────────────┐    ┌──────────────┐   │
+                    │  │  nginx  │───▶│  ai-agent    │───▶│  mysql       │   │
+                    │  │  :80    │    │  :8080       │    │  :3306       │   │
+  MCP ────:8001──▶  │  └─────────┘    │  :8001 MCP   │    └──────────────┘   │
+                    │       │         └──────────────┘           │            │
+                    └───────┼────────────────┼──────────────────┼────────────┘
+                            │                │                  │
+                       ┌────┴────┐      ┌────┴────┐       ┌────┴─────┐
+                       │ volumes │      │ volumes │       │  volumes │
+                       │ frontend│      │ logs/   │       │ mysql_data│
+                       │ nginx.  │      │ skills/ │       └──────────┘
+                       │  conf   │      │ config  │
+                       └─────────┘      └─────────┘
 ```
 
 ### 数据持久化
 
-| 挂载项 | 容器路径 | 说明 |
-|--------|---------|------|
-| `./trpc_go.yaml` | `/app/trpc_go.yaml` | 配置文件（只读） |
-| `./logs` | `/app/logs` | 应用日志 |
-| `./skills` | `/app/skills` | Skill 技能目录（支持热更新） |
-| `mysql_data` | `/var/lib/mysql` | MySQL 数据（Docker Volume） |
+| 服务 | 挂载项 | 容器路径 | 说明 |
+|------|--------|---------|------|
+| nginx | `./nginx/nginx.conf` | `/etc/nginx/conf.d/default.conf` | Nginx 配置（只读） |
+| nginx | `./frontend` | `/usr/share/nginx/html` | 前端静态文件（只读） |
+| ai-agent | `./trpc_go.yaml` | `/app/trpc_go.yaml` | 应用配置文件（只读） |
+| ai-agent | `./logs` | `/app/logs` | 应用日志 |
+| ai-agent | `./skills` | `/app/skills` | Skill 技能目录（支持热更新） |
+| mysql | `mysql_data` | `/var/lib/mysql` | MySQL 数据（Docker Volume） |
 
 ### Dockerfile 特性
 
@@ -354,51 +359,82 @@ docker run -d \
 
 ---
 
-## Nginx 反向代理
+## Nginx 前端配置
 
-### 配置示例
+项目已内置完整的 Nginx 配置文件 `nginx/nginx.conf`，Docker Compose 部署时自动使用。
+
+### 配置文件位置
+
+```
+nginx/
+└── nginx.conf          # Nginx 配置（前端静态文件 + API 反向代理）
+```
+
+### 配置特性
+
+| 特性 | 说明 |
+|------|------|
+| **前端静态文件服务** | 直接服务 `index.html`、`login.html`、`knowledge.html` |
+| **API 反向代理** | `/api/*` → 后端 8080 端口 |
+| **A2A 协议代理** | `/a2a/*`、`/.well-known/agent.json` → 后端 |
+| **SSE 流式支持** | 关闭 `proxy_buffering`，确保实时推送 |
+| **Gzip 压缩** | JS/CSS/JSON 等自动压缩，减少传输体积 |
+| **缓存策略** | HTML 不缓存（即时更新），JS/CSS 缓存 7 天 |
+| **安全头** | X-Frame-Options、X-Content-Type-Options 等 |
+| **上传限制** | `client_max_body_size 50m`（知识库文档上传） |
+| **HTTPS 模板** | 配置文件底部提供 HTTPS 配置模板，取消注释即可启用 |
+
+### 裸机部署使用 Nginx
+
+如果不使用 Docker，可以手动配置 Nginx：
+
+```bash
+# 复制配置文件
+sudo cp nginx/nginx.conf /etc/nginx/conf.d/ai-agent.conf
+
+# 修改 upstream 地址（裸机部署改为 127.0.0.1）
+# upstream ai_agent_backend { server 127.0.0.1:8080; }
+
+# 修改前端文件路径
+# root /opt/ai-agent/frontend;
+
+# 测试配置
+sudo nginx -t
+
+# 重载
+sudo nginx -s reload
+```
+
+### HTTPS 配置
+
+编辑 `nginx/nginx.conf`，取消底部 HTTPS 配置的注释，并配置 SSL 证书路径：
 
 ```nginx
-upstream ai_agent {
-    server 127.0.0.1:8080;
-}
-
-server {
-    listen 80;
-    server_name your-domain.com;
-
-    # 强制 HTTPS
-    return 301 https://$server_name$request_uri;
-}
-
 server {
     listen 443 ssl http2;
     server_name your-domain.com;
 
     ssl_certificate     /etc/ssl/certs/your-domain.crt;
     ssl_certificate_key /etc/ssl/private/your-domain.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
 
-    # SSE 流式响应配置（关键！）
-    proxy_buffering off;
-    proxy_cache off;
-
-    location / {
-        proxy_pass http://ai_agent;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
-        # SSE 支持
-        proxy_set_header Connection '';
-        proxy_http_version 1.1;
-        chunked_transfer_encoding off;
-        proxy_read_timeout 300s;
-    }
+    # ... 其余配置同 HTTP ...
 }
 ```
 
-> ⚠️ **重要**：必须关闭 `proxy_buffering`，否则 SSE 流式响应会被缓冲导致前端无法实时接收。
+Docker 部署时，取消 `docker-compose.yml` 中 HTTPS 端口和 SSL 证书挂载的注释：
+
+```yaml
+nginx:
+  ports:
+    - "443:443"           # 取消注释
+  volumes:
+    - ./nginx/ssl:/etc/ssl:ro  # 取消注释，放入证书文件
+```
+
+> ⚠️ **重要**：必须关闭 `proxy_buffering`，否则 SSE 流式响应会被缓冲导致前端无法实时接收。配置文件中已默认关闭。
 
 ---
 
