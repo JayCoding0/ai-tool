@@ -4,8 +4,11 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"aiProject/internal/domain/session"
+	"aiProject/internal/shared"
+	"go.uber.org/zap"
 )
 
 // AgentDefinition 定义一个 Agent 的配置
@@ -106,6 +109,30 @@ func (r *AgentRegistry) ListAll() []*AgentInstance {
 	return all
 }
 
+// UpdateTools 动态更新指定 Agent 的工具列表（热更新，无需重启）
+// 更新后会自动刷新 call_agent 工具的描述，确保主 Agent 感知到最新子 Agent 能力
+func (r *AgentRegistry) UpdateTools(agentName string, tools []string) error {
+	r.mu.Lock()
+	inst, ok := r.agents[agentName]
+	if !ok {
+		r.mu.Unlock()
+		return fmt.Errorf("agent %q 未注册", agentName)
+	}
+	inst.Def.EnabledTools = tools
+	// 收集当前所有子 Agent，用于刷新 call_agent 描述
+	var subs []*AgentInstance
+	for _, a := range r.agents {
+		if !a.Def.IsMaster {
+			subs = append(subs, a)
+		}
+	}
+	r.mu.Unlock()
+
+	// 重新注册 call_agent 工具，刷新子 Agent 列表描述
+	RegisterCallAgentTool(subs)
+	return nil
+}
+
 // SubAgentEventCallback 子 Agent 事件透传回调函数类型
 // 主 Agent 可通过此回调实时接收子 Agent 的思考/工具调用过程
 type SubAgentEventCallback func(event StreamChatResponse)
@@ -113,10 +140,27 @@ type SubAgentEventCallback func(event StreamChatResponse)
 // CallSubAgent 调用指定子 Agent 执行任务，返回文本结果
 // eventCallback: 可选，用于实时接收子 Agent 的 tool_call/tool_result/thought 事件（传 nil 则忽略）
 func (r *AgentRegistry) CallSubAgent(agentName, message, sessionID string, eventCallback SubAgentEventCallback) (string, error) {
+	logger := shared.GetLogger()
 	inst, ok := r.Get(agentName)
 	if !ok {
+		logger.Warn("[CallSubAgent] 子 Agent 未注册", zap.String("agent", agentName))
 		return "", fmt.Errorf("子 Agent %q 未注册", agentName)
 	}
+
+	logger.Info("[CallSubAgent] 开始调用子 Agent",
+		zap.String("agent", agentName),
+		zap.String("display_name", inst.Def.DisplayName),
+		zap.String("session_id", sessionID),
+		zap.Strings("enabled_tools", inst.Def.EnabledTools),
+		zap.String("model", inst.Def.ModelName),
+		zap.String("msg_preview", func() string {
+			if len(message) > 60 {
+				return message[:60] + "..."
+			}
+			return message
+		}()),
+	)
+	start := time.Now()
 
 	req := ChatRequest{
 		Message:      message,
@@ -136,6 +180,10 @@ func (r *AgentRegistry) CallSubAgent(agentName, message, sessionID string, event
 		streamCh, err = inst.ChatService.ProcessMessageStream(context.Background(), req)
 	}
 	if err != nil {
+		logger.Error("[CallSubAgent] 子 Agent 启动失败",
+			zap.String("agent", agentName),
+			zap.Error(err),
+		)
 		return "", fmt.Errorf("子 Agent %q 启动失败: %w", agentName, err)
 	}
 
@@ -147,12 +195,35 @@ func (r *AgentRegistry) CallSubAgent(agentName, message, sessionID string, event
 			result += event.Content
 		case "thought", "tool_call", "tool_result":
 			// 透传子 Agent 的思考/工具调用过程给调用方
+			logger.Info("[CallSubAgent] 透传子 Agent 事件",
+				zap.String("agent", agentName),
+				zap.String("event_type", event.Type),
+				zap.String("tool_name", event.ToolName),
+				zap.String("tool_call_id", event.ToolCallID),
+				zap.Bool("has_callback", eventCallback != nil),
+			)
 			if eventCallback != nil {
 				eventCallback(event)
 			}
 		case "error":
+			logger.Error("[CallSubAgent] 子 Agent 执行失败",
+				zap.String("agent", agentName),
+				zap.String("error", event.Error),
+			)
 			return result, fmt.Errorf("子 Agent %q 执行失败: %s", agentName, event.Error)
 		}
 	}
+
+	logger.Info("[CallSubAgent] 子 Agent 执行完成",
+		zap.String("agent", agentName),
+		zap.Duration("duration", time.Since(start)),
+		zap.Int("result_len", len(result)),
+		zap.String("result_preview", func() string {
+			if len(result) > 100 {
+				return result[:100] + "..."
+			}
+			return result
+		}()),
+	)
 	return result, nil
 }

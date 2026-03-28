@@ -23,12 +23,13 @@ version: "1.0"
 ### write_file 调用时机
 - 用户要求保存内容到文件、生成文件、写入报告时，**必须调用** `write_file`
 - 参数说明：
-  - `path`：文件路径（必填），只允许相对路径，如 `output/report.md`
+  - `path`：文件路径（必填），**必须以 `output/` 开头**，如 `output/report.md`、`output/data/result.json`
   - `content`：要写入的内容（必填）
   - `mode`：`write`（覆盖，默认）或 `append`（追加）
   - `encoding`：文件编码，默认 `utf-8`
 
 ### 禁止行为
+- ❌ **路径必须以 `output/` 开头，不允许写入其他目录**
 - ❌ 不要使用绝对路径或 `..` 访问上级目录
 - ❌ 不要写入可执行文件（.exe、.bin 等）
 - ❌ 单次写入不超过 1MB

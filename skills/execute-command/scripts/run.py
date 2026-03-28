@@ -5,6 +5,7 @@ execute_command 工具脚本
 从 stdin 读取 JSON 参数，在白名单范围内执行 Shell 命令，结果输出到 stdout
 安全措施：命令白名单、禁止管道/重定向写操作、输出大小限制、超时控制
 """
+import os
 import sys
 import json
 import subprocess
@@ -89,8 +90,6 @@ def check_command_safety(command: str) -> str | None:
 
 
 def main():
-    import os  # noqa: PLC0415
-
     try:
         raw = sys.stdin.read().strip()
         params = json.loads(raw) if raw else {}

@@ -43,9 +43,16 @@ const APP_TEMPLATE = `
         </div>
 
         <div class="sidebar-footer">
+            <div class="theme-toggle-row">
+                <span>外观</span>
+                <button class="theme-toggle-btn" @click="toggleTheme">
+                    <span class="theme-icon">{{ isDarkTheme ? '☀️' : '🌙' }}</span>
+                    <span>{{ isDarkTheme ? '浅色' : '深色' }}</span>
+                </button>
+            </div>
             <div class="model-row">
                 <div class="model-row-label">当前模型</div>
-                <el-select v-model="selectedModel" size="small" @change="onModelChange" placeholder="选择模型">
+                <el-select v-model="selectedModel" size="small" @change="onModelChange" placeholder="选择模型" popper-class="dark-select-popper">
                     <el-option-group v-if="cloudModels.length > 0" label="☁️ 云端模型">
                         <el-option v-for="m in cloudModels" :key="m.name" :label="m.label" :value="m.name" />
                     </el-option-group>
@@ -106,40 +113,40 @@ const APP_TEMPLATE = `
                 </button>
                 <!-- 知识库选择器 -->
                 <div style="position:relative;display:inline-block;">
-                    <button class="topbar-btn" :class="{active: selectedKbId > 0}" @click="kbSelectorVisible = !kbSelectorVisible" title="选择知识库（RAG）">
+                    <button class="topbar-btn" :class="{active: selectedKbId > 0}" @click.stop="kbSelectorVisible = !kbSelectorVisible" title="选择知识库（RAG）">
                         📚 {{ selectedKbId > 0 ? (getSelectedKB() ? getSelectedKB().name : 'KB') : '知识库' }}
                     </button>
-                    <div v-if="kbSelectorVisible" style="position:absolute;top:calc(100% + 6px);right:0;z-index:1000;background:#fff;border:1px solid #e8e8f0;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.12);min-width:220px;overflow:hidden;" @click.stop>
-                        <div style="padding:8px 12px;font-size:11px;color:#999;border-bottom:1px solid #f0f0f0;font-weight:600;letter-spacing:.5px;">选择知识库（RAG）</div>
+                    <div v-if="kbSelectorVisible" style="position:absolute;top:calc(100% + 6px);right:0;z-index:1000;background:var(--card-bg);border:1px solid var(--border);border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.12);min-width:220px;overflow:hidden;" @click.stop>
+                        <div style="padding:8px 12px;font-size:11px;color:var(--text-muted);border-bottom:1px solid var(--border);font-weight:600;letter-spacing:.5px;">选择知识库（RAG）</div>
                         <div style="max-height:240px;overflow-y:auto;">
                             <div style="display:flex;align-items:center;gap:8px;padding:9px 14px;cursor:pointer;transition:background .15s;"
-                                :style="selectedKbId === 0 ? 'background:#f0f0ff;' : ''"
+                                :style="selectedKbId === 0 ? 'background:var(--primary-light);' : ''"
                                 @click="selectKnowledgeBase(0)">
                                 <span style="font-size:14px;">🚫</span>
                                 <div>
-                                    <div style="font-size:13px;color:#333;font-weight:500;">不使用知识库</div>
-                                    <div style="font-size:11px;color:#bbb;">纯模型回答</div>
+                                    <div style="font-size:13px;color:var(--text-primary);font-weight:500;">不使用知识库</div>
+                                    <div style="font-size:11px;color:var(--text-muted);">纯模型回答</div>
                                 </div>
-                                <span v-if="selectedKbId === 0" style="margin-left:auto;color:#667eea;font-size:12px;">✓</span>
+                                <span v-if="selectedKbId === 0" style="margin-left:auto;color:var(--primary);font-size:12px;">✓</span>
                             </div>
-                            <div v-if="kbLoading" style="text-align:center;padding:20px;color:#bbb;font-size:12px;">加载中...</div>
-                            <div v-else-if="knowledgeBases.length === 0" style="text-align:center;padding:16px;color:#bbb;font-size:12px;">
-                                暂无知识库，<a href="/knowledge.html" target="_blank" style="color:#667eea;">去创建</a>
+                            <div v-if="kbLoading" style="text-align:center;padding:20px;color:var(--text-muted);font-size:12px;">加载中...</div>
+                            <div v-else-if="knowledgeBases.length === 0" style="text-align:center;padding:16px;color:var(--text-muted);font-size:12px;">
+                                暂无知识库，<a href="/knowledge.html" target="_blank" style="color:var(--primary);">去创建</a>
                             </div>
                             <div v-for="kb in knowledgeBases" :key="kb.id"
                                 style="display:flex;align-items:center;gap:8px;padding:9px 14px;cursor:pointer;transition:background .15s;"
-                                :style="selectedKbId === kb.id ? 'background:#f0f0ff;' : ''"
+                                :style="selectedKbId === kb.id ? 'background:var(--primary-light);' : ''"
                                 @click="selectKnowledgeBase(kb.id)">
                                 <span style="font-size:14px;">📚</span>
                                 <div style="flex:1;min-width:0;">
-                                    <div style="font-size:13px;color:#333;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ kb.name }}</div>
-                                    <div style="font-size:11px;color:#bbb;">{{ kb.doc_count }} 文档 · {{ kb.chunk_count }} 分块</div>
+                                    <div style="font-size:13px;color:var(--text-primary);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ kb.name }}</div>
+                                    <div style="font-size:11px;color:var(--text-muted);">{{ kb.doc_count }} 文档 · {{ kb.chunk_count }} 分块</div>
                                 </div>
-                                <span v-if="selectedKbId === kb.id" style="color:#667eea;font-size:12px;flex-shrink:0;">✓</span>
+                                <span v-if="selectedKbId === kb.id" style="color:var(--primary);font-size:12px;flex-shrink:0;">✓</span>
                             </div>
                         </div>
-                        <div style="padding:8px 12px;border-top:1px solid #f0f0f0;">
-                            <a href="/knowledge.html" target="_blank" style="font-size:12px;color:#667eea;text-decoration:none;">⚙️ 管理知识库</a>
+                        <div style="padding:8px 12px;border-top:1px solid var(--border);">
+                            <a href="/knowledge.html" target="_blank" style="font-size:12px;color:var(--primary);text-decoration:none;">⚙️ 管理知识库</a>
                         </div>
                     </div>
                 </div>
@@ -191,6 +198,7 @@ const APP_TEMPLATE = `
                                 <div class="ai-avatar">🤖</div>
                                 <span class="ai-name">智能小助手</span>
                                 <span v-if="msg.modelName" class="ai-model-tag">{{ msg.modelName }}</span>
+                                <span v-if="msg.ragKbName" style="display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:10px;background:#f0f0ff;border:1px solid #c7d2fe;font-size:11px;color:#4f46e5;font-weight:500;">📚 {{ msg.ragKbName }}</span>
                                 <span v-if="msg.round" class="round-badge">第 {{ msg.round }} 轮</span>
                             </div>
                             <div v-if="msg.typing" class="msg-ai-content">
@@ -218,30 +226,29 @@ const APP_TEMPLATE = `
                                         <span class="react-summary-toggle">{{ msg.reactCollapsed ? '▶ 展开' : '▼ 收起' }}</span>
                                     </div>
                                     <div v-show="!msg.reactCollapsed" class="react-timeline">
-                                        <div v-for="(step, si) in msg.reactSteps" :key="si" class="react-step-item" :class="step.type">
-                                            <!-- 思考步骤 -->
-                                            <template v-if="step.type === 'thought'">
-                                                <div class="react-step-header" @click="step.expanded = !step.expanded" style="cursor:pointer;">
-                                                    <span class="react-step-icon thought-icon">🤔</span>
-                                                    <span class="react-step-label">思考过程</span>
-                                                    <span class="react-round-badge">第 {{ step.step }} 轮</span>
-                                                    <span class="react-step-toggle">{{ step.expanded ? '▲' : '▼' }}</span>
-                                                </div>
-                                                <div v-if="step.expanded" class="react-step-body thought-body">{{ step.content }}</div>
-                                            </template>
-                                            <!-- 工具调用步骤 -->
-                                            <template v-else-if="step.type === 'action'">
-                                                <!-- call_agent 专属样式 -->
-                                                <template v-if="step.isAgentCall">
+                                        <!-- 按 Agent 分组显示 -->
+                                        <template v-for="(group, gi) in groupReactSteps(msg.reactSteps)" :key="gi">
+                                            <!-- Agent 分组卡片 -->
+                                            <template v-if="group.type === 'agent-group'">
+                                                <div class="react-agent-group">
+                                                    <div class="react-agent-group-header" @click="group.collapsed = !group.collapsed; $forceUpdate()">
+                                                        <span class="react-agent-group-icon">{{ getAgentIcon(group.agentName) }}</span>
+                                                        <span class="react-agent-group-name">{{ getAgentDisplayName(group.agentName) }}</span>
+                                                        <span class="react-agent-group-count">{{ group.steps.length }} 次调用</span>
+                                                        <span class="react-agent-group-rounds">第 {{ group.rounds.join('、') }} 轮</span>
+                                                        <span class="react-step-toggle">{{ group.collapsed ? '▶ 展开' : '▼ 收起' }}</span>
+                                                    </div>
+                                                    <div v-show="!group.collapsed" class="react-agent-group-body">
+                                                        <div v-for="(step, si) in group.steps" :key="si" class="react-step-item action" style="margin-left:0;">
                                                     <div class="react-step-header agent-call-header" @click="step.expanded = !step.expanded" style="cursor:pointer;">
                                                         <span class="react-step-icon">
                                                             <div v-if="step.status === 'calling'" class="tool-spinner" style="width:12px;height:12px;border-width:1.5px;flex-shrink:0;"></div>
                                                             <span v-else class="tool-done-icon">✓</span>
                                                         </span>
                                                         <span class="react-step-label">
-                                                            <span v-if="step.status === 'calling'">🤖 正在调用子 Agent：</span>
-                                                            <span v-else>🤖 已调用子 Agent：</span>
-                                                            <strong class="agent-name-badge">{{ step.agentCallName }}</strong>
+                                                            <span v-if="step.status === 'calling'">🤖 正在调用：</span>
+                                                            <span v-else>🤖 已调用：</span>
+                                                            <strong class="agent-name-badge">{{ getAgentDisplayName(step.agentCallName) }}</strong>
                                                         </span>
                                                         <span class="react-round-badge">第 {{ step.step }} 轮</span>
                                                         <span class="react-step-toggle">{{ step.expanded ? '▲' : '▼' }}</span>
@@ -251,45 +258,112 @@ const APP_TEMPLATE = `
                                                             <div class="react-detail-label">📨 发送给子 Agent 的任务</div>
                                                             <div class="agent-task-text">{{ step.agentCallMsg }}</div>
                                                         </div>
-                                                        <div v-if="step.result" class="react-detail-block">
-                                                            <div class="react-detail-label">💬 子 Agent 回复</div>
-                                                            <div class="agent-reply-text" v-html="renderMarkdown(step.result)"></div>
+                                                        <!-- 子 Agent 内部工具调用明细 -->
+                                                        <div v-if="step.subSteps && step.subSteps.length > 0" class="react-detail-block">
+                                                            <div class="sub-agent-detail-label">
+                                                                <span class="sub-agent-detail-icon">🔧</span>
+                                                                <span>工具调用链路</span>
+                                                                <span class="sub-agent-detail-count">{{ step.subSteps.filter(s => s.type !== 'thought').length }} 次调用</span>
+                                                            </div>
+                                                            <div class="sub-steps-list">
+                                                                <div v-for="(sub, si) in step.subSteps" :key="si" class="sub-step-item" :class="{'sub-step-thought': sub.type === 'thought', 'sub-step-done': sub.status === 'done', 'sub-step-calling': sub.status === 'calling'}">
+                                                                    <!-- 子 Agent 思考过程 -->
+                                                                    <template v-if="sub.type === 'thought'">
+                                                                        <div class="sub-step-header sub-thought-header" @click="sub.expanded = !sub.expanded; $forceUpdate()" style="cursor:pointer;">
+                                                                            <span class="sub-step-icon sub-thought-icon">💭</span>
+                                                                            <span class="sub-step-label" style="color:#7c5cfc;font-weight:500;">思考过程</span>
+                                                                            <span class="sub-step-toggle">{{ sub.expanded ? '▲' : '▼' }}</span>
+                                                                        </div>
+                                                                        <div v-if="sub.expanded" class="sub-step-body sub-thought-body">
+                                                                            <div class="sub-thought-content">{{ sub.content }}</div>
+                                                                        </div>
+                                                                    </template>
+                                                                    <!-- 子 Agent 工具调用 -->
+                                                                    <template v-else>
+                                                                    <div class="sub-step-header" @click="sub.expanded = !sub.expanded; $forceUpdate()" style="cursor:pointer;">
+                                                                        <span class="sub-step-icon">
+                                                                            <div v-if="sub.status === 'calling'" class="tool-spinner sub-tool-spinner"></div>
+                                                                            <span v-else class="sub-tool-done-icon">✓</span>
+                                                                        </span>
+                                                                        <span class="sub-step-label">
+                                                                            <span class="sub-tool-name-badge">{{ sub.toolName }}</span>
+                                                                            <span v-if="sub.argsDisplay" class="sub-tool-args-preview">{{ sub.argsDisplay }}</span>
+                                                                        </span>
+                                                                        <span v-if="sub.status === 'calling'" class="sub-step-status calling">执行中</span>
+                                                                        <span v-else class="sub-step-status done">已完成</span>
+                                                                        <span class="sub-step-toggle">{{ sub.expanded ? '▲' : '▼' }}</span>
+                                                                    </div>
+                                                                    <div v-if="sub.expanded" class="sub-step-body">
+                                                                        <div v-if="sub.toolArgs" class="sub-detail-section">
+                                                                            <div class="sub-detail-label"><span class="sub-detail-label-icon">📥</span> 输入参数</div>
+                                                                            <pre class="sub-detail-pre">{{ sub.toolArgs }}</pre>
+                                                                        </div>
+                                                                        <div v-if="sub.result" class="sub-detail-section">
+                                                                            <div class="sub-detail-label"><span class="sub-detail-label-icon">📤</span> 执行结果</div>
+                                                                            <pre class="sub-detail-pre">{{ sub.result }}</pre>
+                                                                        </div>
+                                                                    </div>
+                                                                    </template>
+                                                                </div>
+                                                            </div>
                                                         </div>
-                                                        <div v-else-if="step.status === 'calling'" class="agent-waiting">
-                                                            <div class="tool-spinner" style="width:10px;height:10px;border-width:1.5px;display:inline-block;vertical-align:middle;margin-right:6px;"></div>
-                                                            等待子 Agent 响应...
+                                                        <!-- 子 Agent 回复 -->
+                                                        <div v-if="step.result" class="sub-agent-reply-block">
+                                                            <div class="sub-agent-reply-header">
+                                                                <span class="sub-agent-reply-icon">💬</span>
+                                                                <span class="sub-agent-reply-title">{{ getAgentDisplayName(step.agentCallName) }} 回复</span>
+                                                            </div>
+                                                            <div class="sub-agent-reply-content md-body" v-html="renderMarkdown(step.result)"></div>
+                                                        </div>
+                                                        <div v-else-if=\"step.status === 'calling'\" class=\"agent-waiting\">\n                                                            <div class=\"tool-spinner\" style=\"width:12px;height:12px;border-width:1.5px;display:inline-block;vertical-align:middle;margin-right:8px;\"></div>\n                                                            <span>等待 <strong>{{ getAgentDisplayName(step.agentCallName) }}</strong> 响应中...</span>
                                                         </div>
                                                     </div>
-                                                </template>
-                                                <!-- 普通工具调用 -->
-                                                <template v-else>
-                                                    <div class="react-step-header" @click="step.expanded = !step.expanded" style="cursor:pointer;">
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </template>
+                                            <!-- 思考步骤 -->
+                                            <template v-else-if="group.type === 'thought'">
+                                                <div class="react-step-item thought">
+                                                <div class="react-step-header" @click="group.step.expanded = !group.step.expanded" style="cursor:pointer;">
+                                                    <span class="react-step-icon thought-icon">🤔</span>
+                                                    <span class="react-step-label">思考过程</span>
+                                                    <span class="react-round-badge">第 {{ group.step.step }} 轮</span>
+                                                    <span class="react-step-toggle">{{ group.step.expanded ? '▲' : '▼' }}</span>
+                                                </div>
+                                                <div v-if="group.step.expanded" class="react-step-body thought-body">{{ group.step.content }}</div>
+                                                </div>
+                                            </template>
+                                            <!-- 普通工具调用 -->
+                                            <template v-else-if="group.type === 'action'">
+                                                <div class="react-step-item action">
+                                                    <div class="react-step-header" @click="group.step.expanded = !group.step.expanded" style="cursor:pointer;">
                                                         <span class="react-step-icon">
-                                                            <div v-if="step.status === 'calling'" class="tool-spinner" style="width:12px;height:12px;border-width:1.5px;flex-shrink:0;"></div>
+                                                            <div v-if="group.step.status === 'calling'" class="tool-spinner" style="width:12px;height:12px;border-width:1.5px;flex-shrink:0;"></div>
                                                             <span v-else class="tool-done-icon">✓</span>
                                                         </span>
                                                         <span class="react-step-label">
-                                                            <span v-if="step.status === 'calling'">调用工具：</span>
+                                                            <span v-if="group.step.status === 'calling'">调用工具：</span>
                                                             <span v-else>已调用：</span>
-                                                            <strong>{{ step.toolName }}</strong>
-                                                            <span v-if="step.argsDisplay" class="react-step-args">{{ step.argsDisplay }}</span>
+                                                            <strong>{{ group.step.toolName }}</strong>
+                                                            <span v-if="group.step.argsDisplay" class="react-step-args">{{ group.step.argsDisplay }}</span>
                                                         </span>
-                                                        <span class="react-round-badge">第 {{ step.step }} 轮</span>
-                                                        <span class="react-step-toggle">{{ step.expanded ? '▲' : '▼' }}</span>
+                                                        <span class="react-round-badge">第 {{ group.step.step }} 轮</span>
+                                                        <span class="react-step-toggle">{{ group.step.expanded ? '▲' : '▼' }}</span>
                                                     </div>
-                                                    <div v-if="step.expanded" class="react-step-body">
-                                                        <div v-if="step.toolArgs" class="react-detail-block">
+                                                    <div v-if="group.step.expanded" class="react-step-body">
+                                                        <div v-if="group.step.toolArgs" class="react-detail-block">
                                                             <div class="react-detail-label">📥 输入参数</div>
-                                                            <pre class="react-detail-pre">{{ step.toolArgs }}</pre>
+                                                            <pre class="react-detail-pre">{{ group.step.toolArgs }}</pre>
                                                         </div>
-                                                        <div v-if="step.result" class="react-detail-block">
+                                                        <div v-if="group.step.result" class="react-detail-block">
                                                             <div class="react-detail-label">📤 执行结果</div>
-                                                            <pre class="react-detail-pre">{{ step.result }}</pre>
+                                                            <pre class="react-detail-pre">{{ group.step.result }}</pre>
                                                         </div>
                                                     </div>
-                                                </template>
+                                                </div>
                                             </template>
-                                        </div>
+                                        </template>
                                     </div>
                                 </div>
                                 <!-- 思考块（模型原生 thinking） -->
@@ -357,29 +431,29 @@ const APP_TEMPLATE = `
     <!-- System Prompt 设置弹窗 -->
     <div v-if="systemPromptVisible" style="position:fixed;inset:0;z-index:2000;display:flex;align-items:center;justify-content:center;">
         <div style="position:absolute;inset:0;background:rgba(0,0,0,0.5);" @click="systemPromptVisible = false"></div>
-        <div style="position:relative;background:#fff;border-radius:12px;width:560px;max-width:90vw;box-shadow:0 8px 40px rgba(0,0,0,0.18);overflow:hidden;">
-            <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 24px 14px;border-bottom:1px solid #f0f0f0;">
-                <span style="font-size:16px;font-weight:600;color:#1a1a1a;">设置 System Prompt</span>
-                <span style="cursor:pointer;font-size:20px;color:#999;line-height:1;" @click="systemPromptVisible = false">×</span>
+        <div style="position:relative;background:var(--card-bg);border-radius:12px;width:560px;max-width:90vw;box-shadow:0 8px 40px rgba(0,0,0,0.18);overflow:hidden;">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 24px 14px;border-bottom:1px solid var(--border);">
+                <span style="font-size:16px;font-weight:600;color:var(--text-primary);">设置 System Prompt</span>
+                <span style="cursor:pointer;font-size:20px;color:var(--text-muted);line-height:1;" @click="systemPromptVisible = false">×</span>
             </div>
             <div style="padding:20px 24px;">
-                <div style="margin-bottom:12px;font-size:13px;color:#666;line-height:1.6;">
+                <div style="margin-bottom:12px;font-size:13px;color:var(--text-secondary);line-height:1.6;">
                     System Prompt 是给 AI 的"角色说明"，设置后本会话的 AI 将按照你的要求行事。<br>
-                    <span style="color:#999;">留空则使用默认提示词（智能助手，中文回答）。</span>
+                    <span style="color:var(--text-muted);">留空则使用默认提示词（智能助手，中文回答）。</span>
                 </div>
                 <textarea
                     v-model="systemPromptInput"
                     rows="6"
                     maxlength="2000"
                     placeholder="例如：你是一个专业的 Go 语言工程师，只回答编程相关问题，回答时附带代码示例。"
-                    style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #dcdfe6;border-radius:6px;font-size:13px;line-height:1.6;resize:none;outline:none;font-family:inherit;color:#333;transition:border-color 0.2s;"
+                    style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--border);border-radius:6px;font-size:13px;line-height:1.6;resize:none;outline:none;font-family:inherit;color:var(--text-primary);background:var(--input-bg);transition:border-color 0.2s;"
                     @focus="$event.target.style.borderColor='#409eff'"
-                    @blur="$event.target.style.borderColor='#dcdfe6'"
+                    @blur="$event.target.style.borderColor=''"
                 ></textarea>
-                <div style="text-align:right;font-size:12px;color:#999;margin-top:4px;">{{ (systemPromptInput||'').length }} / 2000</div>
+                <div style="text-align:right;font-size:12px;color:var(--text-muted);margin-top:4px;">{{ (systemPromptInput||'').length }} / 2000</div>
             </div>
-            <div style="display:flex;justify-content:flex-end;gap:10px;padding:14px 24px 18px;border-top:1px solid #f0f0f0;">
-                <button @click="systemPromptVisible = false" style="padding:8px 18px;border:1px solid #dcdfe6;border-radius:6px;background:#fff;color:#606266;font-size:13px;cursor:pointer;">取消</button>
+            <div style="display:flex;justify-content:flex-end;gap:10px;padding:14px 24px 18px;border-top:1px solid var(--border);">
+                <button @click="systemPromptVisible = false" style="padding:8px 18px;border:1px solid var(--border);border-radius:6px;background:var(--card-bg);color:var(--text-secondary);font-size:13px;cursor:pointer;">取消</button>
                 <button @click="saveSystemPrompt" style="padding:8px 18px;border:none;border-radius:6px;background:#409eff;color:#fff;font-size:13px;cursor:pointer;font-weight:500;">保存</button>
             </div>
         </div>
@@ -398,18 +472,18 @@ const APP_TEMPLATE = `
         <div v-else-if="multiAgentMode && agentList.length > 0" style="display:flex;flex-direction:column;gap:12px;">
             <div v-for="agent in agentList" :key="agent.name"
                 :style="agent.is_master
-                    ? 'border:1.5px solid #f0a020;border-radius:10px;overflow:hidden;background:#fff;box-shadow:0 1px 6px #f0a02019;'
-                    : 'border:1.5px solid #409eff;border-radius:10px;overflow:hidden;background:#fff;box-shadow:0 1px 6px #409eff14;'">
+                    ? 'border:1.5px solid #f0a020;border-radius:10px;overflow:hidden;background:var(--card-bg);box-shadow:0 1px 6px #f0a02019;'
+                    : 'border:1.5px solid #409eff;border-radius:10px;overflow:hidden;background:var(--card-bg);box-shadow:0 1px 6px #409eff14;'">
                 <div :style="agent.is_master
-                    ? 'display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#fff8ec;border-bottom:1px solid #f0d080;'
-                    : 'display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#f0f7ff;border-bottom:1px solid #c6dcff;'">
+                    ? 'display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--sidebar-hover);border-bottom:1px solid var(--border);'
+                    : 'display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--sidebar-hover);border-bottom:1px solid var(--border);'">
                     <div style="display:flex;align-items:center;gap:8px;">
                         <span style="font-size:20px;">{{ getAgentIcon(agent.name) }}</span>
                         <div>
-                            <div :style="agent.is_master ? 'font-size:13px;font-weight:700;color:#b45309;' : 'font-size:13px;font-weight:700;color:#1d4ed8;'">
-                                {{ agent.display_name || agent.name }}
+                            <div :style="agent.is_master ? 'font-size:13px;font-weight:700;color:#f59e0b;' : 'font-size:13px;font-weight:700;color:var(--primary);'">
+                                {{ getAgentDisplayName(agent.name) }}
                             </div>
-                            <div style="font-size:11px;color:#888;margin-top:1px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ agent.description }}</div>
+                            <div style="font-size:11px;color:var(--text-muted);margin-top:1px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ agent.description }}</div>
                         </div>
                     </div>
                     <div style="display:flex;align-items:center;gap:6px;">
@@ -430,9 +504,9 @@ const APP_TEMPLATE = `
                         <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0;">
                             <span style="font-size:15px;flex-shrink:0;">{{ getToolIcon(tool.name) }}</span>
                             <div style="min-width:0;">
-                                <div style="font-size:12px;font-weight:500;color:#333;">{{ tool.display_name || tool.name }}</div>
-                                <div style="font-size:10px;color:#bbb;font-family:monospace;" v-if="tool.display_name">{{ tool.name }}</div>
-                                <div style="font-size:11px;color:#999;line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:260px;" v-if="tool.description">{{ tool.description }}</div>
+                                <div style="font-size:12px;font-weight:500;color:var(--text-primary);">{{ tool.display_name || tool.name }}</div>
+                                <div style="font-size:10px;color:var(--text-muted);font-family:monospace;" v-if="tool.display_name">{{ tool.name }}</div>
+                                <div style="font-size:11px;color:var(--text-secondary);line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:260px;" v-if="tool.description">{{ tool.description }}</div>
                             </div>
                         </div>
                         <el-switch
@@ -445,19 +519,19 @@ const APP_TEMPLATE = `
                         <span v-else style="margin-left:10px;font-size:12px;color:#f59e0b;flex-shrink:0;" title="主调度工具，常驻启用">🔒</span>
                     </div>
                 </div>
-                <div v-else style="padding:12px 14px;font-size:12px;color:#bbb;text-align:center;">暂无工具</div>
+                <div v-else style="padding:12px 14px;font-size:12px;color:var(--text-muted);text-align:center;">暂无工具</div>
             </div>
         </div>
         <div v-else-if="!multiAgentMode && availableTools.length > 0" style="display:flex;flex-direction:column;gap:8px;">
             <div v-for="tool in availableTools" :key="tool.name"
-                style="display:flex;align-items:flex-start;justify-content:space-between;padding:10px 12px;background:#fff;border-radius:8px;border:1px solid transparent;"
-                :style="isToolEnabled(tool.name) ? 'border-color:#67c23a;background:#f0f9eb;' : 'border-color:#eee;'">
+                style="display:flex;align-items:flex-start;justify-content:space-between;padding:10px 12px;background:var(--card-bg);border-radius:8px;border:1px solid transparent;"
+                :style="isToolEnabled(tool.name) ? 'border-color:#67c23a;background:var(--sidebar-hover);' : 'border-color:var(--border);'">
                 <div style="flex:1;min-width:0;">
-                    <div style="font-size:13px;font-weight:500;color:#333;margin-bottom:2px;">
+                    <div style="font-size:13px;font-weight:500;color:var(--text-primary);margin-bottom:2px;">
                         <span style="margin-right:5px;">{{ getToolIcon(tool.name) }}</span>{{ tool.display_name || tool.name }}
                     </div>
-                    <div style="font-size:11px;color:#bbb;margin-bottom:2px;" v-if="tool.display_name">{{ tool.name }}</div>
-                    <div style="font-size:11px;color:#999;line-height:1.5;">{{ tool.description }}</div>
+                    <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;" v-if="tool.display_name">{{ tool.name }}</div>
+                    <div style="font-size:11px;color:var(--text-secondary);line-height:1.5;">{{ tool.description }}</div>
                 </div>
                 <el-switch
                     :model-value="isToolEnabled(tool.name)"
@@ -466,9 +540,9 @@ const APP_TEMPLATE = `
                 />
             </div>
         </div>
-        <div v-else style="text-align:center;padding:40px;color:#bbb;font-size:13px;">暂无已注册工具</div>
+        <div v-else style="text-align:center;padding:40px;color:var(--text-muted);font-size:13px;">暂无已注册工具</div>
 
-        <div style="margin-top:18px;padding-top:14px;border-top:1px dashed #eee;text-align:center;">
+        <div style="margin-top:18px;padding-top:14px;border-top:1px dashed var(--border);text-align:center;">
             <el-button size="small" plain @click="openImportDialog" style="font-size:12px;color:#666;">
                 <el-icon style="margin-right:4px;"><Plus /></el-icon>导入其他工具
             </el-button>
@@ -478,12 +552,12 @@ const APP_TEMPLATE = `
     <!-- 导入其他工具对话框 -->
     <el-dialog v-model="importDialogVisible" title="导入其他工具到 Agent" width="480px" :close-on-click-modal="false">
         <div style="margin-bottom:14px;">
-            <div style="font-size:12px;color:#666;margin-bottom:6px;font-weight:500;">导入到 Agent：</div>
-            <el-select v-model="importTargetAgent" placeholder="请选择目标 Agent" style="width:100%;" size="default">
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;font-weight:500;">导入到 Agent：</div>
+            <el-select v-model="importTargetAgent" placeholder="请选择目标 Agent" style="width:100%;" size="default" popper-class="dark-select-popper">
                 <el-option
                     v-for="agent in agentList.filter(a => !a.is_master)"
                     :key="agent.name"
-                    :label="(getAgentIcon(agent.name) + ' ' + (agent.display_name || agent.name))"
+                    :label="(getAgentIcon(agent.name) + ' ' + getAgentDisplayName(agent.name))"
                     :value="agent.name"
                 />
             </el-select>
@@ -500,15 +574,15 @@ const APP_TEMPLATE = `
         </div>
         <div v-else style="display:flex;flex-direction:column;gap:6px;max-height:360px;overflow-y:auto;">
             <div v-for="tool in importableTools" :key="tool.name"
-                style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-radius:8px;border:1px solid #eee;background:#fafafa;cursor:pointer;transition:all 0.15s;"
-                :style="isImportPending(tool.name) ? 'border-color:#409eff;background:#ecf5ff;' : 'border-color:#eee;background:#fafafa;'"
+                style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--card-bg);cursor:pointer;transition:all 0.15s;"
+                :style="isImportPending(tool.name) ? 'border-color:#409eff;background:var(--primary-light);' : 'border-color:var(--border);background:var(--card-bg);'"
                 @click="toggleImportPending(tool)">
                 <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0;">
                     <span style="font-size:16px;flex-shrink:0;">{{ getToolIcon(tool.name) }}</span>
                     <div style="min-width:0;">
-                        <div style="font-size:13px;font-weight:500;color:#333;">{{ tool.display_name || tool.name }}</div>
-                        <div style="font-size:10px;color:#bbb;font-family:monospace;" v-if="tool.display_name">{{ tool.name }}</div>
-                        <div style="font-size:11px;color:#999;line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:280px;" v-if="tool.description">{{ tool.description }}</div>
+                        <div style="font-size:13px;font-weight:500;color:var(--text-primary);">{{ tool.display_name || tool.name }}</div>
+                        <div style="font-size:10px;color:var(--text-muted);font-family:monospace;" v-if="tool.display_name">{{ tool.name }}</div>
+                        <div style="font-size:11px;color:var(--text-secondary);line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:280px;" v-if="tool.description">{{ tool.description }}</div>
                     </div>
                 </div>
                 <el-checkbox
@@ -550,10 +624,10 @@ const APP_TEMPLATE = `
                         </svg>
                     </div>
                     <div style="flex:1;min-width:0;">
-                        <div style="font-size:13px;font-weight:500;color:#1a1a1a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ s.title || '新对话' }}</div>
-                        <div style="font-size:11px;color:#bbb;margin-top:2px;">{{ formatTime(s.updated_at) }}</div>
+                        <div style="font-size:13px;font-weight:500;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ s.title || '新对话' }}</div>
+                        <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">{{ formatTime(s.updated_at) }}</div>
                     </div>
-                    <svg width="14" height="14" fill="none" stroke="#ccc" viewBox="0 0 24 24">
+                    <svg width="14" height="14" fill="none" stroke="currentColor" style="color:var(--text-muted);" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
                     </svg>
                 </div>
@@ -574,14 +648,14 @@ const APP_TEMPLATE = `
             <div v-else>
                 <div v-for="(msg, i) in historyDetail" :key="i" style="margin-bottom:16px;">
                     <div v-if="msg.role === 'user'" style="display:flex;justify-content:flex-end;">
-                        <div style="max-width:78%;background:#4e6ef2;color:#fff;padding:10px 14px;border-radius:16px 16px 4px 16px;font-size:13px;line-height:1.6;word-break:break-word;">{{ msg.content }}</div>
+                        <div style="max-width:78%;background:var(--primary);color:#fff;padding:10px 14px;border-radius:16px 16px 4px 16px;font-size:13px;line-height:1.6;word-break:break-word;">{{ msg.content }}</div>
                     </div>
                     <div v-else>
                         <div style="display:flex;align-items:center;gap:7px;margin-bottom:6px;">
                             <div style="width:22px;height:22px;background:linear-gradient(135deg,#4e6ef2,#7c5cfc);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:11px;">🤖</div>
-                            <span style="font-size:12px;font-weight:600;color:#1a1a1a;">智能小助手</span>
+                            <span style="font-size:12px;font-weight:600;color:var(--text-primary);">智能小助手</span>
                         </div>
-                        <div style="padding-left:29px;font-size:13px;line-height:1.7;color:#333;white-space:pre-wrap;word-break:break-word;">{{ msg.content }}</div>
+                        <div style="padding-left:29px;font-size:13px;line-height:1.7;color:var(--text-secondary);white-space:pre-wrap;word-break:break-word;">{{ msg.content }}</div>
                     </div>
                 </div>
             </div>
@@ -644,6 +718,65 @@ const app = createApp({
         // 工具抽屉
         const skillsVisible = ref(false);
 
+        // 主题切换
+        const isDarkTheme = ref(localStorage.getItem('theme') === 'dark');
+        function applyTheme(dark) {
+            document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+            document.body.setAttribute('data-theme', dark ? 'dark' : 'light');
+            // 动态注入 Element Plus popper 暗色样式（解决 teleport 弹出层白色背景问题）
+            let darkPopperStyle = document.getElementById('dark-popper-style');
+            if (dark) {
+                if (!darkPopperStyle) {
+                    darkPopperStyle = document.createElement('style');
+                    darkPopperStyle.id = 'dark-popper-style';
+                    document.head.appendChild(darkPopperStyle);
+                }
+                darkPopperStyle.textContent = `
+                    .el-popper, .el-select-dropdown, .el-popper.is-light, .el-popper.is-pure {
+                        background: #1a1b2e !important;
+                        border-color: #2d2f45 !important;
+                    }
+                    .el-popper .el-popper__arrow::before {
+                        background: #1a1b2e !important;
+                        border-color: #2d2f45 !important;
+                    }
+                    .el-select-dropdown__item {
+                        color: #e4e6f0 !important;
+                    }
+                    .el-select-dropdown__item:hover,
+                    .el-select-dropdown__item.hover,
+                    .el-select-dropdown__item.is-hovering {
+                        background: #252740 !important;
+                    }
+                    .el-select-dropdown__item.is-selected,
+                    .el-select-dropdown__item.selected {
+                        color: #6d8cf8 !important;
+                        font-weight: 700;
+                    }
+                    .el-select-group__title {
+                        color: #6b6f85 !important;
+                    }
+                    .el-select-group__wrap::after {
+                        background: #2d2f45 !important;
+                    }
+                    .el-scrollbar__thumb {
+                        background: #3a3d55 !important;
+                    }
+                `;
+            } else {
+                if (darkPopperStyle) {
+                    darkPopperStyle.remove();
+                }
+            }
+        }
+        function toggleTheme() {
+            isDarkTheme.value = !isDarkTheme.value;
+            localStorage.setItem('theme', isDarkTheme.value ? 'dark' : 'light');
+            applyTheme(isDarkTheme.value);
+        }
+        // 初始化主题
+        applyTheme(isDarkTheme.value);
+
         // 停止生成控制器
         let abortController = null;
 
@@ -688,6 +821,45 @@ const app = createApp({
             } catch (e) {
                 return content.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
             }
+        }
+
+        // ===== ReAct 步骤分组（同一 Agent 多次调用合并） =====
+        function groupReactSteps(steps) {
+            if (!steps || steps.length === 0) return [];
+            const groups = [];
+            // 用于按 agentName 聚合的临时 map
+            const agentGroupMap = new Map();
+
+            for (const step of steps) {
+                if (step.type === 'action' && step.isAgentCall) {
+                    const name = step.agentCallName;
+                    if (agentGroupMap.has(name)) {
+                        // 已有该 Agent 的分组，追加
+                        const group = agentGroupMap.get(name);
+                        group.steps.push(step);
+                        if (!group.rounds.includes(step.step)) {
+                            group.rounds.push(step.step);
+                        }
+                    } else {
+                        // 创建新分组
+                        const group = {
+                            type: 'agent-group',
+                            agentName: name,
+                            steps: [step],
+                            rounds: [step.step],
+                            collapsed: false,
+                        };
+                        agentGroupMap.set(name, group);
+                        groups.push(group);
+                    }
+                } else if (step.type === 'thought') {
+                    groups.push({ type: 'thought', step });
+                } else {
+                    // 普通工具调用
+                    groups.push({ type: 'action', step });
+                }
+            }
+            return groups;
         }
 
         // ===== 消息复制 =====
@@ -811,6 +983,14 @@ const app = createApp({
         }
 
         function clearMessages() {
+            // 先中止正在进行的 SSE 流，防止流回调继续访问已清空的 messages 导致白屏
+            if (abortController) {
+                abortController.abort();
+                abortController = null;
+            }
+            sending.value = false;
+            setStatus('已连接', '#34d399');
+            roundCount.value = 0;
             messages.value = [{
                 role: 'ai',
                 content: '对话已清空，请继续提问。',
@@ -843,6 +1023,15 @@ const app = createApp({
             const text = inputText.value.trim();
             if (!text || sending.value) return;
 
+            // 若工具列表还在加载中（首次打开页面时），等待加载完成再发送
+            if (toolsModule.toolsLoading.value) {
+                await new Promise(resolve => {
+                    const stop = Vue.watch(toolsModule.toolsLoading, (loading) => {
+                        if (!loading) { stop(); resolve(); }
+                    });
+                });
+            }
+
             roundCount.value++;
             const currentRound = roundCount.value;
             messages.value.push({
@@ -866,6 +1055,10 @@ const app = createApp({
 
             try {
                 abortController = new AbortController();
+                // 记录本次是否启用了知识库
+                const ragKbName = knowledgeModule.selectedKbId.value
+                    ? (knowledgeModule.getSelectedKB()?.name || '知识库')
+                    : null;
                 const resp = await apiChatStream({
                     message: text,
                     session_id: sessionsModule.sessionId.value,
@@ -892,6 +1085,7 @@ const app = createApp({
                     streaming: true,
                     round: currentRound,
                     reactCollapsed: false,
+                    ragKbName,
                 });
 
                 while (true) {
@@ -909,6 +1103,9 @@ const app = createApp({
                         let event;
                         try { event = JSON.parse(jsonStr); } catch { continue; }
 
+                        // 防御：若消息已被清空（typingIdx 越界），停止处理
+                        if (!messages.value[typingIdx]) break;
+
                         if (event.type === 'chunk') {
                             if (event.content) streamContent += event.content;
                             if (event.thinking) streamThinking += event.thinking;
@@ -923,6 +1120,24 @@ const app = createApp({
                             scrollToBottom();
                         } else if (event.type === 'thought') {
                             const reactSteps = messages.value[typingIdx].reactSteps || [];
+
+                            // 若携带 parent_tool_call_id，说明是子 Agent 内部的思考过程，嵌套到对应子 Agent 的 subSteps
+                            if (event.parent_tool_call_id) {
+                                const parentStep = reactSteps.find(s => s.type === 'action' && s.isAgentCall && s.toolCallId === event.parent_tool_call_id);
+                                    if (parentStep) {
+                                    if (!parentStep.subSteps) parentStep.subSteps = [];
+                                    parentStep.subSteps.push({
+                                        type: 'thought',
+                                        step: event.step || parentStep.subSteps.length + 1,
+                                        content: event.content,
+                                        expanded: false,
+                                    });
+                                    messages.value[typingIdx] = { ...messages.value[typingIdx], reactSteps: [...reactSteps], streaming: true };
+                                    scrollToBottom();
+                                    continue;
+                                }
+                            }
+
                             reactSteps.push({
                                 type: 'thought',
                                 step: event.step || reactSteps.length + 1,
@@ -939,6 +1154,29 @@ const app = createApp({
                                 argsObj = JSON.parse(event.tool_args || '{}');
                                 argsDisplay = Object.entries(argsObj).map(([k,v]) => `${k}: ${v}`).join(', ');
                             } catch(e) { argsDisplay = event.tool_args || ''; }
+
+                            // 若携带 parent_tool_call_id，说明是子 Agent 内部的工具调用，嵌套到对应子 Agent 的 subSteps
+                            if (event.parent_tool_call_id) {
+                                const parentStep = reactSteps.find(s => s.type === 'action' && s.isAgentCall && s.toolCallId === event.parent_tool_call_id);
+                                if (parentStep) {
+                                    if (!parentStep.subSteps) parentStep.subSteps = [];
+                                    parentStep.subSteps.push({
+                                        type: 'action',
+                                        step: event.step || parentStep.subSteps.length + 1,
+                                        toolName: event.tool_display_name || event.tool_name,
+                                        toolRawName: event.tool_name,
+                                        toolCallId: event.tool_call_id || '',
+                                        toolArgs: event.tool_args || '',
+                                        argsDisplay,
+                                        status: 'calling',
+                                        result: '',
+                                        expanded: false,
+                                    });
+                                    messages.value[typingIdx] = { ...messages.value[typingIdx], reactSteps: [...reactSteps], streaming: true };
+                                    scrollToBottom();
+                                    continue;
+                                }
+                            }
 
                             // call_agent 工具特殊处理：提取子 Agent 名称和任务描述
                             const isAgentCall = event.tool_name === 'call_agent';
@@ -960,17 +1198,45 @@ const app = createApp({
                                 isAgentCall,
                                 agentCallName,
                                 agentCallMsg,
+                                subSteps: [],
                             });
+                            // call_agent 默认展开，方便查看子 Agent 调用过程
+                            if (isAgentCall) {
+                                reactSteps[reactSteps.length - 1].expanded = true;
+                            }
                             messages.value[typingIdx] = { ...messages.value[typingIdx], reactSteps: [...reactSteps], streaming: true };
                             scrollToBottom();
                         } else if (event.type === 'tool_result') {
                             const reactSteps = messages.value[typingIdx].reactSteps || [];
+
+                            // 若携带 parent_tool_call_id，说明是子 Agent 内部的工具结果，更新对应子 Agent 的 subSteps
+                            if (event.parent_tool_call_id) {
+                                const parentStep = reactSteps.find(s => s.type === 'action' && s.isAgentCall && s.toolCallId === event.parent_tool_call_id);
+                                if (parentStep && parentStep.subSteps) {
+                                    const subMatch = event.tool_call_id
+                                        ? parentStep.subSteps.find(s => s.toolCallId === event.tool_call_id && s.status === 'calling')
+                                        : [...parentStep.subSteps].reverse().find(s => (s.toolRawName || s.toolName) === event.tool_name && s.status === 'calling');
+                                    if (subMatch) {
+                                        subMatch.status = 'done';
+                                        subMatch.result = event.tool_result || '';
+                                    }
+                                    messages.value[typingIdx] = { ...messages.value[typingIdx], reactSteps: [...reactSteps], streaming: true };
+                                    scrollToBottom();
+                                    continue;
+                                }
+                            }
+
                             const matchAction = event.tool_call_id
                                 ? reactSteps.find(s => s.type === 'action' && s.toolCallId === event.tool_call_id && s.status === 'calling')
                                 : [...reactSteps].reverse().find(s => s.type === 'action' && (s.toolRawName || s.toolName) === event.tool_name && s.status === 'calling');
                             if (matchAction) {
                                 matchAction.status = 'done';
-                                matchAction.result = event.tool_result || '';
+                                // 对 call_agent 的结果去掉 "[xxx 的回复]\n" 前缀，避免UI重复显示
+                                let resultText = event.tool_result || '';
+                                if (matchAction.isAgentCall) {
+                                    resultText = resultText.replace(/^\[.*?的回复\]\n?/, '');
+                                }
+                                matchAction.result = resultText;
                             }
                             messages.value[typingIdx] = { ...messages.value[typingIdx], reactSteps: [...reactSteps], streaming: true };
                             scrollToBottom();
@@ -995,6 +1261,7 @@ const app = createApp({
                                 completionTokens: event.completion_tokens || 0,
                                 totalTokens: event.total_tokens || 0,
                                 sessionTotalTokens: event.session_total_tokens || 0,
+                                ragKbName: curMsg?.ragKbName || null,
                             };
                             setStatus('已连接', '#34d399');
                             setTimeout(() => sessionsModule.loadSidebarSessions(), 1500);
@@ -1106,11 +1373,14 @@ const app = createApp({
             suggestions, useSuggestion,
             systemPromptVisible, systemPromptInput, systemPromptSaving, currentSystemPrompt,
             skillsVisible,
+            isDarkTheme, toggleTheme,
             newSession, clearMessages, sendMessage, onKeydown, autoResize,
             onModelChange, goLogin, logout,
             openSystemPrompt, saveSystemPrompt,
             renderMarkdown, copyMessage, stopGenerate, regenerate,
             formatTime, formatNumber,
+            groupReactSteps,
+            getAgentDisplayName,
             // 会话模块
             ...sessionsModule,
             openSessionDetail,

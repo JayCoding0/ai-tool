@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"aiProject/internal/domain/model"
 	"aiProject/internal/domain/session"
@@ -33,10 +34,27 @@ func newAgentRunner(modelGen model.Generator, modelName string, sessID session.S
 // runReActLoop 执行 ReAct 循环，返回最终 AI 回复内容和累计 token 用量
 // 若 ctx 被取消或发生错误，返回已收集到的内容
 func (r *agentRunner) runReActLoop(ctx context.Context, messages []model.Message, toolDefs []model.ToolDefinition) (finalContent string, totalUsage model.TokenUsage, err error) {
+	logger := shared.GetLogger()
+	toolDefNames := make([]string, len(toolDefs))
+	for i, d := range toolDefs {
+		toolDefNames[i] = d.Name
+	}
+	logger.Info("[ReAct] 循环开始",
+		zap.String("session_id", string(r.sessID)),
+		zap.String("model", r.modelName),
+		zap.Int("msg_count", len(messages)),
+		zap.Strings("tool_defs", toolDefNames),
+		zap.Int("max_rounds", maxToolCallRounds),
+	)
+
 	for round := 0; round < maxToolCallRounds; round++ {
 		// 调用模型（带工具定义）
 		result, callErr := r.modelGen.GenerateWithTools(ctx, messages, toolDefs)
 		if callErr != nil {
+			logger.Error("[ReAct] 模型调用失败",
+				zap.Int("round", round),
+				zap.Error(callErr),
+			)
 			return "", totalUsage, fmt.Errorf("模型调用失败: %w", callErr)
 		}
 
@@ -44,9 +62,20 @@ func (r *agentRunner) runReActLoop(ctx context.Context, messages []model.Message
 		totalUsage.CompletionTokens += result.Usage.CompletionTokens
 		totalUsage.TotalTokens += result.Usage.TotalTokens
 
-		shared.GetLogger().Info("ReAct轮次", zap.Int("round", round), zap.Int("tool_calls", len(result.ToolCalls)))
+		logger.Info("[ReAct] 轮次结果",
+			zap.Int("round", round),
+			zap.Int("tool_calls", len(result.ToolCalls)),
+			zap.Int("content_len", len(result.Content)),
+			zap.Int("prompt_tokens", result.Usage.PromptTokens),
+			zap.Int("completion_tokens", result.Usage.CompletionTokens),
+			zap.Int("total_tokens", result.Usage.TotalTokens),
+		)
 
 		if len(result.ToolCalls) == 0 {
+			logger.Info("[ReAct] 无工具调用，进入流式输出",
+				zap.Int("round", round),
+				zap.Int("msg_count", len(messages)),
+			)
 			// 无工具调用：走流式接口逐字输出最终回复
 			content, streamUsage, streamErr := r.streamFinalReply(ctx, messages)
 			totalUsage.PromptTokens += streamUsage.PromptTokens
@@ -69,6 +98,15 @@ func (r *agentRunner) runReActLoop(ctx context.Context, messages []model.Message
 
 		// 有工具调用：推送思考内容（若有）
 		if result.Content != "" {
+			logger.Debug("[ReAct] 模型思考过程",
+				zap.Int("round", round),
+				zap.String("thought_preview", func() string {
+					if len(result.Content) > 80 {
+						return result.Content[:80] + "..."
+					}
+					return result.Content
+				}()),
+			)
 			if !sendEvent(ctx, r.outCh, StreamChatResponse{
 				Type:      "thought",
 				Content:   result.Content,
@@ -89,6 +127,17 @@ func (r *agentRunner) runReActLoop(ctx context.Context, messages []model.Message
 
 		// 推送所有 tool_call 事件
 		for _, tc := range result.ToolCalls {
+			logger.Info("[ReAct] 工具调用",
+				zap.Int("round", round),
+				zap.String("tool_name", tc.Name),
+				zap.String("tool_call_id", tc.ID),
+				zap.String("args_preview", func() string {
+					if len(tc.Arguments) > 120 {
+						return tc.Arguments[:120] + "..."
+					}
+					return tc.Arguments
+				}()),
+			)
 			if !sendEvent(ctx, r.outCh, StreamChatResponse{
 				Type:            "tool_call",
 				ToolName:        tc.Name,
@@ -169,22 +218,49 @@ func (r *agentRunner) executeToolsConcurrently(ctx context.Context, toolCalls []
 	results := make([]toolExecResult, len(toolCalls))
 	var wg sync.WaitGroup
 
-	// 将子 Agent 事件回调注入 context，使 call_agent 工具能透传子 Agent 的中间事件
-	ctxWithCallback := context.WithValue(ctx, SubAgentEventCallbackKey, SubAgentEventCallback(func(event StreamChatResponse) {
-		// 给子 Agent 事件加上当前步骤编号后透传到主 Agent 输出流
-		event.Step = step
-		sendEvent(ctx, r.outCh, event) //nolint:errcheck
-	}))
-
 	for i, tc := range toolCalls {
 		wg.Add(1)
 		go func(idx int, call model.ToolCall) {
 			defer wg.Done()
-			res, execErr := tool.Execute(ctxWithCallback, call)
+			start := time.Now()
+
+			// 为每个工具调用单独注入回调，call_agent 工具可通过 ParentToolCallID 标识子 Agent 事件归属
+			callCtx := context.WithValue(ctx, SubAgentEventCallbackKey, SubAgentEventCallback(func(event StreamChatResponse) {
+				// 给子 Agent 事件加上当前步骤编号和父级 call_agent 的 tool_call_id，用于前端层级归属
+				event.Step = step
+				event.ParentToolCallID = call.ID
+				shared.GetLogger().Info("[ReAct] 子Agent事件透传到主outCh",
+					zap.String("event_type", event.Type),
+					zap.String("tool_name", event.ToolName),
+					zap.String("tool_call_id", event.ToolCallID),
+					zap.String("parent_tool_call_id", event.ParentToolCallID),
+				)
+				sendEvent(ctx, r.outCh, event) //nolint:errcheck
+			}))
+			res, execErr := tool.Execute(callCtx, call)
+			duration := time.Since(start)
 			if execErr != nil {
+				shared.GetLogger().Error("[ReAct] 工具执行失败",
+					zap.String("tool", call.Name),
+					zap.String("tool_call_id", call.ID),
+					zap.Duration("duration", duration),
+					zap.Error(execErr),
+				)
 				res = fmt.Sprintf("工具执行失败: %v", execErr)
+			} else {
+				shared.GetLogger().Info("[ReAct] 工具执行完成",
+					zap.String("tool", call.Name),
+					zap.String("tool_call_id", call.ID),
+					zap.Duration("duration", duration),
+					zap.Int("result_len", len(res)),
+					zap.String("result_preview", func() string {
+						if len(res) > 120 {
+							return res[:120] + "..."
+						}
+						return res
+					}()),
+				)
 			}
-			shared.GetLogger().Info("工具调用完成", zap.String("tool", call.Name), zap.Int("result_len", len(res)))
 			results[idx] = toolExecResult{tc: call, result: res}
 		}(i, tc)
 	}

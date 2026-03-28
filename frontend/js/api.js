@@ -29,6 +29,17 @@ async function apiLoadAgents() {
     return await resp.json();
 }
 
+// 更新指定 Agent 的工具列表（动态配置，持久化到后端）
+async function apiUpdateAgentTools(agentName, tools) {
+    const resp = await fetch(`/api/agents/${agentName}/tools`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ tools })
+    });
+    if (!resp.ok) throw new Error('更新 Agent 工具失败');
+    return await resp.json();
+}
+
 // 加载会话列表
 async function apiLoadSessions() {
     const resp = await fetch('/api/sessions', { headers: getAuthHeaders() });

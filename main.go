@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	// 初始化全局日志
+	// 先用默认配置初始化日志（确保启动阶段的日志能写入文件）
 	logger, err := shared.InitLogger()
 	if err != nil {
 		panic("初始化日志失败: " + err.Error())
@@ -17,6 +17,20 @@ func main() {
 
 	// 从 trpc_go.yaml 的 custom 块加载应用配置
 	appConfig := config.LoadConfig()
+
+	// 用配置文件中的日志配置重新初始化（覆盖默认配置）
+	if appConfig.Log.FilePath != "" || appConfig.Log.Level != "" {
+		logger, err = shared.InitLoggerWithConfig(shared.LogConfig{
+			Level:    appConfig.Log.Level,
+			FilePath: appConfig.Log.FilePath,
+			Console:  appConfig.Log.Console,
+		})
+		if err != nil {
+			shared.GetLogger().Warn("使用配置文件日志配置失败，继续使用默认配置")
+		} else {
+			defer logger.Sync()
+		}
+	}
 
 	// 初始化应用组件（数据库、仓储、服务、Handler）
 	chatHandler, chatService := bootstrap.InitComponents(appConfig)

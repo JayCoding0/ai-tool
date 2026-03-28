@@ -486,6 +486,18 @@ func makeScriptExecutor(scriptPath, scriptsDir string) tool.ExecuteFunc {
 				}
 				return "", fmt.Errorf("脚本执行超时（超过 %s）", scriptExecTimeout)
 			}
+			// 优先从 stdout 提取脚本自身输出的 JSON 错误（如安全检查拒绝等）
+			stdoutStr := strings.TrimSpace(stdoutBuf.String())
+			if stdoutStr != "" {
+				var errObj map[string]interface{}
+				if json.Unmarshal([]byte(stdoutStr), &errObj) == nil {
+					if errMsg, ok := errObj["error"].(string); ok && errMsg != "" {
+						return "", fmt.Errorf("%s", errMsg)
+					}
+				}
+				// stdout 有内容但不是 JSON 错误格式，也返回
+				return "", fmt.Errorf("脚本执行失败: %v\nstdout: %s", err, stdoutStr)
+			}
 			stderrStr := strings.TrimSpace(stderrBuf.String())
 			if stderrStr != "" {
 				return "", fmt.Errorf("脚本执行失败: %v\nstderr: %s", err, stderrStr)

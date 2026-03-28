@@ -15,6 +15,7 @@ import (
 	"aiProject/internal/domain/knowledge"
 	"aiProject/internal/domain/session"
 	domain_tool "aiProject/internal/domain/tool"
+	"aiProject/internal/infrastructure/database"
 	"aiProject/internal/shared"
 	"go.uber.org/zap"
 )
@@ -289,13 +290,47 @@ func (h *ChatHandler) HandleChatStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 多 Agent 模式：优先使用主 Agent 的配置（system_prompt / chatSvc / tools）
+	enabledTools := req.EnabledTools
+	systemPrompt := req.SystemPrompt
+	modelName := req.ModelName
+	chatSvc := h.chatService
+	if h.agentRegistry != nil {
+		if master, ok := h.agentRegistry.GetMaster(); ok {
+			// 无论前端是否传了工具，始终使用主 Agent 的 ChatService 和 SystemPrompt
+			chatSvc = master.ChatService
+			if systemPrompt == "" {
+				systemPrompt = master.Def.SystemPrompt
+			}
+			if modelName == "" {
+				modelName = master.Def.ModelName
+			}
+			// 前端未指定工具时，自动使用主 Agent 的工具列表
+			if len(enabledTools) == 0 {
+				enabledTools = master.Def.EnabledTools
+			}
+		}
+	}
+
+	// 调试日志：打印 handler 层实际注入的参数
+	h.logger.Info("HandleChatStream 调试",
+		zap.Strings("enabled_tools", enabledTools),
+		zap.String("system_prompt_prefix", func() string {
+			if len(systemPrompt) > 80 {
+				return systemPrompt[:80]
+			}
+			return systemPrompt
+		}()),
+		zap.Bool("using_master_chatSvc", chatSvc != h.chatService),
+	)
+
 	appReq := application.ChatRequest{
 		Message:         req.Message,
 		SessionID:       session.SessionID(req.SessionID),
 		UserID:          userID,
-		ModelName:       req.ModelName,
-		SystemPrompt:    req.SystemPrompt,
-		EnabledTools:    req.EnabledTools,
+		ModelName:       modelName,
+		SystemPrompt:    systemPrompt,
+		EnabledTools:    enabledTools,
 		KnowledgeBaseID: req.KnowledgeBaseID,
 	}
 
@@ -310,10 +345,10 @@ func (h *ChatHandler) HandleChatStream(w http.ResponseWriter, r *http.Request) {
 		streamCh <-chan application.StreamChatResponse
 		err      error
 	)
-	if len(req.EnabledTools) > 0 {
-		streamCh, err = h.chatService.ProcessMessageWithTools(r.Context(), appReq, req.EnabledTools)
+	if len(enabledTools) > 0 {
+		streamCh, err = chatSvc.ProcessMessageWithTools(r.Context(), appReq, enabledTools)
 	} else {
-		streamCh, err = h.chatService.ProcessMessageStream(r.Context(), appReq)
+		streamCh, err = chatSvc.ProcessMessageStream(r.Context(), appReq)
 	}
 	if err != nil {
 		h.logger.Error("启动流式处理失败", zap.Error(err))
@@ -333,31 +368,34 @@ func (h *ChatHandler) HandleChatStream(w http.ResponseWriter, r *http.Request) {
 			})
 		case "thought":
 			sendSSE(map[string]interface{}{
-				"type":       "thought",
-				"content":    event.Content,
-				"step":       event.Step,
-				"session_id": string(event.SessionID),
+				"type":               "thought",
+				"content":            event.Content,
+				"step":               event.Step,
+				"parent_tool_call_id": event.ParentToolCallID,
+				"session_id":         string(event.SessionID),
 			})
 		case "tool_call":
 			sendSSE(map[string]interface{}{
-				"type":             "tool_call",
-				"tool_name":        event.ToolName,
-				"tool_display_name": event.ToolDisplayName,
-				"tool_call_id":     event.ToolCallID,
-				"tool_args":        event.ToolArgs,
-				"step":             event.Step,
-				"session_id":       string(event.SessionID),
+				"type":               "tool_call",
+				"tool_name":          event.ToolName,
+				"tool_display_name":  event.ToolDisplayName,
+				"tool_call_id":       event.ToolCallID,
+				"tool_args":          event.ToolArgs,
+				"step":               event.Step,
+				"parent_tool_call_id": event.ParentToolCallID,
+				"session_id":         string(event.SessionID),
 			})
 		case "tool_result":
 			sendSSE(map[string]interface{}{
-				"type":             "tool_result",
-				"tool_name":        event.ToolName,
-				"tool_display_name": event.ToolDisplayName,
-				"tool_call_id":     event.ToolCallID,
-				"tool_args":        event.ToolArgs,
-				"tool_result":      event.ToolResult,
-				"step":             event.Step,
-				"session_id":       string(event.SessionID),
+				"type":               "tool_result",
+				"tool_name":          event.ToolName,
+				"tool_display_name":  event.ToolDisplayName,
+				"tool_call_id":       event.ToolCallID,
+				"tool_args":          event.ToolArgs,
+				"tool_result":        event.ToolResult,
+				"step":               event.Step,
+				"parent_tool_call_id": event.ParentToolCallID,
+				"session_id":         string(event.SessionID),
 			})
 		case "done":
 			sendSSE(map[string]interface{}{
@@ -570,7 +608,7 @@ func (h *ChatHandler) HandleListModels(w http.ResponseWriter, r *http.Request) {
 			ollamaURL = "http://localhost:11434"
 		}
 		if localModels, err := fetchOllamaModels(ollamaURL); err != nil {
-			shared.GetLogger().Warn("拉取 Ollama 模型列表失败", zap.Error(err))
+			shared.GetLogger().Debug("Ollama 未启动，跳过本地模型拉取", zap.Error(err))
 		} else {
 			models = append(models, localModels...)
 		}
@@ -735,6 +773,76 @@ func (h *ChatHandler) HandleListAgents(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"agents": agents,
 		"count":  len(agents),
+	})
+}
+
+// HandleUpdateAgentTools 动态更新指定 Agent 的工具列表
+// PUT /api/agents/{name}/tools
+// Body: { "tools": ["weather", "http_request"] }
+func (h *ChatHandler) HandleUpdateAgentTools(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		writeJSONError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if h.agentRegistry == nil {
+		writeJSONError(w, "多 Agent 模式未启用", http.StatusServiceUnavailable)
+		return
+	}
+
+	// 从路径中提取 agent name：/api/agents/{name}/tools
+	path := r.URL.Path // e.g. /api/agents/weather_agent/tools
+	// 去掉前缀 /api/agents/ 和后缀 /tools
+	trimmed := strings.TrimPrefix(path, "/api/agents/")
+	agentName := strings.TrimSuffix(trimmed, "/tools")
+	if agentName == "" || agentName == path {
+		writeJSONError(w, "无效的 Agent 名称", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		Tools []string `json:"tools"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, "请求体解析失败: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Tools == nil {
+		req.Tools = []string{}
+	}
+
+	// 热更新内存中的 Agent 工具列表
+	if err := h.agentRegistry.UpdateTools(agentName, req.Tools); err != nil {
+		writeJSONError(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	// 持久化到数据库（如果数据库可用）
+	if db := database.GetDB(); db != nil {
+		ctx := r.Context()
+		// 先删除该 Agent 的旧配置，再批量插入新配置
+		_, err := db.Exec(ctx, "DELETE FROM agent_tools WHERE agent_name = ?", agentName)
+		if err != nil {
+			shared.GetLogger().Warn("删除 Agent 旧工具配置失败", zap.String("agent", agentName), zap.Error(err))
+		} else if len(req.Tools) > 0 {
+			// 批量插入
+			vals := make([]interface{}, 0, len(req.Tools)*2)
+			placeholders := make([]string, 0, len(req.Tools))
+			for _, t := range req.Tools {
+				placeholders = append(placeholders, "(?, ?)")
+				vals = append(vals, agentName, t)
+			}
+			query := "INSERT INTO agent_tools (agent_name, tool_name) VALUES " + strings.Join(placeholders, ",")
+			if _, err := db.Exec(ctx, query, vals...); err != nil {
+				shared.GetLogger().Warn("保存 Agent 工具配置失败", zap.String("agent", agentName), zap.Error(err))
+			}
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":    true,
+		"agent_name": agentName,
+		"tools":      req.Tools,
 	})
 }
 

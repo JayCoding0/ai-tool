@@ -14,8 +14,9 @@ type ExecuteFunc func(ctx context.Context, args map[string]interface{}) (string,
 
 // Tool 工具定义（可注册到 Skill 的可执行工具）
 type Tool struct {
-	Definition domain_model.ToolDefinition // 传给模型的工具描述
-	Execute    ExecuteFunc                 // 实际执行函数
+	Definition      domain_model.ToolDefinition // 传给模型的工具描述
+	Execute         ExecuteFunc                 // 实际执行函数
+	DescriptionFunc func() string               // 可选：动态描述钩子，每次 GetDefinitions 时调用以获取最新描述
 }
 
 // Registry 工具注册中心（全局单例）
@@ -43,14 +44,37 @@ func Get(name string) (*Tool, bool) {
 	return t, ok
 }
 
+// toolAliases 工具名别名映射（旧名/短名 → 注册名）
+// 用于兼容数据库中存储的旧工具名
+var toolAliases = map[string]string{
+	"weather":      "get_weather",
+	"public_ip":    "get_public_ip",
+	"current_time": "get_current_time",
+}
+
+// resolveToolName 解析工具名，支持别名
+func resolveToolName(name string) string {
+	if canonical, ok := toolAliases[name]; ok {
+		return canonical
+	}
+	return name
+}
+
 // GetDefinitions 获取指定名称列表的工具定义（用于传给模型）
+// 若工具注册了 DescriptionFunc，则每次调用时动态生成最新描述
+// 支持工具名别名（如 "weather" → "get_weather"）
 func GetDefinitions(names []string) []domain_model.ToolDefinition {
 	globalRegistry.mu.RLock()
 	defer globalRegistry.mu.RUnlock()
 	var defs []domain_model.ToolDefinition
 	for _, name := range names {
-		if t, ok := globalRegistry.tools[name]; ok {
-			defs = append(defs, t.Definition)
+		resolved := resolveToolName(name)
+		if t, ok := globalRegistry.tools[resolved]; ok {
+			def := t.Definition
+			if t.DescriptionFunc != nil {
+				def.Description = t.DescriptionFunc()
+			}
+			defs = append(defs, def)
 		}
 	}
 	return defs
@@ -59,7 +83,8 @@ func GetDefinitions(names []string) []domain_model.ToolDefinition {
 // Execute 执行工具调用
 func Execute(ctx context.Context, call domain_model.ToolCall) (string, error) {
 	globalRegistry.mu.RLock()
-	t, ok := globalRegistry.tools[call.Name]
+	resolved := resolveToolName(call.Name)
+	t, ok := globalRegistry.tools[resolved]
 	globalRegistry.mu.RUnlock()
 	if !ok {
 		return "", fmt.Errorf("工具 %q 未注册", call.Name)

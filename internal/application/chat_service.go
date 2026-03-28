@@ -44,6 +44,7 @@ type StreamChatResponse struct {
 	ToolArgs           string // 工具参数 JSON（tool_call时）
 	ToolResult         string // 工具结果（tool_result时）
 	Step               int    // ReAct 循环步骤编号
+	ParentToolCallID   string // 父级 call_agent 工具调用 ID（子 Agent 内部事件透传时携带，用于前端层级归属）
 	SessionID          session.SessionID
 	ModelName          string
 	Usage              model.TokenUsage // done时携带
@@ -115,6 +116,21 @@ func (s *ChatService) ProcessMessageStream(ctx context.Context, req ChatRequest)
 	if modelName == "" {
 		modelName = s.defaultModel
 	}
+
+	shared.GetLogger().Info("[ProcessMessageStream] 收到请求",
+		zap.String("session_id", string(req.SessionID)),
+		zap.String("model", modelName),
+		zap.Int64("user_id", req.UserID),
+		zap.Int("msg_len", len(req.Message)),
+		zap.String("msg_preview", func() string {
+			if len(req.Message) > 60 {
+				return req.Message[:60] + "..."
+			}
+			return req.Message
+		}()),
+		zap.Bool("has_system_prompt", req.SystemPrompt != ""),
+	)
+
 	modelGen := s.getModelGen(modelName)
 
 	sess, err := s.getOrCreateSession(ctx, req.SessionID)
@@ -309,6 +325,23 @@ func (s *ChatService) ProcessMessageWithTools(ctx context.Context, req ChatReque
 	if modelName == "" {
 		modelName = s.defaultModel
 	}
+
+	shared.GetLogger().Info("[ProcessMessageWithTools] 收到请求",
+		zap.String("session_id", string(req.SessionID)),
+		zap.String("model", modelName),
+		zap.Int64("user_id", req.UserID),
+		zap.Strings("enabled_tools", toolNames),
+		zap.Int("msg_len", len(req.Message)),
+		zap.String("msg_preview", func() string {
+			if len(req.Message) > 60 {
+				return req.Message[:60] + "..."
+			}
+			return req.Message
+		}()),
+		zap.Bool("has_system_prompt", req.SystemPrompt != ""),
+		zap.Int64("kb_id", req.KnowledgeBaseID),
+	)
+
 	modelGen := s.getModelGen(modelName)
 
 	sess, err := s.getOrCreateSession(ctx, req.SessionID)
@@ -330,6 +363,27 @@ func (s *ChatService) ProcessMessageWithTools(ctx context.Context, req ChatReque
 	}
 
 	toolDefs := tool.GetDefinitions(toolNames)
+
+	// 详细调试日志：打印实际使用的 systemPrompt、工具列表、历史消息数
+	{
+		toolNames2 := make([]string, len(toolDefs))
+		for i, d := range toolDefs {
+			toolNames2[i] = d.Name
+		}
+		shared.GetLogger().Info("[ProcessMessageWithTools] 工具解析完成",
+			zap.String("session_id", string(sess.ID())),
+			zap.Int("history_msgs", len(sess.GetHistory())),
+			zap.Strings("requested_tools", toolNames),
+			zap.Strings("resolved_tool_defs", toolNames2),
+			zap.Int("tool_def_count", len(toolDefs)),
+			zap.String("system_prompt_prefix", func() string {
+				if len(systemPrompt) > 100 {
+					return systemPrompt[:100] + "..."
+				}
+				return systemPrompt
+			}()),
+		)
+	}
 
 	// RAG：若会话绑定了知识库，先检索相关内容注入 System Prompt
 	var ragContext string
@@ -364,14 +418,16 @@ func (s *ChatService) ProcessMessageWithTools(ctx context.Context, req ChatReque
 		}
 
 		sess.AddMessage("ai", finalContent)
-		if err := s.sessionRepo.SaveMessageWithTokens(ctx, sess.ID(), "ai", finalContent, req.UserID, modelName, totalUsage); err != nil {
+		// 使用 Background context 保存，避免客户端断开后 ctx 取消导致保存失败
+		saveCtx := context.Background()
+		if err := s.sessionRepo.SaveMessageWithTokens(saveCtx, sess.ID(), "ai", finalContent, req.UserID, modelName, totalUsage); err != nil {
 			shared.GetLogger().Error("保存AI回复失败", zap.Error(err))
 		}
 		if err := s.sessionRepo.Save(sess); err != nil {
 			shared.GetLogger().Error("保存会话失败", zap.Error(err))
 		}
 
-		sessionTotal, _ := s.sessionRepo.GetSessionTotalTokens(ctx, sess.ID())
+		sessionTotal, _ := s.sessionRepo.GetSessionTotalTokens(saveCtx, sess.ID())
 		sendEvent(ctx, outCh, StreamChatResponse{
 			Type:               "done",
 			SessionID:          sess.ID(),

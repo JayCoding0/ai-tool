@@ -17,18 +17,12 @@ type subAgentContextKey struct{}
 // call_agent 工具从 context 中取出并传给 CallSubAgent
 var SubAgentEventCallbackKey = subAgentContextKey{}
 
-// RegisterCallAgentTool 向全局工具注册中心注册 call_agent 工具
-// 该工具让主 Agent 可以通过 LLM 工具调用的方式调用子 Agent
-// subAgents: 子 Agent 列表，用于生成工具描述（告知 LLM 有哪些子 Agent 可用）
-func RegisterCallAgentTool(subAgents []*AgentInstance) {
-	if len(subAgents) == 0 {
-		return
-	}
-
-	// 构建子 Agent 列表描述，注入到工具 description 中
+// buildCallAgentDescription 动态构建 call_agent 工具描述（实时反映当前子 Agent 列表）
+func buildCallAgentDescription() string {
+	subs := GetAgentRegistry().ListSubAgents()
 	var sb strings.Builder
 	sb.WriteString("调用指定的子 Agent 完成专项任务。可用的子 Agent 列表：\n")
-	for _, inst := range subAgents {
+	for _, inst := range subs {
 		sb.WriteString(fmt.Sprintf("- %s（%s）：%s\n",
 			inst.Def.Name,
 			inst.Def.DisplayName,
@@ -36,12 +30,24 @@ func RegisterCallAgentTool(subAgents []*AgentInstance) {
 		))
 	}
 	sb.WriteString("\n请根据任务类型选择最合适的子 Agent。")
+	return sb.String()
+}
+
+// RegisterCallAgentTool 向全局工具注册中心注册 call_agent 工具
+// 该工具让主 Agent 可以通过 LLM 工具调用的方式调用子 Agent
+// subAgents: 子 Agent 列表，仅用于判断是否有子 Agent 可用（描述在运行时动态生成）
+func RegisterCallAgentTool(subAgents []*AgentInstance) {
+	if len(subAgents) == 0 {
+		return
+	}
 
 	tool.Register(&tool.Tool{
+		// DescriptionFunc 每次 GetDefinitions 时动态生成，确保主 Agent 始终看到最新子 Agent 列表
+		DescriptionFunc: buildCallAgentDescription,
 		Definition: domain_model.ToolDefinition{
 			Name:        "call_agent",
 			DisplayName: "调用子Agent",
-			Description: sb.String(),
+			Description: buildCallAgentDescription(), // 初始值，后续由 DescriptionFunc 覆盖
 			Parameters: domain_model.ToolParameters{
 				Type: "object",
 				Properties: map[string]domain_model.ToolParameterProperty{

@@ -30,6 +30,10 @@ def validate_path(path: str) -> str | None:
         return "不允许使用绝对路径"
     if ".." in path.split(os.sep) or ".." in path.split("/"):
         return "不允许使用 .. 访问上级目录"
+    # 强制限定只能写入 output/ 目录下
+    normalized = path.replace(os.sep, "/")
+    if not normalized.startswith("output/"):
+        return "只允许写入 output/ 目录下，请将路径改为 output/ 开头，如 output/result.txt"
     # 检查扩展名
     _, ext = os.path.splitext(path)
     if ext and ext.lower() not in ALLOWED_EXTENSIONS:

@@ -31,12 +31,24 @@ const AGENT_ICON_MAP = {
     'code_agent': '💻',
 };
 
+// Agent 中文名映射
+const AGENT_DISPLAY_NAME_MAP = {
+    'master_agent': '主调度',
+    'weather_agent': '天气助手',
+    'search_agent': '搜索助手',
+    'code_agent': '代码助手',
+};
+
 function getToolIcon(name) {
     return TOOL_ICON_MAP[name] || '🔧';
 }
 
 function getAgentIcon(name) {
     return AGENT_ICON_MAP[name] || '🤖';
+}
+
+function getAgentDisplayName(name) {
+    return AGENT_DISPLAY_NAME_MAP[name] || name;
 }
 
 
@@ -104,6 +116,8 @@ function useTools() {
                     }
                     subAgentEnabledTools.value = Array.from(subTools);
                 }
+                // 恢复持久化的导入工具（每次加载都需要合并）
+                // 注：工具配置已由后端从数据库恢复，此处无需再从 localStorage 恢复
             } else {
                 // 回退到单 Agent 模式：直接加载工具列表
                 multiAgentMode.value = false;
@@ -174,14 +188,69 @@ function useTools() {
         return importPendingTools.value.some(t => t.name === toolName);
     }
 
-    // 确认导入：将待选工具加入目标 Agent 的展示列表
-    function confirmImport() {
+    // 持久化导入记录到 localStorage
+    const IMPORT_STORAGE_KEY = 'agent_imported_tools_v1';
+    function saveImportedTools() {
+        // 格式：{ agentName: [{ name, display_name, description }, ...] }
+        const record = {};
+        for (const agent of agentList.value) {
+            if (agent.is_master) continue;
+            // 找出该 Agent 中"额外导入"的工具（不在原始 default_tools 里的）
+            // 这里直接保存整个 tools 列表，加载时合并
+            if (agent._importedTools && agent._importedTools.length > 0) {
+                record[agent.name] = agent._importedTools;
+            }
+        }
+        try {
+            localStorage.setItem(IMPORT_STORAGE_KEY, JSON.stringify(record));
+        } catch (e) {}
+    }
+
+    // 从 localStorage 恢复导入记录，合并到 agentList
+    function restoreImportedTools() {
+        try {
+            const raw = localStorage.getItem(IMPORT_STORAGE_KEY);
+            if (!raw) return;
+            const record = JSON.parse(raw);
+            for (const agent of agentList.value) {
+                if (agent.is_master) continue;
+                const imported = record[agent.name];
+                if (!imported || imported.length === 0) continue;
+                if (!agent._importedTools) agent._importedTools = [];
+                for (const tool of imported) {
+                    // 合并到 tools 展示列表（去重）
+                    if (!agent.tools) agent.tools = [];
+                    if (!agent.tools.find(t => t.name === tool.name)) {
+                        agent.tools.push(tool);
+                    }
+                    // 合并到 default_tools
+                    if (!agent.default_tools) agent.default_tools = [];
+                    if (!agent.default_tools.includes(tool.name)) {
+                        agent.default_tools.push(tool.name);
+                    }
+                    // 合并到 _importedTools 记录
+                    if (!agent._importedTools.find(t => t.name === tool.name)) {
+                        agent._importedTools.push(tool);
+                    }
+                    // 默认启用
+                    if (!subAgentEnabledTools.value.includes(tool.name)) {
+                        subAgentEnabledTools.value.push(tool.name);
+                    }
+                }
+            }
+        } catch (e) {}
+    }
+
+    // 确认导入：将待选工具加入目标 Agent，并持久化到后端
+    async function confirmImport() {
         if (!importTargetAgent.value || importPendingTools.value.length === 0) {
             importDialogVisible.value = false;
             return;
         }
         const targetAgent = agentList.value.find(a => a.name === importTargetAgent.value);
         if (targetAgent) {
+            // 先更新前端状态
+            if (!targetAgent._importedTools) targetAgent._importedTools = [];
             for (const tool of importPendingTools.value) {
                 // 加入 tools 展示列表（去重）
                 if (!targetAgent.tools) targetAgent.tools = [];
@@ -201,6 +270,21 @@ function useTools() {
                 if (!subAgentEnabledTools.value.includes(tool.name)) {
                     subAgentEnabledTools.value.push(tool.name);
                 }
+                // 记录到 _importedTools（用于标记）
+                if (!targetAgent._importedTools.find(t => t.name === tool.name)) {
+                    targetAgent._importedTools.push({
+                        name: tool.name,
+                        display_name: tool.display_name || tool.name,
+                        description: tool.description || '',
+                    });
+                }
+            }
+
+            // 调用后端接口持久化（将该 Agent 的完整工具列表发给后端）
+            try {
+                await apiUpdateAgentTools(targetAgent.name, targetAgent.default_tools);
+            } catch (e) {
+                console.warn('保存 Agent 工具配置到后端失败，仅前端生效:', e);
             }
         }
         importPendingTools.value = [];
@@ -256,9 +340,9 @@ function useTools() {
         const base = 'display:flex;align-items:center;justify-content:space-between;padding:7px 10px;border-radius:7px;transition:all 0.15s;cursor:default;';
         const enabled = isToolEnabled(toolName);
         if (isMaster) {
-            return base + (enabled ? 'background:#fffbeb;border:1px solid #fcd34d;' : 'background:#fafafa;border:1px solid transparent;');
+            return base + (enabled ? 'background:var(--sidebar-hover);border:1px solid #fcd34d;' : 'background:var(--card-bg);border:1px solid transparent;');
         }
-        return base + (enabled ? 'background:#eff6ff;border:1px solid #93c5fd;' : 'background:#fafafa;border:1px solid transparent;');
+        return base + (enabled ? 'background:var(--primary-light);border:1px solid #93c5fd;' : 'background:var(--card-bg);border:1px solid transparent;');
     }
 
     // 判断工具是否启用（多 Agent 模式下子 Agent 工具看 subAgentEnabledTools）

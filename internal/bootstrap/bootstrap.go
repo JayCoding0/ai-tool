@@ -1,6 +1,8 @@
 package bootstrap
 
 import (
+	"context"
+	"database/sql"
 	"net/http"
 	"runtime/debug"
 	"strings"
@@ -44,16 +46,62 @@ func recoveryMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// loggingMiddleware 请求日志中间件
+// responseWriter 包装 http.ResponseWriter，记录状态码和响应大小
+type responseWriter struct {
+	http.ResponseWriter
+	statusCode int
+	bytesWritten int
+}
+
+func newResponseWriter(w http.ResponseWriter) *responseWriter {
+	return &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
+}
+
+func (rw *responseWriter) Write(b []byte) (int, error) {
+	n, err := rw.ResponseWriter.Write(b)
+	rw.bytesWritten += n
+	return n, err
+}
+
+// Flush 实现 http.Flusher 接口，透传给底层 ResponseWriter
+// 确保 SSE 流式响应（/api/chat/stream）能正常工作
+func (rw *responseWriter) Flush() {
+	if f, ok := rw.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// loggingMiddleware 请求日志中间件（记录 IP、方法、路径、状态码、耗时、响应大小）
 func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		next.ServeHTTP(w, r)
-		shared.GetLogger().Info("HTTP请求",
-			zap.String("method", r.Method),
-			zap.String("path", r.URL.Path),
-			zap.Duration("duration", time.Since(start)),
-		)
+		rw := newResponseWriter(w)
+		next.ServeHTTP(rw, r)
+		duration := time.Since(start)
+		logger := shared.GetLogger()
+		// 静态资源降为 debug 级别，减少日志噪音
+		if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/a2a/") {
+			logger.Info("HTTP请求",
+				zap.String("method", r.Method),
+				zap.String("path", r.URL.Path),
+				zap.String("ip", realIP(r)),
+				zap.Int("status", rw.statusCode),
+				zap.Int("bytes", rw.bytesWritten),
+				zap.Duration("duration", duration),
+			)
+		} else {
+			logger.Debug("HTTP静态资源",
+				zap.String("method", r.Method),
+				zap.String("path", r.URL.Path),
+				zap.Int("status", rw.statusCode),
+				zap.Duration("duration", duration),
+			)
+		}
 	})
 }
 
@@ -335,11 +383,16 @@ func InitAgentRegistry(chatService *application.ChatService, appConfig *config.C
 		Description: "负责理解用户意图，拆解任务，并调用合适的子 Agent 完成专项工作",
 		SystemPrompt: "你是一个智能任务调度助手，请始终使用中文回答。" +
 			"你只有一个工具可以使用：call_agent。" +
-			"当用户需要查天气、搜索信息、执行代码、计算等专项任务时，必须通过 call_agent 工具调用对应的子 Agent，" +
-			"绝对不能直接调用子 Agent 的名称（如 weather_agent、search_agent、code_agent）作为工具名，" +
-			"只能调用 call_agent 并在参数 agent_name 中指定子 Agent 名称。" +
-			"对于简单的问候、闲聊等不需要工具的问题，直接回复即可，无需调用任何工具。" +
-			"请根据用户的需求，判断是否需要调用子 Agent，并将结果汇总后回复用户。",
+			"【强制规则】以下类型的问题，无论任何情况，必须立即调用 call_agent 工具，绝对不能直接回答或询问用户：\n" +
+			"- 天气相关（如：天气怎么样、今天热不热、要不要带伞）→ 必须调用 weather_agent\n" +
+			"- 地点/景点/游玩推荐 → 必须调用 search_agent\n" +
+			"- 搜索/查询实时信息 → 必须调用 search_agent\n" +
+			"- 代码执行/文件操作/数学计算/数据库查询 → 必须调用 code_agent\n" +
+			"【重要】天气查询时，不需要先询问用户位置，weather_agent 会自动通过 IP 获取位置。" +
+			"【重要】当用户询问天气+游玩推荐时，先调用 weather_agent 获取天气，再调用 search_agent 推荐景点。" +
+			"【重要】无论历史对话中是否有类似回答，都必须重新调用工具获取最新数据，不得使用历史旧数据。" +
+			"只能调用 call_agent 并在参数 agent_name 中指定子 Agent 名称，绝对不能直接用子 Agent 名称作为工具名。" +
+			"只有纯粹的问候、闲聊（如：你好、谢谢）才可以直接回复，其他一律调用工具。",
 		EnabledTools: []string{"call_agent"},
 		IsMaster:     true,
 	}, masterChatService)
@@ -356,8 +409,8 @@ func InitAgentRegistry(chatService *application.ChatService, appConfig *config.C
 		DisplayName: "天气查询 Agent",
 		Description: "专门负责天气查询，可以查询任意城市的实时天气和天气预报",
 		SystemPrompt: "你是一个专业的天气查询助手，请始终使用中文回答。" +
-			"你只负责天气相关的查询任务，请使用天气工具获取准确的天气信息，并以友好的方式呈现给用户。",
-		EnabledTools: []string{"weather"},
+			"你只负责天气相关的查询任务，请使用 get_weather 工具获取准确的天气信息，并以友好的方式呈现给用户。",
+		EnabledTools: []string{"get_weather", "get_public_ip"},
 		IsMaster:     false,
 	}, weatherChatService)
 
@@ -371,10 +424,13 @@ func InitAgentRegistry(chatService *application.ChatService, appConfig *config.C
 	registry.Register(application.AgentDefinition{
 		Name:        "search_agent",
 		DisplayName: "搜索 Agent",
-		Description: "专门负责信息搜索，可以搜索网络信息、地点、新闻等",
-		SystemPrompt: "你是一个专业的信息搜索助手，请始终使用中文回答。" +
-			"你只负责信息搜索任务，请使用搜索工具获取相关信息，并整理成清晰的格式返回。",
-		EnabledTools: []string{"search", "map_search"},
+		Description: "专门负责信息搜索、景点推荐、地点查询、新闻等",
+		SystemPrompt: "你是一个专业的信息搜索与推荐助手，请始终使用中文回答。" +
+			"你可以使用 http_request 工具调用外部 API 或搜索引擎获取实时信息。" +
+			"你负责根据用户提供的城市、天气等信息，推荐合适的景点、游玩地点、餐厅等，" +
+			"并整理成清晰、详细的格式返回给用户。" +
+			"如需获取实时信息，请使用 http_request 工具发起 HTTP 请求。",
+		EnabledTools: []string{"http_request"},
 		IsMaster:     false,
 	}, searchChatService)
 
@@ -398,6 +454,30 @@ func InitAgentRegistry(chatService *application.ChatService, appConfig *config.C
 
 	// 向全局工具注册中心注册 call_agent 工具（主 Agent 用来调用子 Agent）
 	application.RegisterCallAgentTool(registry.ListSubAgents())
+
+	// 从数据库恢复动态工具配置（覆盖硬编码的 EnabledTools）
+	if db := database.GetDB(); db != nil {
+		ctx := context.Background()
+		toolsMap := make(map[string][]string)
+		err := db.Query(ctx, func(rows *sql.Rows) error {
+			var agentName, toolName string
+			if err := rows.Scan(&agentName, &toolName); err != nil {
+				return err
+			}
+			toolsMap[agentName] = append(toolsMap[agentName], toolName)
+			return nil
+		}, "SELECT agent_name, tool_name FROM agent_tools ORDER BY agent_name, id")
+		if err == nil {
+			for agentName, tools := range toolsMap {
+				if err := registry.UpdateTools(agentName, tools); err == nil {
+					shared.GetLogger().Info("从数据库恢复 Agent 工具配置",
+						zap.String("agent", agentName),
+						zap.Strings("tools", tools),
+					)
+				}
+			}
+		}
+	}
 
 	shared.GetLogger().Info("多 Agent 注册中心初始化完成",
 		zap.Int("agent_count", len(registry.ListAll())),
@@ -461,6 +541,8 @@ func RegisterRoutes(chatHandler *http_handler.ChatHandler, appConfig *config.Con
 	mux.HandleFunc("/api/tools", chatHandler.HandleListTools)
 	// Agent 列表接口
 	mux.HandleFunc("/api/agents", chatHandler.HandleListAgents)
+	// Agent 工具动态配置接口（PUT /api/agents/{name}/tools）
+	mux.HandleFunc("/api/agents/", chatHandler.HandleUpdateAgentTools)
 	// 模型列表接口
 	mux.HandleFunc("/api/models", chatHandler.HandleListModels)
 	// 认证相关接口
