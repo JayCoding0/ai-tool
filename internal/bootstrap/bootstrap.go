@@ -129,10 +129,10 @@ func InitComponents(appConfig *config.Config) (*http_handler.ChatHandler, *appli
 	modelGen := newModelGenerator(appConfig)
 	chatService := application.NewChatServiceWithFactory(sessionRepo, modelGen, appConfig.Model.Name, modelFactory)
 	authService := application.NewAuthService(userRepo)
-	// 从 skills/*/scripts/ 目录加载并注册工具
+	// 从 skills/*/scripts/ 目录加载并注册工具（传入百度 AK，避免硬编码）
 	infra_tools.LoadToolsFromSkillsDir("skills", appConfig.Tools.BaiduAK)
 
-	// 初始化多 Agent 注册中心
+	// 初始化多 Agent 注册中心，让前端聊天也走主 Agent（call_agent 编排模式）
 	registry := InitAgentRegistry(chatService, appConfig)
 	// 前端聊天使用主 Agent 的 ChatService
 	frontendChatService := chatService
