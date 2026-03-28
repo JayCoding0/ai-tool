@@ -5,11 +5,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"aiProject/internal/application"
 	"aiProject/internal/config"
+	"aiProject/internal/domain/knowledge"
 	"aiProject/internal/domain/session"
 	domain_tool "aiProject/internal/domain/tool"
 	"aiProject/internal/shared"
@@ -18,11 +21,12 @@ import (
 
 // ChatRequest HTTP请求结构体
 type ChatRequest struct {
-	Message      string   `json:"message"`
-	SessionID    string   `json:"session_id"`
-	ModelName    string   `json:"model_name,omitempty"`
-	SystemPrompt string   `json:"system_prompt,omitempty"`
-	EnabledTools []string `json:"enabled_tools,omitempty"`
+	Message         string   `json:"message"`
+	SessionID       string   `json:"session_id"`
+	ModelName       string   `json:"model_name,omitempty"`
+	SystemPrompt    string   `json:"system_prompt,omitempty"`
+	EnabledTools    []string `json:"enabled_tools,omitempty"`
+	KnowledgeBaseID int64    `json:"knowledge_base_id,omitempty"` // RAG 知识库 ID
 }
 
 // ChatResponse HTTP响应结构体
@@ -61,6 +65,7 @@ type ChatHandler struct {
 	chatService   *application.ChatService
 	authService   *application.AuthService
 	agentRegistry *application.AgentRegistry
+	knowledgeSvc  *application.KnowledgeService
 	appConfig     *config.Config
 	logger        *zap.Logger
 }
@@ -78,6 +83,11 @@ func NewChatHandler(chatService *application.ChatService, authService *applicati
 // SetAgentRegistry 注入 Agent 注册中心（多 Agent 模式下调用）
 func (h *ChatHandler) SetAgentRegistry(registry *application.AgentRegistry) {
 	h.agentRegistry = registry
+}
+
+// SetKnowledgeService 注入知识库服务
+func (h *ChatHandler) SetKnowledgeService(ks *application.KnowledgeService) {
+	h.knowledgeSvc = ks
 }
 
 // HistoryRequest 历史记录请求结构体
@@ -280,12 +290,13 @@ func (h *ChatHandler) HandleChatStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	appReq := application.ChatRequest{
-		Message:      req.Message,
-		SessionID:    session.SessionID(req.SessionID),
-		UserID:       userID,
-		ModelName:    req.ModelName,
-		SystemPrompt: req.SystemPrompt,
-		EnabledTools: req.EnabledTools,
+		Message:         req.Message,
+		SessionID:       session.SessionID(req.SessionID),
+		UserID:          userID,
+		ModelName:       req.ModelName,
+		SystemPrompt:    req.SystemPrompt,
+		EnabledTools:    req.EnabledTools,
+		KnowledgeBaseID: req.KnowledgeBaseID,
 	}
 
 	sendSSE := func(data interface{}) {
@@ -725,5 +736,278 @@ func (h *ChatHandler) HandleListAgents(w http.ResponseWriter, r *http.Request) {
 		"agents": agents,
 		"count":  len(agents),
 	})
+}
+
+// ─── 知识库 API ────────────────────────────────────────────────────────────────
+
+// knowledgeServiceRequired 检查知识库服务是否可用
+func (h *ChatHandler) knowledgeServiceRequired(w http.ResponseWriter) bool {
+	if h.knowledgeSvc == nil {
+		writeJSONError(w, "知识库功能未启用（RAG 服务未初始化）", http.StatusServiceUnavailable)
+		return false
+	}
+	return true
+}
+
+// HandleListKnowledgeBases 列出知识库
+func (h *ChatHandler) HandleListKnowledgeBases(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSONError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !h.knowledgeServiceRequired(w) {
+		return
+	}
+	userID, _, _ := h.getCurrentUser(r)
+	list, err := h.knowledgeSvc.ListKnowledgeBases(r.Context(), userID)
+	if err != nil {
+		writeJSONError(w, "获取知识库列表失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if list == nil {
+		list = make([]*knowledge.KnowledgeBase, 0)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"knowledge_bases": list, "count": len(list)}) //nolint:errcheck
+}
+
+// HandleCreateKnowledgeBase 创建知识库
+func (h *ChatHandler) HandleCreateKnowledgeBase(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSONError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !h.knowledgeServiceRequired(w) {
+		return
+	}
+	userID, _, _ := h.getCurrentUser(r)
+	var req struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+	kb, err := h.knowledgeSvc.CreateKnowledgeBase(r.Context(), userID, req.Name, req.Description)
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(kb) //nolint:errcheck
+}
+
+// HandleDeleteKnowledgeBase 删除知识库
+func (h *ChatHandler) HandleDeleteKnowledgeBase(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete && r.Method != http.MethodPost {
+		writeJSONError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !h.knowledgeServiceRequired(w) {
+		return
+	}
+	idStr := r.URL.Query().Get("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || id <= 0 {
+		writeJSONError(w, "无效的知识库 ID", http.StatusBadRequest)
+		return
+	}
+	if err := h.knowledgeSvc.DeleteKnowledgeBase(r.Context(), id); err != nil {
+		writeJSONError(w, "删除知识库失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"message": "知识库已删除"}) //nolint:errcheck
+}
+
+// HandleListDocuments 列出知识库下的文档
+func (h *ChatHandler) HandleListDocuments(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSONError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !h.knowledgeServiceRequired(w) {
+		return
+	}
+	kbIDStr := r.URL.Query().Get("kb_id")
+	kbID, err := strconv.ParseInt(kbIDStr, 10, 64)
+	if err != nil || kbID <= 0 {
+		writeJSONError(w, "无效的知识库 ID", http.StatusBadRequest)
+		return
+	}
+	docs, err := h.knowledgeSvc.ListDocuments(r.Context(), kbID)
+	if err != nil {
+		writeJSONError(w, "获取文档列表失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if docs == nil {
+		docs = make([]*knowledge.Document, 0)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"documents": docs, "count": len(docs)}) //nolint:errcheck
+}
+
+// HandleUploadDocument 上传文档到知识库（multipart/form-data 或 JSON）
+func (h *ChatHandler) HandleUploadDocument(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSONError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !h.knowledgeServiceRequired(w) {
+		return
+	}
+
+	contentType := r.Header.Get("Content-Type")
+
+	var kbID int64
+	var docName, docContent, docType string
+
+	if strings.Contains(contentType, "multipart/form-data") {
+		// 文件上传模式
+		if err := r.ParseMultipartForm(32 << 20); err != nil { // 最大 32MB
+			writeJSONError(w, "解析表单失败: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		kbIDStr := r.FormValue("kb_id")
+		var err error
+		kbID, err = strconv.ParseInt(kbIDStr, 10, 64)
+		if err != nil || kbID <= 0 {
+			writeJSONError(w, "无效的知识库 ID", http.StatusBadRequest)
+			return
+		}
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			writeJSONError(w, "获取上传文件失败: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		defer file.Close()
+
+		data, err := io.ReadAll(file)
+		if err != nil {
+			writeJSONError(w, "读取文件失败: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		docName = header.Filename
+		docContent = string(data)
+		docType = detectContentType(header.Filename)
+	} else {
+		// JSON 模式（直接传文本内容）
+		var req struct {
+			KbID        int64  `json:"kb_id"`
+			Name        string `json:"name"`
+			Content     string `json:"content"`
+			ContentType string `json:"content_type"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSONError(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+		kbID = req.KbID
+		docName = req.Name
+		docContent = req.Content
+		docType = req.ContentType
+		if docType == "" {
+			docType = "text"
+		}
+	}
+
+	if kbID <= 0 {
+		writeJSONError(w, "无效的知识库 ID", http.StatusBadRequest)
+		return
+	}
+	if utf8.RuneCountInString(docContent) == 0 {
+		writeJSONError(w, "文档内容不能为空", http.StatusBadRequest)
+		return
+	}
+
+	doc, err := h.knowledgeSvc.AddDocument(r.Context(), kbID, docName, docType, docContent)
+	if err != nil {
+		writeJSONError(w, "添加文档失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(doc) //nolint:errcheck
+}
+
+// HandleDeleteDocument 删除文档
+func (h *ChatHandler) HandleDeleteDocument(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete && r.Method != http.MethodPost {
+		writeJSONError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !h.knowledgeServiceRequired(w) {
+		return
+	}
+	idStr := r.URL.Query().Get("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || id <= 0 {
+		writeJSONError(w, "无效的文档 ID", http.StatusBadRequest)
+		return
+	}
+	if err := h.knowledgeSvc.DeleteDocument(r.Context(), id); err != nil {
+		writeJSONError(w, "删除文档失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"message": "文档已删除"}) //nolint:errcheck
+}
+
+// HandleKnowledgeSearch 手动测试知识库检索
+func (h *ChatHandler) HandleKnowledgeSearch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSONError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !h.knowledgeServiceRequired(w) {
+		return
+	}
+	var req struct {
+		KbID  int64  `json:"kb_id"`
+		Query string `json:"query"`
+		TopK  int    `json:"top_k"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if req.TopK <= 0 {
+		req.TopK = 5
+	}
+	chunks, err := h.knowledgeSvc.Search(r.Context(), req.KbID, req.Query, req.TopK)
+	if err != nil {
+		writeJSONError(w, "检索失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	type resultItem struct {
+		Content string  `json:"content"`
+		Score   float32 `json:"score"`
+		DocName string  `json:"doc_name"`
+	}
+	results := make([]resultItem, 0, len(chunks))
+	for _, sc := range chunks {
+		results = append(results, resultItem{
+			Content: sc.Chunk.Content,
+			Score:   sc.Score,
+			DocName: sc.DocName,
+		})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"results": results, "count": len(results)}) //nolint:errcheck
+}
+
+// detectContentType 根据文件名推断内容类型
+func detectContentType(filename string) string {
+	lower := strings.ToLower(filename)
+	switch {
+	case strings.HasSuffix(lower, ".md") || strings.HasSuffix(lower, ".markdown"):
+		return "markdown"
+	case strings.HasSuffix(lower, ".pdf"):
+		return "pdf"
+	default:
+		return "text"
+	}
 }
 

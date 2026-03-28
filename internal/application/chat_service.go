@@ -14,12 +14,13 @@ import (
 
 // ChatRequest 聊天请求值对象
 type ChatRequest struct {
-	Message      string
-	SessionID    session.SessionID
-	UserID       int64    // 关联用户ID，0表示未登录
-	ModelName    string   // 指定使用的模型名称，空则使用默认模型
-	SystemPrompt string   // 会话级别的 System Prompt，空则使用默认
-	EnabledTools []string // 前端启用的工具名称列表，模型自主决定调用
+	Message         string
+	SessionID       session.SessionID
+	UserID          int64    // 关联用户ID，0表示未登录
+	ModelName       string   // 指定使用的模型名称，空则使用默认模型
+	SystemPrompt    string   // 会话级别的 System Prompt，空则使用默认
+	EnabledTools    []string // 前端启用的工具名称列表，模型自主决定调用
+	KnowledgeBaseID int64    // 关联的知识库 ID，0 表示不使用 RAG
 }
 
 // ChatResponse 聊天响应值对象
@@ -52,11 +53,12 @@ type StreamChatResponse struct {
 
 // ChatService 聊天应用服务
 type ChatService struct {
-	sessionRepo  session.Repository
-	modelGen     model.Generator
-	defaultModel string
-	modelFactory func(modelName string) model.Generator
-	genCache     sync.Map // 模型生成器缓存，key=modelName value=model.Generator
+	sessionRepo    session.Repository
+	modelGen       model.Generator
+	defaultModel   string
+	modelFactory   func(modelName string) model.Generator
+	genCache       sync.Map // 模型生成器缓存，key=modelName value=model.Generator
+	knowledgeSvc   *KnowledgeService // RAG 知识库服务（可选）
 }
 
 // NewChatService 创建聊天服务
@@ -77,6 +79,11 @@ func NewChatServiceWithFactory(sessionRepo session.Repository, defaultModelGen m
 		defaultModel: defaultModel,
 		modelFactory: factory,
 	}
+}
+
+// SetKnowledgeService 注入知识库服务（启用 RAG 能力）
+func (s *ChatService) SetKnowledgeService(ks *KnowledgeService) {
+	s.knowledgeSvc = ks
 }
 
 // getModelGen 获取模型生成器（带缓存）
@@ -323,7 +330,18 @@ func (s *ChatService) ProcessMessageWithTools(ctx context.Context, req ChatReque
 	}
 
 	toolDefs := tool.GetDefinitions(toolNames)
-	messages := buildMessages(sess.GetHistory(), systemPrompt)
+
+	// RAG：若会话绑定了知识库，先检索相关内容注入 System Prompt
+	var ragContext string
+	if req.KnowledgeBaseID > 0 && s.knowledgeSvc != nil {
+		if chunks, searchErr := s.knowledgeSvc.Search(ctx, req.KnowledgeBaseID, req.Message, 5); searchErr == nil {
+			ragContext = BuildRAGContext(chunks)
+		} else {
+			shared.GetLogger().Warn("RAG 检索失败", zap.Error(searchErr))
+		}
+	}
+
+	messages := buildMessagesWithRAG(sess.GetHistory(), systemPrompt, ragContext)
 	isFirstMessage := len(sess.GetHistory()) <= 1
 
 	outCh := make(chan StreamChatResponse, 64)
@@ -372,8 +390,17 @@ func (s *ChatService) ProcessMessageWithTools(ctx context.Context, req ChatReque
 
 // buildMessages 将会话历史转换为 model.Message 列表（统一用于流式和工具调用）
 func buildMessages(history []session.Message, systemPrompt string) []model.Message {
+	return buildMessagesWithRAG(history, systemPrompt, "")
+}
+
+// buildMessagesWithRAG 将会话历史转换为 model.Message 列表，支持 RAG 上下文注入
+func buildMessagesWithRAG(history []session.Message, systemPrompt, ragContext string) []model.Message {
 	if systemPrompt == "" {
 		systemPrompt = "你是一个智能助手，请始终使用中文回答用户的问题。"
+	}
+	// 将 RAG 检索结果注入 System Prompt
+	if ragContext != "" {
+		systemPrompt += "\n\n## 参考知识库\n以下是与用户问题相关的知识库内容，请优先基于这些内容回答，并在回答末尾注明参考来源编号（如 [1][2]）：\n\n" + ragContext
 	}
 	messages := []model.Message{
 		{Role: model.RoleSystem, Content: systemPrompt},

@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>知识库管理 - 智能小助手</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .kb-page { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
+        .kb-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+        .kb-header h1 { font-size: 22px; font-weight: 700; color: #1a1a2e; margin: 0; }
+        .kb-card { background: #fff; border-radius: 12px; border: 1px solid #e8e8f0; padding: 20px; margin-bottom: 16px; transition: box-shadow .2s; }
+        .kb-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,.08); }
+        .kb-card-header { display: flex; align-items: flex-start; justify-content: space-between; }
+        .kb-card-title { font-size: 16px; font-weight: 600; color: #1a1a2e; margin-bottom: 4px; }
+        .kb-card-desc { font-size: 13px; color: #888; margin-bottom: 12px; }
+        .kb-card-stats { display: flex; gap: 16px; }
+        .kb-stat { font-size: 12px; color: #666; background: #f5f5fa; padding: 3px 10px; border-radius: 20px; }
+        .doc-list { margin-top: 16px; }
+        .doc-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-radius: 8px; background: #f8f8fc; margin-bottom: 8px; }
+        .doc-name { font-size: 14px; font-weight: 500; color: #333; flex: 1; }
+        .doc-meta { font-size: 12px; color: #999; margin-left: 12px; white-space: nowrap; }
+        .status-badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; margin-left: 8px; }
+        .status-done { background: #e6f7ee; color: #27ae60; }
+        .status-processing { background: #fff7e6; color: #e67e22; }
+        .status-pending { background: #f0f0f0; color: #888; }
+        .status-failed { background: #fde8e8; color: #e74c3c; }
+        .upload-area { border: 2px dashed #d0d0e0; border-radius: 10px; padding: 32px; text-align: center; cursor: pointer; transition: border-color .2s, background .2s; }
+        .upload-area:hover, .upload-area.drag-over { border-color: #667eea; background: #f0f0ff; }
+        .upload-icon { font-size: 36px; margin-bottom: 8px; }
+        .upload-hint { font-size: 13px; color: #999; margin-top: 6px; }
+        .search-result { background: #f8f8fc; border-radius: 8px; padding: 12px 16px; margin-bottom: 10px; border-left: 3px solid #667eea; }
+        .search-score { font-size: 11px; color: #667eea; font-weight: 600; }
+        .search-content { font-size: 13px; color: #444; margin-top: 6px; line-height: 1.6; white-space: pre-wrap; }
+        .nav-bar { background: #fff; border-bottom: 1px solid #e8e8f0; padding: 12px 24px; display: flex; align-items: center; gap: 16px; margin-bottom: 0; }
+        .nav-logo { font-size: 18px; font-weight: 700; color: #667eea; text-decoration: none; }
+        .nav-link { font-size: 14px; color: #666; text-decoration: none; padding: 6px 12px; border-radius: 6px; transition: background .2s; }
+        .nav-link:hover, .nav-link.active { background: #f0f0ff; color: #667eea; }
+        .empty-state { text-align: center; padding: 60px 20px; color: #bbb; }
+        .empty-state .empty-icon { font-size: 48px; margin-bottom: 12px; }
+    </style>
+</head>
+<body>
+<div id="kb-app">
+    <!-- 顶部导航 -->
+    <div class="nav-bar">
+        <a href="/" class="nav-logo">🤖 智能小助手</a>
+        <a href="/" class="nav-link">💬 对话</a>
+        <a href="/knowledge.html" class="nav-link active">📚 知识库</a>
+    </div>
+
+    <div class="kb-page">
+        <!-- 页头 -->
+        <div class="kb-header">
+            <h1>📚 知识库管理</h1>
+            <el-button type="primary" @click="showCreateDialog = true" :icon="Plus">新建知识库</el-button>
+        </div>
+
+        <!-- 知识库列表 -->
+        <div v-if="knowledgeBases.length === 0 && !loading" class="empty-state">
+            <div class="empty-icon">📂</div>
+            <div>暂无知识库，点击「新建知识库」开始</div>
+        </div>
+
+        <div v-for="kb in knowledgeBases" :key="kb.id" class="kb-card">
+            <div class="kb-card-header">
+                <div>
+                    <div class="kb-card-title">{{ kb.name }}</div>
+                    <div class="kb-card-desc">{{ kb.description || '暂无描述' }}</div>
+                    <div class="kb-card-stats">
+                        <span class="kb-stat">📄 {{ kb.doc_count }} 个文档</span>
+                        <span class="kb-stat">🧩 {{ kb.chunk_count }} 个分块</span>
+                        <span class="kb-stat">🤖 {{ kb.embed_model }}</span>
+                    </div>
+                </div>
+                <div style="display:flex;gap:8px;flex-shrink:0;margin-left:16px;">
+                    <el-button size="small" @click="openKB(kb)">管理文档</el-button>
+                    <el-button size="small" @click="openSearch(kb)">测试检索</el-button>
+                    <el-button size="small" type="danger" @click="deleteKB(kb)">删除</el-button>
+                </div>
+            </div>
+
+            <!-- 展开的文档列表 -->
+            <div v-if="activeKBId === kb.id" class="doc-list">
+                <el-divider style="margin:16px 0 12px" />
+
+                <!-- 上传区域 -->
+                <div class="upload-area"
+                     :class="{'drag-over': isDragging}"
+                     @click="triggerUpload(kb.id)"
+                     @dragover.prevent="isDragging=true"
+                     @dragleave="isDragging=false"
+                     @drop.prevent="handleDrop($event, kb.id)">
+                    <div class="upload-icon">📤</div>
+                    <div>点击或拖拽文件上传</div>
+                    <div class="upload-hint">支持 .txt .md .markdown 文件，最大 10MB</div>
+                    <input ref="fileInput" type="file" accept=".txt,.md,.markdown" style="display:none" @change="handleFileChange($event, kb.id)" multiple />
+                </div>
+
+                <!-- 文档列表 -->
+                <div style="margin-top:14px;">
+                    <div v-if="documents[kb.id] && documents[kb.id].length === 0" style="text-align:center;color:#bbb;padding:20px;">
+                        暂无文档，请上传
+                    </div>
+                    <div v-for="doc in documents[kb.id]" :key="doc.id" class="doc-item">
+                        <span class="doc-name">📄 {{ doc.name }}</span>
+                        <span class="doc-meta">{{ doc.char_count }} 字 · {{ doc.chunk_count }} 块</span>
+                        <span class="status-badge" :class="'status-' + doc.status">{{ statusLabel(doc.status) }}</span>
+                        <el-button size="small" type="danger" text @click="deleteDoc(doc, kb.id)" style="margin-left:8px;">删除</el-button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 新建知识库对话框 -->
+        <el-dialog v-model="showCreateDialog" title="新建知识库" width="480px">
+            <el-form :model="createForm" label-width="80px">
+                <el-form-item label="名称" required>
+                    <el-input v-model="createForm.name" placeholder="例如：公司内部文档" />
+                </el-form-item>
+                <el-form-item label="描述">
+                    <el-input v-model="createForm.description" type="textarea" :rows="3" placeholder="知识库用途说明（可选）" />
+                </el-form-item>
+            </el-form>
+            <template #footer>
+                <el-button @click="showCreateDialog = false">取消</el-button>
+                <el-button type="primary" @click="createKB" :loading="creating">创建</el-button>
+            </template>
+        </el-dialog>
+
+        <!-- 检索测试对话框 -->
+        <el-dialog v-model="showSearchDialog" :title="'检索测试：' + (searchKB ? searchKB.name : '')" width="680px">
+            <div style="display:flex;gap:8px;margin-bottom:16px;">
+                <el-input v-model="searchQuery" placeholder="输入检索问题..." @keyup.enter="doSearch" />
+                <el-button type="primary" @click="doSearch" :loading="searching">检索</el-button>
+            </div>
+            <div v-if="searchResults.length > 0">
+                <div v-for="(r, i) in searchResults" :key="i" class="search-result">
+                    <div class="search-score">相似度 {{ (r.score * 100).toFixed(1) }}% · {{ r.doc_name || '未知文档' }}</div>
+                    <div class="search-content">{{ r.content }}</div>
+                </div>
+            </div>
+            <div v-else-if="searched" style="text-align:center;color:#bbb;padding:20px;">未找到相关内容</div>
+        </el-dialog>
+    </div>
+</div>
+
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script src="https://unpkg.com/@element-plus/icons-vue"></script>
+<script src="https://unpkg.com/element-plus/dist/index.full.js"></script>
+<script>
+const { createApp, ref, reactive, onMounted } = Vue;
+
+createApp({
+    setup() {
+        const knowledgeBases = ref([]);
+        const loading = ref(false);
+        const showCreateDialog = ref(false);
+        const creating = ref(false);
+        const activeKBId = ref(null);
+        const documents = reactive({});
+        const isDragging = ref(false);
+        const fileInput = ref(null);
+        const showSearchDialog = ref(false);
+        const searchKB = ref(null);
+        const searchQuery = ref('');
+        const searchResults = ref([]);
+        const searching = ref(false);
+        const searched = ref(false);
+        const createForm = reactive({ name: '', description: '' });
+
+        const statusLabel = (s) => ({ pending: '等待中', processing: '处理中', done: '完成', failed: '失败' }[s] || s);
+
+        // 加载知识库列表
+        const loadKBs = async () => {
+            loading.value = true;
+            try {
+                const r = await fetch('/api/knowledge/bases');
+                const data = await r.json();
+                knowledgeBases.value = data.knowledge_bases || [];
+            } catch (e) {
+                ElementPlus.ElMessage.error('加载知识库失败');
+            } finally {
+                loading.value = false;
+            }
+        };
+
+        // 创建知识库
+        const createKB = async () => {
+            if (!createForm.name.trim()) {
+                ElementPlus.ElMessage.warning('请输入知识库名称');
+                return;
+            }
+            creating.value = true;
+            try {
+                const r = await fetch('/api/knowledge/bases', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: createForm.name, description: createForm.description })
+                });
+                if (!r.ok) {
+                    const err = await r.json();
+                    throw new Error(err.error || '创建失败');
+                }
+                ElementPlus.ElMessage.success('知识库创建成功');
+                showCreateDialog.value = false;
+                createForm.name = '';
+                createForm.description = '';
+                await loadKBs();
+            } catch (e) {
+                ElementPlus.ElMessage.error(e.message);
+            } finally {
+                creating.value = false;
+            }
+        };
+
+        // 删除知识库
+        const deleteKB = async (kb) => {
+            await ElementPlus.ElMessageBox.confirm(`确定删除知识库「${kb.name}」及其所有文档？`, '确认删除', { type: 'warning' });
+            try {
+                const r = await fetch(`/api/knowledge/bases/delete?id=${kb.id}`, { method: 'POST' });
+                if (!r.ok) throw new Error('删除失败');
+                ElementPlus.ElMessage.success('已删除');
+                if (activeKBId.value === kb.id) activeKBId.value = null;
+                await loadKBs();
+            } catch (e) {
+                if (e !== 'cancel') ElementPlus.ElMessage.error(e.message || '删除失败');
+            }
+        };
+
+        // 展开/收起知识库文档
+        const openKB = async (kb) => {
+            if (activeKBId.value === kb.id) {
+                activeKBId.value = null;
+                return;
+            }
+            activeKBId.value = kb.id;
+            await loadDocs(kb.id);
+        };
+
+        // 加载文档列表
+        const loadDocs = async (kbId) => {
+            try {
+                const r = await fetch(`/api/knowledge/documents?kb_id=${kbId}`);
+                const data = await r.json();
+                documents[kbId] = data.documents || [];
+            } catch (e) {
+                ElementPlus.ElMessage.error('加载文档失败');
+            }
+        };
+
+        // 触发文件选择
+        const triggerUpload = (kbId) => {
+            if (fileInput.value) {
+                fileInput.value._kbId = kbId;
+                fileInput.value.click();
+            }
+        };
+
+        // 处理文件选择
+        const handleFileChange = async (event, kbId) => {
+            const files = Array.from(event.target.files);
+            event.target.value = '';
+            await uploadFiles(files, kbId);
+        };
+
+        // 处理拖拽上传
+        const handleDrop = async (event, kbId) => {
+            isDragging.value = false;
+            const files = Array.from(event.dataTransfer.files);
+            await uploadFiles(files, kbId);
+        };
+
+        // 上传文件
+        const uploadFiles = async (files, kbId) => {
+            for (const file of files) {
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('kb_id', kbId);
+                try {
+                    const r = await fetch('/api/knowledge/documents/upload', { method: 'POST', body: formData });
+                    if (!r.ok) {
+                        const err = await r.json();
+                        throw new Error(err.error || '上传失败');
+                    }
+                    ElementPlus.ElMessage.success(`「${file.name}」上传成功，正在处理...`);
+                } catch (e) {
+                    ElementPlus.ElMessage.error(`「${file.name}」上传失败: ${e.message}`);
+                }
+            }
+            await loadDocs(kbId);
+            // 轮询处理状态
+            pollDocStatus(kbId);
+        };
+
+        // 轮询文档处理状态
+        const pollDocStatus = (kbId) => {
+            let count = 0;
+            const timer = setInterval(async () => {
+                await loadDocs(kbId);
+                const pending = (documents[kbId] || []).some(d => d.status === 'pending' || d.status === 'processing');
+                count++;
+                if (!pending || count > 30) {
+                    clearInterval(timer);
+                    await loadKBs(); // 刷新统计数据
+                }
+            }, 2000);
+        };
+
+        // 删除文档
+        const deleteDoc = async (doc, kbId) => {
+            await ElementPlus.ElMessageBox.confirm(`确定删除文档「${doc.name}」？`, '确认删除', { type: 'warning' });
+            try {
+                const r = await fetch(`/api/knowledge/documents/delete?id=${doc.id}`, { method: 'POST' });
+                if (!r.ok) throw new Error('删除失败');
+                ElementPlus.ElMessage.success('文档已删除');
+                await loadDocs(kbId);
+                await loadKBs();
+            } catch (e) {
+                if (e !== 'cancel') ElementPlus.ElMessage.error(e.message || '删除失败');
+            }
+        };
+
+        // 打开检索测试
+        const openSearch = (kb) => {
+            searchKB.value = kb;
+            searchQuery.value = '';
+            searchResults.value = [];
+            searched.value = false;
+            showSearchDialog.value = true;
+        };
+
+        // 执行检索
+        const doSearch = async () => {
+            if (!searchQuery.value.trim()) return;
+            searching.value = true;
+            searched.value = false;
+            try {
+                const r = await fetch('/api/knowledge/search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ kb_id: searchKB.value.id, query: searchQuery.value, top_k: 5 })
+                });
+                const data = await r.json();
+                searchResults.value = data.results || [];
+                searched.value = true;
+            } catch (e) {
+                ElementPlus.ElMessage.error('检索失败');
+            } finally {
+                searching.value = false;
+            }
+        };
+
+        onMounted(loadKBs);
+
+        return {
+            knowledgeBases, loading, showCreateDialog, creating, activeKBId,
+            documents, isDragging, fileInput, showSearchDialog, searchKB,
+            searchQuery, searchResults, searching, searched, createForm,
+            statusLabel, loadKBs, createKB, deleteKB, openKB, triggerUpload,
+            handleFileChange, handleDrop, deleteDoc, openSearch, doSearch,
+            Plus: ElementPlusIconsVue.Plus,
+        };
+    }
+}).use(ElementPlus).mount('#kb-app');
+</script>
+</body>
+</html>

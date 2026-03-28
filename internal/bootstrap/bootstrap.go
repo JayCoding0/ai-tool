@@ -13,6 +13,8 @@ import (
 	domain_model "aiProject/internal/domain/model"
 	mysql_a2a "aiProject/internal/infrastructure/a2a/mysql"
 	"aiProject/internal/infrastructure/database"
+	infra_knowledge "aiProject/internal/infrastructure/knowledge"
+	mysql_knowledge "aiProject/internal/infrastructure/knowledge/mysql"
 	infra_model "aiProject/internal/infrastructure/model"
 	infra_session "aiProject/internal/infrastructure/session"
 	mysql_session "aiProject/internal/infrastructure/session/mysql"
@@ -290,6 +292,22 @@ func InitComponents(appConfig *config.Config) (*http_handler.ChatHandler, *appli
 
 	handler := http_handler.NewChatHandler(frontendChatService, authService, appConfig)
 	handler.SetAgentRegistry(registry)
+
+	// 初始化 RAG 知识库服务（需要数据库已连接）
+	if appConfig.RAG.Enabled {
+		embedModel := appConfig.RAG.EmbedModel
+		if embedModel == "" {
+			embedModel = infra_knowledge.DefaultEmbedModel
+		}
+		embedder := infra_knowledge.NewOpenAIEmbedder(appConfig.Model.OpenAIBaseURL, appConfig.Model.OpenAIAPIKey, embedModel)
+		knowledgeRepo := mysql_knowledge.NewKnowledgeRepository()
+		knowledgeSvc := application.NewKnowledgeService(knowledgeRepo, embedder)
+		// 注入到前端 ChatService，启用 RAG 能力
+		frontendChatService.SetKnowledgeService(knowledgeSvc)
+		handler.SetKnowledgeService(knowledgeSvc)
+		shared.GetLogger().Info("RAG 知识库服务已启用", zap.String("embed_model", embedModel))
+	}
+
 	return handler, frontendChatService
 }
 
@@ -450,6 +468,22 @@ func RegisterRoutes(chatHandler *http_handler.ChatHandler, appConfig *config.Con
 	mux.HandleFunc("/api/auth/login", chatHandler.HandleLogin)
 	mux.HandleFunc("/api/auth/logout", chatHandler.HandleLogout)
 	mux.HandleFunc("/api/auth/me", chatHandler.HandleMe)
+	// 知识库接口
+	mux.HandleFunc("/api/knowledge/bases", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			chatHandler.HandleListKnowledgeBases(w, r)
+		case http.MethodPost:
+			chatHandler.HandleCreateKnowledgeBase(w, r)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/api/knowledge/bases/delete", chatHandler.HandleDeleteKnowledgeBase)
+	mux.HandleFunc("/api/knowledge/documents", chatHandler.HandleListDocuments)
+	mux.HandleFunc("/api/knowledge/documents/upload", chatHandler.HandleUploadDocument)
+	mux.HandleFunc("/api/knowledge/documents/delete", chatHandler.HandleDeleteDocument)
+	mux.HandleFunc("/api/knowledge/search", chatHandler.HandleKnowledgeSearch)
 	// A2A 协议接口
 	if a2aService != nil {
 		a2aHandler := http_handler.NewA2AHandler(a2aService)

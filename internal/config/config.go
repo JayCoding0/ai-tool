@@ -15,6 +15,7 @@ type Config struct {
 	Database DatabaseConfig `yaml:"database"`
 	Security SecurityConfig `yaml:"security"`
 	Tools    ToolsConfig    `yaml:"tools"`
+	RAG      RAGConfig      `yaml:"rag"`
 }
 
 // ServerConfig 服务器配置
@@ -68,6 +69,14 @@ type ModelOption struct {
 type ToolsConfig struct {
 	// BaiduAK 百度地图 API Key，用于天气查询和逆地理编码
 	BaiduAK string `yaml:"baidu_ak"`
+}
+
+// RAGConfig RAG 知识库配置
+type RAGConfig struct {
+	// EmbedModel Embedding 模型名称，默认 text-embedding-3-small
+	EmbedModel string `yaml:"embed_model"`
+	// Enabled 是否启用 RAG 功能，默认 true
+	Enabled bool `yaml:"enabled"`
 }
 
 // MCPConfig MCP配置
@@ -160,6 +169,10 @@ func DefaultConfig() *Config {
 		},
 		Tools: ToolsConfig{
 			BaiduAK: "",
+		},
+		RAG: RAGConfig{
+			Enabled:    true,
+			EmbedModel: "text-embedding-3-small",
 		},
 	}
 }
@@ -288,4 +301,9 @@ func mergeConfig(dst, src *Config) {
 	if src.Tools.BaiduAK != "" {
 		dst.Tools.BaiduAK = src.Tools.BaiduAK
 	}
+	// RAG
+	if src.RAG.EmbedModel != "" {
+		dst.RAG.EmbedModel = src.RAG.EmbedModel
+	}
+	dst.RAG.Enabled = src.RAG.Enabled
 }
