@@ -1,13 +1,14 @@
 # 🚀 部署指南
 
-> 本文档介绍如何在生产环境中部署 AI Agent Platform。
+> 本文档介绍如何在各种环境中部署 AI Agent Platform。
 
 ## 目录
 
 - [前置要求](#前置要求)
+- [快速启动脚本](#快速启动脚本)
 - [本地开发部署](#本地开发部署)
 - [生产环境部署](#生产环境部署)
-- [Docker 部署](#docker-部署)
+- [Docker 容器化部署](#docker-容器化部署)
 - [Nginx 反向代理](#nginx-反向代理)
 - [安全加固](#安全加固)
 - [监控与运维](#监控与运维)
@@ -21,7 +22,78 @@
 | Go | 1.24+ | ✅ | 后端编译运行 |
 | MySQL | 8.0+ | ✅ | 数据持久化 |
 | Python 3 | 3.8+ | ❌ | Skill 脚本工具执行 |
+| Docker | 20.10+ | ❌ | 容器化部署 |
+| Docker Compose | 2.0+ | ❌ | 容器编排 |
 | Ollama | 最新版 | ❌ | 本地模型推理 |
+
+---
+
+## 快速启动脚本
+
+项目提供了 3 个运维脚本，位于 `scripts/` 目录：
+
+```
+scripts/
+├── start.sh      # 启动脚本
+├── stop.sh       # 停止脚本
+└── restart.sh    # 重启脚本
+```
+
+### 启动服务
+
+```bash
+# 生产模式（默认）：自动编译 + 后台运行
+./scripts/start.sh
+
+# 开发模式：go run 运行
+./scripts/start.sh --dev
+
+# 指定端口
+./scripts/start.sh --port 9090
+```
+
+**启动脚本功能：**
+- ✅ 自动检测端口占用
+- ✅ 自动检测配置文件是否存在
+- ✅ 防止重复启动（PID 文件管理）
+- ✅ 生产模式自动编译（增量编译，源码未变不重新编译）
+- ✅ 启动后自动健康检查（最多等待 15 秒）
+- ✅ 启动失败自动输出错误日志
+
+### 停止服务
+
+```bash
+# 优雅停止（SIGTERM，等待 10 秒后强制终止）
+./scripts/stop.sh
+
+# 强制终止（SIGKILL）
+./scripts/stop.sh --force
+```
+
+**停止脚本功能：**
+- ✅ 优雅停止（先 SIGTERM，超时后 SIGKILL）
+- ✅ 自动清理残留进程
+- ✅ 自动清理 PID 文件
+
+### 重启服务
+
+```bash
+# 重启（透传所有参数给 start.sh）
+./scripts/restart.sh
+
+# 重启为开发模式
+./scripts/restart.sh --dev
+```
+
+### 脚本参数一览
+
+| 脚本 | 参数 | 说明 |
+|------|------|------|
+| `start.sh` | `--dev` | 开发模式（go run） |
+| `start.sh` | `--prod` | 生产模式（编译运行，默认） |
+| `start.sh` | `--port PORT` | 指定 HTTP 端口 |
+| `stop.sh` | `--force` / `-f` | 强制终止 |
+| `restart.sh` | 同 `start.sh` | 透传给 start.sh |
 
 ---
 
@@ -55,6 +127,10 @@ cp trpc_go.yaml.example trpc_go.yaml
 ### 4. 启动
 
 ```bash
+# 方式一：使用脚本（推荐）
+./scripts/start.sh --dev
+
+# 方式二：直接运行
 go run main.go
 ```
 
@@ -69,25 +145,45 @@ go run main.go
 ### 1. 编译
 
 ```bash
-# 编译为静态二进制
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ai-agent main.go
+# 方式一：使用启动脚本自动编译
+./scripts/start.sh --prod
+
+# 方式二：手动编译
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o output/ai-agent main.go
 ```
 
 ### 2. 目录结构
 
 ```
 /opt/ai-agent/
-├── ai-agent                   # 可执行文件
+├── ai-agent                   # 可执行文件（或 output/ai-agent）
 ├── trpc_go.yaml              # 配置文件
 ├── frontend/                  # 前端静态文件
 ├── skills/                    # Skill 技能目录
+├── scripts/                   # 运维脚本
 ├── database/                  # 数据库脚本
-└── logs/                      # 日志目录
+└── logs/                      # 日志目录（自动创建）
 ```
 
-### 3. Systemd 服务
+### 3. 使用脚本管理
 
-创建 `/etc/systemd/system/ai-agent.service`：
+```bash
+# 启动
+./scripts/start.sh
+
+# 查看状态
+cat logs/ai-agent.pid
+
+# 停止
+./scripts/stop.sh
+
+# 重启
+./scripts/restart.sh
+```
+
+### 4. Systemd 服务（可选）
+
+如果需要开机自启，创建 `/etc/systemd/system/ai-agent.service`：
 
 ```ini
 [Unit]
@@ -98,7 +194,8 @@ After=network.target mysql.service
 Type=simple
 User=ai-agent
 WorkingDirectory=/opt/ai-agent
-ExecStart=/opt/ai-agent/ai-agent
+ExecStart=/opt/ai-agent/output/ai-agent
+ExecStop=/opt/ai-agent/scripts/stop.sh
 Restart=always
 RestartSec=5
 LimitNOFILE=65536
@@ -118,71 +215,141 @@ sudo systemctl start ai-agent
 
 ---
 
-## Docker 部署
+## Docker 容器化部署
 
-### Dockerfile
+### 快速开始（推荐）
 
-```dockerfile
-FROM golang:1.24-alpine AS builder
+只需 3 步即可通过 Docker 启动完整服务（应用 + MySQL）：
 
-WORKDIR /app
-COPY go.mod go.sum ./
-RUN go mod download
-COPY . .
-RUN CGO_ENABLED=0 go build -o ai-agent main.go
-
-FROM alpine:latest
-RUN apk --no-cache add ca-certificates python3 py3-pip tzdata
-ENV TZ=Asia/Shanghai
-
-WORKDIR /app
-COPY --from=builder /app/ai-agent .
-COPY frontend/ ./frontend/
-COPY skills/ ./skills/
-COPY database/ ./database/
-
-EXPOSE 8080 8001
-
-CMD ["./ai-agent"]
-```
-
-### docker-compose.yml
-
-```yaml
-version: '3.8'
-
-services:
-  ai-agent:
-    build: .
-    ports:
-      - "8080:8080"
-      - "8001:8001"
-    volumes:
-      - ./trpc_go.yaml:/app/trpc_go.yaml
-      - ./logs:/app/logs
-    depends_on:
-      - mysql
-    restart: always
-
-  mysql:
-    image: mysql:8.0
-    environment:
-      MYSQL_ROOT_PASSWORD: your_password
-      MYSQL_DATABASE: ai_chat_db
-    ports:
-      - "3306:3306"
-    volumes:
-      - mysql_data:/var/lib/mysql
-      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
-      - ./database/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql
-    restart: always
-
-volumes:
-  mysql_data:
+```bash
+# 1. 准备配置文件
+cp trpc_go.yaml.example trpc_go.yaml
+cp .env.example .env
+# 编辑 trpc_go.yaml 填写 API Key
+# 编辑 .env 修改密码等配置（可选）
 ```
 
 ```bash
+# 2. 启动所有服务
 docker-compose up -d
+```
+
+```bash
+# 3. 查看状态
+docker-compose ps
+```
+
+访问 http://localhost:8080 🎉
+
+> ⚠️ **注意**：`trpc_go.yaml` 中的 MySQL 连接地址需要改为 Docker 内部网络地址：
+> ```yaml
+> # 将 localhost 改为 mysql（Docker 服务名）
+> target: dsn://root:ai_agent_2024@tcp(mysql:3306)/ai_chat_db?charset=utf8mb4&parseTime=true&loc=Local&timeout=5s
+> ```
+
+### 环境变量配置
+
+通过 `.env` 文件配置 Docker Compose 参数：
+
+```bash
+# .env
+HTTP_PORT=8080              # HTTP 服务端口映射
+MCP_PORT=8001               # MCP 服务端口映射
+MYSQL_PORT=3306             # MySQL 端口映射
+MYSQL_ROOT_PASSWORD=ai_agent_2024  # MySQL root 密码
+```
+
+### 常用命令
+
+```bash
+# 启动所有服务（后台运行）
+docker-compose up -d
+
+# 查看服务状态
+docker-compose ps
+
+# 查看应用日志
+docker-compose logs -f ai-agent
+
+# 查看 MySQL 日志
+docker-compose logs -f mysql
+
+# 停止所有服务
+docker-compose down
+
+# 停止并删除数据卷（⚠️ 会清除数据库数据）
+docker-compose down -v
+
+# 重新构建并启动
+docker-compose up -d --build
+
+# 仅重启应用（不重启 MySQL）
+docker-compose restart ai-agent
+
+# 进入应用容器
+docker-compose exec ai-agent sh
+
+# 进入 MySQL 容器
+docker-compose exec mysql mysql -u root -p ai_chat_db
+```
+
+### 架构说明
+
+```
+┌─────────────────────────────────────────────┐
+│              Docker Network                  │
+│                                              │
+│  ┌──────────────┐    ┌──────────────────┐   │
+│  │  ai-agent    │    │  mysql           │   │
+│  │  :8080 HTTP  │───▶│  :3306           │   │
+│  │  :8001 MCP   │    │                  │   │
+│  └──────────────┘    └──────────────────┘   │
+│        │                      │              │
+└────────┼──────────────────────┼──────────────┘
+         │                      │
+    ┌────┴────┐           ┌─────┴─────┐
+    │ volumes │           │  volumes  │
+    │ logs/   │           │ mysql_data│
+    │ skills/ │           └───────────┘
+    │ config  │
+    └─────────┘
+```
+
+### 数据持久化
+
+| 挂载项 | 容器路径 | 说明 |
+|--------|---------|------|
+| `./trpc_go.yaml` | `/app/trpc_go.yaml` | 配置文件（只读） |
+| `./logs` | `/app/logs` | 应用日志 |
+| `./skills` | `/app/skills` | Skill 技能目录（支持热更新） |
+| `mysql_data` | `/var/lib/mysql` | MySQL 数据（Docker Volume） |
+
+### Dockerfile 特性
+
+| 特性 | 说明 |
+|------|------|
+| **多阶段构建** | 编译阶段 + 运行阶段，最终镜像更小 |
+| **非 root 用户** | 使用 `appuser` 运行，提升安全性 |
+| **健康检查** | 内置 `HEALTHCHECK`，30 秒间隔检测 |
+| **时区设置** | 默认 `Asia/Shanghai` |
+| **Python 支持** | 预装 Python 3，支持 Skill 脚本执行 |
+| **构建缓存** | 先复制 `go.mod`，利用 Docker 层缓存加速 |
+
+### 仅构建镜像（不使用 Compose）
+
+```bash
+# 构建镜像
+docker build -t ai-agent:latest .
+
+# 运行容器（需要自行准备 MySQL）
+docker run -d \
+  --name ai-agent \
+  -p 8080:8080 \
+  -p 8001:8001 \
+  -v $(pwd)/trpc_go.yaml:/app/trpc_go.yaml:ro \
+  -v $(pwd)/logs:/app/logs \
+  -v $(pwd)/skills:/app/skills \
+  ai-agent:latest
 ```
 
 ---
@@ -240,11 +407,13 @@ server {
 ### 生产环境检查清单
 
 - [ ] 修改默认管理员密码
+- [ ] 修改 MySQL 默认密码
 - [ ] 配置具体的 CORS 允许域名（不要用 `*`）
 - [ ] 启用 IP 限流
 - [ ] 使用 HTTPS
 - [ ] MySQL 使用强密码，限制远程访问
 - [ ] API Key 不要提交到代码仓库
+- [ ] `.env` 文件不要提交到代码仓库
 - [ ] 日志级别设为 `info` 或 `warn`
 - [ ] 限制 `execute_command` 工具的使用范围
 
@@ -261,6 +430,7 @@ server {
 | IP 限流 | 令牌桶算法 |
 | CORS 控制 | 配置化 Origin 白名单 |
 | 游客清理 | 定期清理游客会话 |
+| Docker 非 root | 容器内使用非 root 用户运行 |
 
 ---
 
@@ -271,8 +441,11 @@ server {
 日志输出到 `./logs/app.log`，支持 JSON 格式，可接入 ELK 等日志系统。
 
 ```bash
-# 实时查看日志
+# 实时查看日志（裸机部署）
 tail -f logs/app.log
+
+# 实时查看日志（Docker 部署）
+docker-compose logs -f ai-agent
 
 # 查看错误日志
 grep "error" logs/app.log
@@ -283,13 +456,19 @@ grep "error" logs/app.log
 ```bash
 # 检查服务是否正常
 curl http://localhost:8080/api/models
+
+# Docker 健康状态
+docker-compose ps
 ```
 
 ### 数据库备份
 
 ```bash
-# 备份
+# 裸机部署备份
 mysqldump -u root -p ai_chat_db > backup_$(date +%Y%m%d).sql
+
+# Docker 部署备份
+docker-compose exec mysql mysqldump -u root -pai_agent_2024 ai_chat_db > backup_$(date +%Y%m%d).sql
 
 # 恢复
 mysql -u root -p ai_chat_db < backup_20240101.sql

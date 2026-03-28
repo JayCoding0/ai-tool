@@ -212,12 +212,31 @@ custom:
 ### 4. 启动
 
 ```bash
+# 方式一：脚本启动（推荐）
+./scripts/start.sh          # 生产模式
+./scripts/start.sh --dev    # 开发模式
+
+# 方式二：直接运行
 go run main.go
+
+# 方式三：Docker 一键部署（含 MySQL）
+cp .env.example .env
+docker-compose up -d
 ```
 
 访问 [http://localhost:8080](http://localhost:8080) 🎉
 
 > 默认管理员账户：`admin` / `admin123`（**请及时修改密码**）
+
+### 运维脚本
+
+```bash
+./scripts/start.sh          # 启动（--dev 开发模式 / --prod 生产模式）
+./scripts/stop.sh           # 停止（--force 强制终止）
+./scripts/restart.sh        # 重启（透传所有参数）
+```
+
+> 详细部署方案（Docker、Systemd、Nginx 反代等）见 [docs/deployment.md](docs/deployment.md)
 
 ---
 
@@ -288,7 +307,10 @@ aiProject/
 │   ├── current-time/                    # 当前时间
 │   ├── ip-lookup/                       # IP 查询
 │   └── skill-creator/                   # Skill 生成器（元技能）
+├── scripts/                             # 🔧 运维脚本（启动/停止/重启）
 ├── database/                            # 🗄️ 数据库脚本（schema + seed）
+├── Dockerfile                           # 🐳 Docker 多阶段构建
+├── docker-compose.yml                   # 🐳 Docker Compose 编排
 └── docs/                                # 📚 详细文档（8 篇）
 ```
 
