@@ -54,12 +54,12 @@ type StreamChatResponse struct {
 
 // ChatService 聊天应用服务
 type ChatService struct {
-	sessionRepo    session.Repository
-	modelGen       model.Generator
-	defaultModel   string
-	modelFactory   func(modelName string) model.Generator
-	genCache       sync.Map // 模型生成器缓存，key=modelName value=model.Generator
-	knowledgeSvc   *KnowledgeService // RAG 知识库服务（可选）
+	sessionRepo  session.Repository
+	modelGen     model.Generator
+	defaultModel string
+	modelFactory func(modelName string) model.Generator
+	genCache     sync.Map          // 模型生成器缓存，key=modelName value=model.Generator
+	knowledgeSvc *KnowledgeService // RAG 知识库服务（可选）
 }
 
 // NewChatService 创建聊天服务

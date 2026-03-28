@@ -31,9 +31,9 @@ type AgentDefinition struct {
 
 // AgentRegistry Agent 注册中心，管理所有命名 Agent 实例
 type AgentRegistry struct {
-	mu      sync.RWMutex
-	agents  map[string]*AgentInstance
-	master  *AgentInstance
+	mu     sync.RWMutex
+	agents map[string]*AgentInstance
+	master *AgentInstance
 }
 
 // AgentInstance 运行时 Agent 实例

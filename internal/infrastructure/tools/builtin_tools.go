@@ -31,11 +31,11 @@ const (
 
 // toolManifest scripts/ 目录下工具定义文件（tool.json）的结构
 type toolManifest struct {
-	Name        string                              `json:"name"`
-	DisplayName string                              `json:"display_name"` // 展示给用户的中文名称（可选）
-	Description string                              `json:"description"`
-	Script      string                              `json:"script"`       // 脚本文件名，如 run.sh / run.py
-	Parameters  domain_model.ToolParameters         `json:"parameters"`
+	Name        string                      `json:"name"`
+	DisplayName string                      `json:"display_name"` // 展示给用户的中文名称（可选）
+	Description string                      `json:"description"`
+	Script      string                      `json:"script"` // 脚本文件名，如 run.sh / run.py
+	Parameters  domain_model.ToolParameters `json:"parameters"`
 }
 
 // LoadToolsFromSkillsDir 扫描 skillsDir 下所有技能的 scripts/ 子目录，
@@ -173,9 +173,9 @@ func executeListDirectory(ctx context.Context, args map[string]interface{}) (str
 	}
 
 	type fileInfo struct {
-		Name  string `json:"name"`
-		Type  string `json:"type"`  // "file" 或 "dir"
-		Size  int64  `json:"size,omitempty"`
+		Name string `json:"name"`
+		Type string `json:"type"` // "file" 或 "dir"
+		Size int64  `json:"size,omitempty"`
 	}
 
 	var items []fileInfo
@@ -207,15 +207,15 @@ func executeListDirectory(ctx context.Context, args map[string]interface{}) (str
 
 // ipAPIResponse ip-api.com 响应结构
 type ipAPIResponse struct {
-	Status      string  `json:"status"`
-	Message     string  `json:"message"`
-	Country     string  `json:"country"`
-	RegionName  string  `json:"regionName"`
-	City        string  `json:"city"`
-	District    string  `json:"district"`
-	Lat         float64 `json:"lat"`
-	Lon         float64 `json:"lon"`
-	Query       string  `json:"query"`
+	Status     string  `json:"status"`
+	Message    string  `json:"message"`
+	Country    string  `json:"country"`
+	RegionName string  `json:"regionName"`
+	City       string  `json:"city"`
+	District   string  `json:"district"`
+	Lat        float64 `json:"lat"`
+	Lon        float64 `json:"lon"`
+	Query      string  `json:"query"`
 }
 
 // baiduGeocodeResponse 百度地理编码 API 响应结构

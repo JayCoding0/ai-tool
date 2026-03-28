@@ -49,7 +49,7 @@ func recoveryMiddleware(next http.Handler) http.Handler {
 // responseWriter 包装 http.ResponseWriter，记录状态码和响应大小
 type responseWriter struct {
 	http.ResponseWriter
-	statusCode int
+	statusCode   int
 	bytesWritten int
 }
 
