@@ -161,8 +161,11 @@ func (r *AgentRegistry) CallSubAgent(agentName, message, sessionID string, event
 	req := ChatRequest{
 		Message:      message,
 		SessionID:    session.SessionID(sessionID),
-		SystemPrompt: inst.Def.SystemPrompt,
-		ModelName:    inst.Def.ModelName,
+		SystemPrompt: RenderPromptTemplate(inst.Def.SystemPrompt, PromptContext{
+			SessionID: sessionID,
+			ModelName: inst.Def.ModelName,
+		}),
+		ModelName: inst.Def.ModelName,
 	}
 
 	var streamCh <-chan StreamChatResponse

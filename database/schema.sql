@@ -182,3 +182,32 @@ CREATE TABLE IF NOT EXISTS knowledge_chunks (
     INDEX idx_kb_id (knowledge_base_id),
     FOREIGN KEY (document_id) REFERENCES knowledge_documents(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='文档分块表（含向量）';
+
+-- -----------------------------------------------------------
+-- 12. Prompt 模板变量 - 用户级
+-- -----------------------------------------------------------
+CREATE TABLE IF NOT EXISTS prompt_vars_user (
+    id         BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键',
+    user_id    BIGINT NOT NULL COMMENT '用户ID',
+    var_key    VARCHAR(100) NOT NULL COMMENT '变量名',
+    var_value  TEXT NOT NULL COMMENT '变量值',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    UNIQUE KEY uk_user_var (user_id, var_key),
+    INDEX idx_user_id (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Prompt 模板变量 - 用户级';
+
+-- -----------------------------------------------------------
+-- 13. Prompt 模板变量 - 会话级
+-- -----------------------------------------------------------
+CREATE TABLE IF NOT EXISTS prompt_vars_session (
+    id         BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键',
+    session_id VARCHAR(36) NOT NULL COMMENT '会话ID',
+    var_key    VARCHAR(100) NOT NULL COMMENT '变量名',
+    var_value  TEXT NOT NULL COMMENT '变量值',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    UNIQUE KEY uk_session_var (session_id, var_key),
+    INDEX idx_session_id (session_id),
+    FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Prompt 模板变量 - 会话级';

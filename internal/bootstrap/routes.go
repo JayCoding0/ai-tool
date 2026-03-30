@@ -33,6 +33,12 @@ func RegisterRoutes(chatHandler *http_handler.ChatHandler, appConfig *config.Con
 	mux.HandleFunc("/api/agents/", chatHandler.HandleUpdateAgentTools)
 	// 模型列表接口
 	mux.HandleFunc("/api/models", chatHandler.HandleListModels)
+	// Prompt 模板变量接口
+	mux.HandleFunc("/api/prompt-vars", chatHandler.HandleListPromptVariables)
+	mux.HandleFunc("/api/prompt-vars/user/set", chatHandler.HandleSetUserVar)
+	mux.HandleFunc("/api/prompt-vars/user/delete", chatHandler.HandleDeleteUserVar)
+	mux.HandleFunc("/api/prompt-vars/session/set", chatHandler.HandleSetSessionVar)
+	mux.HandleFunc("/api/prompt-vars/session/delete", chatHandler.HandleDeleteSessionVar)
 	// 认证相关接口
 	mux.HandleFunc("/api/auth/register", chatHandler.HandleRegister)
 	mux.HandleFunc("/api/auth/login", chatHandler.HandleLogin)

@@ -25,11 +25,13 @@ func msgPreview(msg string, maxLen int) string {
 type ChatRequest struct {
 	Message         string
 	SessionID       session.SessionID
-	UserID          int64    // 关联用户ID，0表示未登录
-	ModelName       string   // 指定使用的模型名称，空则使用默认模型
-	SystemPrompt    string   // 会话级别的 System Prompt，空则使用默认
-	EnabledTools    []string // 前端启用的工具名称列表，模型自主决定调用
-	KnowledgeBaseID int64    // 关联的知识库 ID，0 表示不使用 RAG
+	UserID          int64             // 关联用户ID，0表示未登录
+	UserName        string            // 当前登录用户名（用于 Prompt 模板变量）
+	ModelName       string            // 指定使用的模型名称，空则使用默认模型
+	SystemPrompt    string            // 会话级别的 System Prompt，空则使用默认
+	EnabledTools    []string          // 前端启用的工具名称列表，模型自主决定调用
+	KnowledgeBaseID int64             // 关联的知识库 ID，0 表示不使用 RAG
+	PromptVars      map[string]string // 请求级 Prompt 模板变量
 }
 
 // ChatResponse 聊天响应值对象
@@ -63,12 +65,13 @@ type StreamChatResponse struct {
 
 // ChatService 聊天应用服务
 type ChatService struct {
-	sessionRepo  session.Repository
-	modelGen     model.Generator
-	defaultModel string
-	modelFactory func(modelName string) model.Generator
-	genCache     sync.Map          // 模型生成器缓存，key=modelName value=model.Generator
-	knowledgeSvc *KnowledgeService // RAG 知识库服务（可选）
+	sessionRepo    session.Repository
+	modelGen       model.Generator
+	defaultModel   string
+	modelFactory   func(modelName string) model.Generator
+	genCache       sync.Map              // 模型生成器缓存，key=modelName value=model.Generator
+	knowledgeSvc   *KnowledgeService     // RAG 知识库服务（可选）
+	promptVarsSvc  *PromptVarsService    // Prompt 模板变量服务（可选）
 }
 
 // NewChatService 创建聊天服务
@@ -94,6 +97,11 @@ func NewChatServiceWithFactory(sessionRepo session.Repository, defaultModelGen m
 // SetKnowledgeService 注入知识库服务（启用 RAG 能力）
 func (s *ChatService) SetKnowledgeService(ks *KnowledgeService) {
 	s.knowledgeSvc = ks
+}
+
+// SetPromptVarsService 注入 Prompt 模板变量服务
+func (s *ChatService) SetPromptVarsService(pvs *PromptVarsService) {
+	s.promptVarsSvc = pvs
 }
 
 // getModelGen 获取模型生成器（带缓存）
@@ -153,6 +161,9 @@ func (s *ChatService) ProcessMessageStream(ctx context.Context, req ChatRequest)
 	}
 
 	isFirstMessage := len(sess.GetHistory()) <= 1
+
+	// 渲染 Prompt 模板变量
+	systemPrompt = s.renderPromptTemplate(ctx, systemPrompt, req, "")
 
 	// 统一使用结构化 messages（支持多轮对话格式）
 	messages := buildMessages(sess.GetHistory(), systemPrompt)
@@ -389,6 +400,9 @@ func (s *ChatService) ProcessMessageWithTools(ctx context.Context, req ChatReque
 		}
 	}
 
+	// 渲染 Prompt 模板变量（RAG 上下文作为内置变量注入）
+	systemPrompt = s.renderPromptTemplate(ctx, systemPrompt, req, ragContext)
+
 	messages := buildMessagesWithRAG(sess.GetHistory(), systemPrompt, ragContext)
 	isFirstMessage := len(sess.GetHistory()) <= 1
 
@@ -471,4 +485,37 @@ func buildMessagesWithRAG(history []session.Message, systemPrompt, ragContext st
 		})
 	}
 	return messages
+}
+
+// renderPromptTemplate 渲染 System Prompt 中的模板变量
+// 合并优先级：内置变量 → 用户级变量（DB） → 会话级变量（DB） → 请求级变量
+func (s *ChatService) renderPromptTemplate(ctx context.Context, systemPrompt string, req ChatRequest, ragContext string) string {
+	if systemPrompt == "" {
+		return systemPrompt
+	}
+
+	modelName := req.ModelName
+	if modelName == "" {
+		modelName = s.defaultModel
+	}
+
+	var pctx PromptContext
+	if s.promptVarsSvc != nil {
+		// 使用 PromptVarsService 构建完整上下文（自动合并用户级 + 会话级 + 请求级变量）
+		pctx = s.promptVarsSvc.BuildPromptContext(ctx, req.UserID, req.UserName, string(req.SessionID), modelName, req.PromptVars)
+	} else {
+		// 无 PromptVarsService 时，仅使用内置变量和请求级变量
+		pctx = PromptContext{
+			UserName:   req.UserName,
+			UserID:     req.UserID,
+			SessionID:  string(req.SessionID),
+			ModelName:  modelName,
+			CustomVars: req.PromptVars,
+		}
+	}
+
+	// 注入 RAG 上下文
+	pctx.KnowledgeContext = ragContext
+
+	return RenderPromptTemplate(systemPrompt, pctx)
 }

@@ -18,12 +18,13 @@ import (
 
 // ChatRequest HTTP请求结构体
 type ChatRequest struct {
-	Message         string   `json:"message"`
-	SessionID       string   `json:"session_id"`
-	ModelName       string   `json:"model_name,omitempty"`
-	SystemPrompt    string   `json:"system_prompt,omitempty"`
-	EnabledTools    []string `json:"enabled_tools,omitempty"`
-	KnowledgeBaseID int64    `json:"knowledge_base_id,omitempty"` // RAG 知识库 ID
+	Message         string            `json:"message"`
+	SessionID       string            `json:"session_id"`
+	ModelName       string            `json:"model_name,omitempty"`
+	SystemPrompt    string            `json:"system_prompt,omitempty"`
+	EnabledTools    []string          `json:"enabled_tools,omitempty"`
+	KnowledgeBaseID int64             `json:"knowledge_base_id,omitempty"` // RAG 知识库 ID
+	PromptVars      map[string]string `json:"prompt_vars,omitempty"`       // 请求级 Prompt 模板变量
 }
 
 // ChatResponse HTTP响应结构体
@@ -81,12 +82,13 @@ func truncate(s string, maxLen int) string {
 
 // ChatHandler 聊天HTTP处理程序（聚合所有子 handler 的依赖）
 type ChatHandler struct {
-	chatService   *application.ChatService
-	authService   *application.AuthService
-	agentRegistry *application.AgentRegistry
-	knowledgeSvc  *application.KnowledgeService
-	appConfig     *config.Config
-	logger        *zap.Logger
+	chatService    *application.ChatService
+	authService    *application.AuthService
+	agentRegistry  *application.AgentRegistry
+	knowledgeSvc   *application.KnowledgeService
+	promptVarsSvc  *application.PromptVarsService // Prompt 模板变量服务
+	appConfig      *config.Config
+	logger         *zap.Logger
 }
 
 // NewChatHandler 创建聊天处理程序
@@ -109,6 +111,11 @@ func (h *ChatHandler) SetKnowledgeService(ks *application.KnowledgeService) {
 	h.knowledgeSvc = ks
 }
 
+// SetPromptVarsService 注入 Prompt 变量服务
+func (h *ChatHandler) SetPromptVarsService(pvs *application.PromptVarsService) {
+	h.promptVarsSvc = pvs
+}
+
 // ─── 聊天流式处理 ──────────────────────────────────────────────────────────────
 
 // HandleChatStream 处理流式聊天请求（SSE）
@@ -118,7 +125,7 @@ func (h *ChatHandler) HandleChatStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, _, _ := h.getCurrentUser(r)
+	userID, userName, _ := h.getCurrentUser(r)
 
 	var req ChatRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -154,10 +161,12 @@ func (h *ChatHandler) HandleChatStream(w http.ResponseWriter, r *http.Request) {
 		Message:         req.Message,
 		SessionID:       session.SessionID(req.SessionID),
 		UserID:          userID,
+		UserName:        userName,
 		ModelName:       modelName,
 		SystemPrompt:    systemPrompt,
 		EnabledTools:    enabledTools,
 		KnowledgeBaseID: req.KnowledgeBaseID,
+		PromptVars:      req.PromptVars,
 	}
 
 	sendSSE := func(data interface{}) {
