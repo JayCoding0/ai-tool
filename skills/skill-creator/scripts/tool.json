@@ -1,0 +1,58 @@
+[
+  {
+    "name": "init_skill",
+    "display_name": "初始化技能",
+    "description": "从模板创建新的技能目录结构，包括 SKILL.md、README.md 和示例资源目录（scripts/、references/、assets/）。需要提供技能名称和创建路径。",
+    "script": "run.py",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "skill_name": {
+          "type": "string",
+          "description": "技能名称，使用连字符分隔的小写标识符，例如：'data-analyzer'、'my-api-helper'"
+        },
+        "path": {
+          "type": "string",
+          "description": "技能目录的创建路径，例如：'skills'、'/custom/location'"
+        }
+      },
+      "required": ["skill_name", "path"]
+    }
+  },
+  {
+    "name": "validate_skill",
+    "display_name": "验证技能",
+    "description": "快速验证技能目录结构是否符合规范，检查 SKILL.md 的 frontmatter 格式、README.md 必需章节、命名约定等。",
+    "script": "run.py",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "skill_path": {
+          "type": "string",
+          "description": "要验证的技能目录路径，例如：'skills/my-skill'"
+        }
+      },
+      "required": ["skill_path"]
+    }
+  },
+  {
+    "name": "package_skill",
+    "display_name": "打包技能",
+    "description": "将技能文件夹打包为可分发的 .skill 文件（zip 格式），打包前会自动运行验证。",
+    "script": "run.py",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "skill_path": {
+          "type": "string",
+          "description": "要打包的技能文件夹路径，例如：'skills/my-skill'"
+        },
+        "output_dir": {
+          "type": "string",
+          "description": "可选的输出目录，默认为当前目录"
+        }
+      },
+      "required": ["skill_path"]
+    }
+  }
+]

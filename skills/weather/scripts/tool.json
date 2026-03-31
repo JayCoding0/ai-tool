@@ -1,0 +1,15 @@
+{
+  "name": "get_weather",
+  "display_name": "查询天气",
+  "description": "查询指定城市的实时天气信息，返回当前温度、天气状况、风力风向、今日最高最低温度等数据。",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "district_id": {
+        "type": "string",
+        "description": "百度地图行政区划 ID，例如：610402（咸阳市秦都区）、110100（北京市）、310100（上海市）"
+      }
+    },
+    "required": []
+  }
+}
