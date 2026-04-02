@@ -229,12 +229,13 @@ func registerAgents(registry *application.AgentRegistry, sessionRepo *mysql_sess
 			"- 天气相关（如：天气怎么样、今天热不热、要不要带伞）→ 必须调用 weather_agent\n" +
 			"- 地点/景点/游玩推荐 → 必须调用 search_agent\n" +
 			"- 搜索/查询实时信息 → 必须调用 search_agent\n" +
-			"- 代码执行/文件操作/数学计算/数据库查询 → 必须调用 code_agent\n" +
+			"- 代码执行/文件操作/数学计算 → 必须调用 code_agent\n" +
+			"- 数据库查询/数据查询/查用户信息/查订单/查记录等任何涉及数据查询的请求 → 必须调用 code_agent\n" +
 			"【重要】天气查询时，不需要先询问用户位置，weather_agent 会自动通过 IP 获取位置。" +
 			"【重要】当用户询问天气+游玩推荐时，先调用 weather_agent 获取天气，再调用 search_agent 推荐景点。" +
 			"【重要】无论历史对话中是否有类似回答，都必须重新调用工具获取最新数据，不得使用历史旧数据。" +
 			"只能调用 call_agent 并在参数 agent_name 中指定子 Agent 名称，绝对不能直接用子 Agent 名称作为工具名。" +
-			"只有纯粹的问候、闲聊（如：你好、谢谢）才可以直接回复，其他一律调用工具。",
+			"【兜底规则】只有纯粹的问候、闲聊（如：你好、谢谢、你是谁）才可以直接回复。如果用户的请求涉及任何查询、操作、计算、搜索等需要获取外部信息的任务，即使你不确定该调用哪个子 Agent，也必须调用 call_agent（优先选择 code_agent），绝对不能直接回答。",
 		EnabledTools: []string{"call_agent"},
 		IsMaster:     true,
 	}, newChatSvc())
