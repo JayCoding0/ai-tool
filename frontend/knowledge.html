@@ -87,16 +87,25 @@
                 <el-divider style="margin:16px 0 12px" />
 
                 <!-- 上传区域 -->
-                <div class="upload-area"
-                     :class="{'drag-over': isDragging}"
-                     @click="triggerUpload(kb.id)"
-                     @dragover.prevent="isDragging=true"
-                     @dragleave="isDragging=false"
-                     @drop.prevent="handleDrop($event, kb.id)">
-                    <div class="upload-icon">📤</div>
-                    <div>点击或拖拽文件上传</div>
-                    <div class="upload-hint">支持 .txt .md .markdown 文件，最大 10MB</div>
-                    <input ref="fileInput" type="file" accept=".txt,.md,.markdown" style="display:none" @change="handleFileChange($event, kb.id)" multiple />
+                <div style="display:flex;gap:12px;">
+                    <div class="upload-area" style="flex:1;"
+                         :class="{'drag-over': isDragging}"
+                         @click="triggerUpload(kb.id)"
+                         @dragover.prevent="isDragging=true"
+                         @dragleave="isDragging=false"
+                         @drop.prevent="handleDrop($event, kb.id)">
+                        <div class="upload-icon">📤</div>
+                        <div>点击或拖拽文件上传</div>
+                        <div class="upload-hint">支持 .txt .md .markdown 文件</div>
+                        <input :id="'fileInput-' + kb.id" type="file" accept=".txt,.md,.markdown" style="display:none" @change="handleFileChange($event, kb.id)" multiple />
+                    </div>
+                    <div class="upload-area" style="flex:1;"
+                         @click="triggerDirUpload(kb.id)">
+                        <div class="upload-icon">📁</div>
+                        <div>从目录选择文件上传</div>
+                        <div class="upload-hint">打开本地目录，选择要上传的文件</div>
+                        <input :id="'dirInput-' + kb.id" type="file" webkitdirectory directory style="display:none" @change="handleDirChange($event, kb.id)" />
+                    </div>
                 </div>
 
                 <!-- 文档列表 -->
@@ -127,6 +136,39 @@
             <template #footer>
                 <el-button @click="showCreateDialog = false">取消</el-button>
                 <el-button type="primary" @click="createKB" :loading="creating">创建</el-button>
+            </template>
+        </el-dialog>
+
+        <!-- 目录文件选择对话框 -->
+        <el-dialog v-model="showDirDialog" title="从目录选择文件上传" width="720px" :close-on-click-modal="false">
+            <div v-if="dirFileList.length > 0">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+                    <span style="font-size:13px;color:#888;">📁 {{ dirName }} — 共 {{ dirFileList.length }} 个支持的文件</span>
+                    <div style="display:flex;gap:8px;">
+                        <el-button size="small" text @click="selectAllDirFiles">全选</el-button>
+                        <el-button size="small" text @click="deselectAllDirFiles">取消全选</el-button>
+                    </div>
+                </div>
+                <div style="max-height:400px;overflow-y:auto;border:1px solid #e8e8f0;border-radius:8px;padding:8px;">
+                    <el-checkbox-group v-model="dirSelectedFiles">
+                        <div v-for="(f, i) in dirFileList" :key="i" style="padding:6px 8px;border-radius:6px;margin-bottom:2px;" :style="{background: dirSelectedFiles.includes(i) ? '#f0f0ff' : 'transparent'}">
+                            <el-checkbox :value="i">
+                                <span style="font-size:13px;">📄 {{ f.path }}</span>
+                                <span style="font-size:11px;color:#999;margin-left:8px;">{{ formatFileSize(f.size) }}</span>
+                            </el-checkbox>
+                        </div>
+                    </el-checkbox-group>
+                </div>
+                <div style="margin-top:12px;font-size:13px;color:#667eea;">已选择 {{ dirSelectedFiles.length }} 个文件</div>
+            </div>
+            <div v-else style="text-align:center;color:#bbb;padding:40px;">
+                目录中没有支持的文件类型（.txt .md .markdown）
+            </div>
+            <template #footer>
+                <el-button @click="showDirDialog = false">取消</el-button>
+                <el-button type="primary" @click="confirmDirUpload" :loading="dirUploading" :disabled="dirSelectedFiles.length === 0">
+                    上传选中的 {{ dirSelectedFiles.length }} 个文件
+                </el-button>
             </template>
         </el-dialog>
 
@@ -162,7 +204,6 @@ createApp({
         const activeKBId = ref(null);
         const documents = reactive({});
         const isDragging = ref(false);
-        const fileInput = ref(null);
         const showSearchDialog = ref(false);
         const searchKB = ref(null);
         const searchQuery = ref('');
@@ -253,9 +294,105 @@ createApp({
 
         // 触发文件选择
         const triggerUpload = (kbId) => {
-            if (fileInput.value) {
-                fileInput.value._kbId = kbId;
-                fileInput.value.click();
+            const el = document.getElementById('fileInput-' + kbId);
+            if (el) el.click();
+        };
+
+        // 触发目录选择
+        const dirUploading = ref(false);
+        const showDirDialog = ref(false);
+        const dirFileList = ref([]);       // {path, size, file} 列表
+        const dirSelectedFiles = ref([]);  // 选中的文件索引
+        const dirName = ref('');
+        const dirUploadKbId = ref(null);
+
+        const triggerDirUpload = (kbId) => {
+            dirUploadKbId.value = kbId;
+            const el = document.getElementById('dirInput-' + kbId);
+            if (el) el.click();
+        };
+
+        // 格式化文件大小
+        const formatFileSize = (bytes) => {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        };
+
+        // 处理目录选择 —— 打开文件选择对话框
+        const handleDirChange = (event, kbId) => {
+            const files = Array.from(event.target.files);
+            event.target.value = '';
+            if (files.length === 0) return;
+
+            // 获取目录名（从第一个文件的 webkitRelativePath 提取）
+            const firstPath = files[0].webkitRelativePath || '';
+            dirName.value = firstPath ? firstPath.split('/')[0] : '未知目录';
+
+            // 过滤支持的文件类型
+            const supportedExts = ['.txt', '.md', '.markdown'];
+            const validFiles = files.filter(f => {
+                const name = f.name.toLowerCase();
+                return supportedExts.some(ext => name.endsWith(ext));
+            });
+
+            // 构建文件列表
+            dirFileList.value = validFiles.map(f => ({
+                path: f.webkitRelativePath || f.name,
+                size: f.size,
+                file: f
+            }));
+
+            // 默认全选
+            dirSelectedFiles.value = validFiles.map((_, i) => i);
+            dirUploadKbId.value = kbId;
+            showDirDialog.value = true;
+        };
+
+        // 全选 / 取消全选
+        const selectAllDirFiles = () => {
+            dirSelectedFiles.value = dirFileList.value.map((_, i) => i);
+        };
+        const deselectAllDirFiles = () => {
+            dirSelectedFiles.value = [];
+        };
+
+        // 确认上传选中的文件
+        const confirmDirUpload = async () => {
+            const kbId = dirUploadKbId.value;
+            const selectedFiles = dirSelectedFiles.value.map(i => dirFileList.value[i]);
+            if (selectedFiles.length === 0) return;
+
+            dirUploading.value = true;
+            const formData = new FormData();
+            formData.append('kb_id', kbId);
+            for (const item of selectedFiles) {
+                formData.append('files', item.file, item.path);
+            }
+
+            try {
+                const r = await fetch('/api/knowledge/documents/upload-directory', {
+                    method: 'POST',
+                    body: formData
+                });
+                if (!r.ok) {
+                    const err = await r.json();
+                    throw new Error(err.error || '上传失败');
+                }
+                const data = await r.json();
+                const msg = `上传完成：成功 ${data.success} 个，跳过 ${data.skipped} 个，失败 ${data.failed} 个`;
+                if (data.failed > 0) {
+                    ElementPlus.ElMessage.warning(msg);
+                } else {
+                    ElementPlus.ElMessage.success(msg);
+                }
+                showDirDialog.value = false;
+                await loadDocs(kbId);
+                pollDocStatus(kbId);
+            } catch (e) {
+                ElementPlus.ElMessage.error('上传失败: ' + e.message);
+            } finally {
+                dirUploading.value = false;
             }
         };
 
@@ -357,9 +494,12 @@ createApp({
 
         return {
             knowledgeBases, loading, showCreateDialog, creating, activeKBId,
-            documents, isDragging, fileInput, showSearchDialog, searchKB,
+            documents, isDragging, dirUploading,
+            showDirDialog, dirFileList, dirSelectedFiles, dirName, dirUploadKbId,
+            showSearchDialog, searchKB,
             searchQuery, searchResults, searching, searched, createForm,
-            statusLabel, loadKBs, createKB, deleteKB, openKB, triggerUpload,
+            statusLabel, formatFileSize, loadKBs, createKB, deleteKB, openKB, triggerUpload,
+            triggerDirUpload, handleDirChange, selectAllDirFiles, deselectAllDirFiles, confirmDirUpload,
             handleFileChange, handleDrop, deleteDoc, openSearch, doSearch,
             Plus: ElementPlusIconsVue.Plus,
         };

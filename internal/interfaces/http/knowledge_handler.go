@@ -199,6 +199,111 @@ func parseDocumentUpload(r *http.Request) (kbID int64, docName, docContent, docT
 	return req.KbID, req.Name, req.Content, docType, nil
 }
 
+// HandleUploadDirectory 从目录上传多个文档到知识库
+// 前端通过 webkitdirectory 选择目录后，将目录中所有文件以 multipart/form-data 方式上传
+func (h *ChatHandler) HandleUploadDirectory(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSONError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !h.knowledgeServiceRequired(w) {
+		return
+	}
+
+	if err := r.ParseMultipartForm(128 << 20); err != nil { // 最大 128MB
+		writeJSONError(w, "解析表单失败: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	kbIDStr := r.FormValue("kb_id")
+	kbID, err := strconv.ParseInt(kbIDStr, 10, 64)
+	if err != nil || kbID <= 0 {
+		writeJSONError(w, "无效的知识库 ID", http.StatusBadRequest)
+		return
+	}
+
+	// 支持的文件扩展名
+	supportedExts := map[string]bool{
+		".txt": true, ".md": true, ".markdown": true,
+	}
+
+	files := r.MultipartForm.File["files"]
+	if len(files) == 0 {
+		writeJSONError(w, "未选择任何文件", http.StatusBadRequest)
+		return
+	}
+
+	type uploadResult struct {
+		Name    string `json:"name"`
+		Status  string `json:"status"` // "ok" 或 "skipped" 或 "error"
+		Message string `json:"message,omitempty"`
+	}
+
+	var results []uploadResult
+	successCount := 0
+	skippedCount := 0
+
+	for _, fh := range files {
+		// 获取文件的相对路径（前端通过 webkitRelativePath 传递）
+		fileName := fh.Filename
+
+		// 检查文件扩展名
+		ext := strings.ToLower(fileName)
+		hasValidExt := false
+		for e := range supportedExts {
+			if strings.HasSuffix(ext, e) {
+				hasValidExt = true
+				break
+			}
+		}
+		if !hasValidExt {
+			skippedCount++
+			results = append(results, uploadResult{Name: fileName, Status: "skipped", Message: "不支持的文件类型"})
+			continue
+		}
+
+		// 读取文件内容
+		file, openErr := fh.Open()
+		if openErr != nil {
+			results = append(results, uploadResult{Name: fileName, Status: "error", Message: "打开文件失败: " + openErr.Error()})
+			continue
+		}
+		data, readErr := io.ReadAll(file)
+		file.Close()
+		if readErr != nil {
+			results = append(results, uploadResult{Name: fileName, Status: "error", Message: "读取文件失败: " + readErr.Error()})
+			continue
+		}
+
+		content := string(data)
+		if utf8.RuneCountInString(content) == 0 {
+			skippedCount++
+			results = append(results, uploadResult{Name: fileName, Status: "skipped", Message: "文件内容为空"})
+			continue
+		}
+
+		// 添加文档
+		_, addErr := h.knowledgeSvc.AddDocument(r.Context(), kbID, fileName, detectContentType(fileName), content)
+		if addErr != nil {
+			results = append(results, uploadResult{Name: fileName, Status: "error", Message: addErr.Error()})
+			continue
+		}
+
+		successCount++
+		results = append(results, uploadResult{Name: fileName, Status: "ok"})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
+		"total":   len(files),
+		"success": successCount,
+		"skipped": skippedCount,
+		"failed":  len(files) - successCount - skippedCount,
+		"results": results,
+	})
+}
+
 // HandleDeleteDocument 删除文档
 func (h *ChatHandler) HandleDeleteDocument(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete && r.Method != http.MethodPost {
@@ -267,7 +372,12 @@ func (h *ChatHandler) HandleKnowledgeSearch(w http.ResponseWriter, r *http.Reque
 
 // detectContentType 根据文件名推断内容类型
 func detectContentType(filename string) string {
-	lower := strings.ToLower(filename)
+	// 取最后一段路径作为文件名（兼容目录上传时带路径的情况）
+	name := filename
+	if idx := strings.LastIndex(filename, "/"); idx >= 0 {
+		name = filename[idx+1:]
+	}
+	lower := strings.ToLower(name)
 	switch {
 	case strings.HasSuffix(lower, ".md") || strings.HasSuffix(lower, ".markdown"):
 		return "markdown"

@@ -58,6 +58,7 @@ func RegisterRoutes(chatHandler *http_handler.ChatHandler, appConfig *config.Con
 	mux.HandleFunc("/api/knowledge/bases/delete", chatHandler.HandleDeleteKnowledgeBase)
 	mux.HandleFunc("/api/knowledge/documents", chatHandler.HandleListDocuments)
 	mux.HandleFunc("/api/knowledge/documents/upload", chatHandler.HandleUploadDocument)
+	mux.HandleFunc("/api/knowledge/documents/upload-directory", chatHandler.HandleUploadDirectory)
 	mux.HandleFunc("/api/knowledge/documents/delete", chatHandler.HandleDeleteDocument)
 	mux.HandleFunc("/api/knowledge/search", chatHandler.HandleKnowledgeSearch)
 
