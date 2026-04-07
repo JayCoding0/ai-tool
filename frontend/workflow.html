@@ -361,7 +361,7 @@
                             </div>
                             <div class="panel-field">
                                 <label>工具参数 <span style="font-size:11px;color:#999;">（JSON 格式，支持 {{}} 引用）</span></label>
-                                <el-input v-model="toolArgsJson" type="textarea" :rows="4" size="small" :placeholder="'{\"city\": \"{{query}}\"}' " @change="updateToolArgs" />
+                                <el-input v-model="toolArgsJson" type="textarea" :rows="4" size="small" :placeholder='`{"city": "{{query}}"}`' @change="updateToolArgs" />
                             </div>
                         </div>
                     </template>
