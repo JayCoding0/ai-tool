@@ -44,13 +44,13 @@ type Position struct {
 type NodeConfig struct {
 	// LLM 节点配置
 	ModelName    string  `json:"model_name,omitempty"`    // 使用的模型
-	SystemPrompt string  `json:"system_prompt,omitempty"` // System Prompt（支持 {{变量}} 模板）
-	UserPrompt   string  `json:"user_prompt,omitempty"`   // 用户 Prompt 模板（支持 {{node_id.output}} 引用上游输出）
+	SystemPrompt string  `json:"system_prompt,omitempty"` // System Prompt（支持 ${变量} 模板）
+	UserPrompt   string  `json:"user_prompt,omitempty"`   // 用户 Prompt 模板（支持 ${node_id.output} 引用上游输出）
 	Temperature  float64 `json:"temperature,omitempty"`   // 温度参数
 
 	// Tool 节点配置
 	ToolName string            `json:"tool_name,omitempty"` // 工具名称
-	ToolArgs map[string]string `json:"tool_args,omitempty"` // 工具参数模板（支持 {{node_id.output}} 引用上游输出）
+	ToolArgs map[string]string `json:"tool_args,omitempty"` // 工具参数模板（支持 ${node_id.output} 引用上游输出）
 
 	// Agent 节点配置
 	AgentName    string `json:"agent_name,omitempty"`    // 子 Agent 名称（复用 AgentRegistry）
@@ -63,7 +63,7 @@ type NodeConfig struct {
 	Body    string            `json:"body,omitempty"` // 支持模板变量
 
 	// Template 节点配置
-	Template string `json:"template,omitempty"` // 模板字符串，支持 {{node_id.output}}
+	Template string `json:"template,omitempty"` // 模板字符串，支持 ${node_id.output}
 
 	// 通用配置
 	InputMapping map[string]string `json:"input_mapping,omitempty"` // 输入映射：本节点变量名 → 上游节点输出引用

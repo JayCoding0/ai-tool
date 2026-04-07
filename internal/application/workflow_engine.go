@@ -508,22 +508,22 @@ func (e *WorkflowEngine) executeHTTPNode(ctx context.Context, node workflow.Node
 
 // ─── 辅助方法 ──────────────────────────────────────────────────────────────
 
-// nodeRefRegex 匹配 {{node_id.output}} 格式的节点输出引用
-var nodeRefRegex = regexp.MustCompile(`\{\{(\w+)\.output\}\}`)
+// nodeRefRegex 匹配 ${node_id.output} 格式的节点输出引用
+var nodeRefRegex = regexp.MustCompile(`\$\{(\w+)\.output\}`)
 
-// varRefRegex 匹配 {{var_name}} 格式的全局变量引用
-var varRefRegex = regexp.MustCompile(`\{\{(\w+)\}\}`)
+// varRefRegex 匹配 ${var_name} 格式的全局变量引用
+var varRefRegex = regexp.MustCompile(`\$\{(\w+)\}`)
 
 // resolveTemplate 解析模板字符串中的变量引用
 // 支持两种引用格式：
-//   - {{node_id.output}} — 引用指定节点的输出
-//   - {{var_name}} — 引用全局变量或内置变量
+//   - ${node_id.output} — 引用指定节点的输出
+//   - ${var_name} — 引用全局变量或内置变量
 func (e *WorkflowEngine) resolveTemplate(tmpl string, execCtx *ExecutionContext) string {
 	if tmpl == "" {
 		return ""
 	}
 
-	// 先替换节点输出引用 {{node_id.output}}
+	// 先替换节点输出引用 ${node_id.output}
 	result := nodeRefRegex.ReplaceAllStringFunc(tmpl, func(match string) string {
 		nodeID := match[2 : strings.Index(match, ".")]
 		if output, ok := execCtx.NodeOutputs[nodeID]; ok {
@@ -532,9 +532,9 @@ func (e *WorkflowEngine) resolveTemplate(tmpl string, execCtx *ExecutionContext)
 		return match // 未找到的引用保留原样
 	})
 
-	// 再替换全局变量引用 {{var_name}}（排除已替换的节点引用）
+	// 再替换全局变量引用 ${var_name}（排除已替换的节点引用）
 	result = varRefRegex.ReplaceAllStringFunc(result, func(match string) string {
-		varName := match[2 : len(match)-2]
+		varName := match[2 : len(match)-1]
 		// 内置变量
 		switch varName {
 		case "current_time":
@@ -558,8 +558,8 @@ func (e *WorkflowEngine) getFirstUpstreamOutput(node workflow.Node, execCtx *Exe
 	// 先检查 InputMapping
 	if len(node.Config.InputMapping) > 0 {
 		for _, ref := range node.Config.InputMapping {
-			resolved := e.resolveTemplate("{{"+ref+"}}", execCtx)
-			if resolved != "" && resolved != "{{"+ref+"}}" {
+			resolved := e.resolveTemplate("${"+ref+"}", execCtx)
+			if resolved != "" && resolved != "${"+ref+"}" {
 				return resolved
 			}
 		}

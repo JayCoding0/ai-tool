@@ -341,8 +341,8 @@
                                 <el-input v-model="selectedNode.config.system_prompt" type="textarea" :rows="4" size="small" placeholder="你是一个有用的助手..." />
                             </div>
                             <div class="panel-field">
-                                <label>User Prompt <span style="font-size:11px;color:#999;" v-pre>（支持 {{变量名}} 或 {{node_id.output}}）</span></label>
-                                <el-input v-model="selectedNode.config.user_prompt" type="textarea" :rows="3" size="small" :placeholder="'{{query}}'" />
+                                <label>User Prompt <span style="font-size:11px;color:#999;">（支持 ${变量名} 或 ${node_id.output}）</span></label>
+                                <el-input v-model="selectedNode.config.user_prompt" type="textarea" :rows="3" size="small" placeholder="${query}" />
                             </div>
                             <div class="panel-field">
                                 <label>模型名称 <span style="font-size:11px;color:#999;">（留空使用默认模型）</span></label>
@@ -357,11 +357,13 @@
                             <div class="panel-section-title">工具配置</div>
                             <div class="panel-field">
                                 <label>工具名称</label>
-                                <el-input v-model="selectedNode.config.tool_name" size="small" placeholder="例如：get_weather" />
+                                <el-select v-model="selectedNode.config.tool_name" size="small" style="width:100%;" filterable placeholder="选择工具" :loading="toolListLoading">
+                                    <el-option v-for="t in availableTools" :key="t.name" :label="(t.display_name || t.name) + ' - ' + (t.description || '').slice(0, 30)" :value="t.name" />
+                                </el-select>
                             </div>
                             <div class="panel-field">
-                                <label>工具参数 <span style="font-size:11px;color:#999;">（JSON 格式，支持 {{}} 引用）</span></label>
-                                <el-input v-model="toolArgsJson" type="textarea" :rows="4" size="small" :placeholder='`{"city": "{{query}}"}`' @change="updateToolArgs" />
+                                <label>工具参数 <span style="font-size:11px;color:#999;">（JSON 格式，支持 ${} 引用）</span></label>
+                                <el-input v-model="toolArgsJson" type="textarea" :rows="4" size="small" placeholder='{"city": "${query}"}' @change="updateToolArgs" />
                             </div>
                         </div>
                     </template>
@@ -372,11 +374,13 @@
                             <div class="panel-section-title">Agent 配置</div>
                             <div class="panel-field">
                                 <label>Agent 名称</label>
-                                <el-input v-model="selectedNode.config.agent_name" size="small" placeholder="例如：weather_agent" />
+                                <el-select v-model="selectedNode.config.agent_name" size="small" style="width:100%;" filterable placeholder="选择子 Agent" :loading="agentListLoading">
+                                    <el-option v-for="a in availableAgents" :key="a.name" :label="a.display_name + ' - ' + (a.description || '').slice(0, 30)" :value="a.name" />
+                                </el-select>
                             </div>
                             <div class="panel-field">
-                                <label>发送消息 <span style="font-size:11px;color:#999;">（支持 {{}} 引用）</span></label>
-                                <el-input v-model="selectedNode.config.agent_message" type="textarea" :rows="3" size="small" :placeholder="'{{query}}'" />
+                                <label>发送消息 <span style="font-size:11px;color:#999;">（支持 ${} 引用）</span></label>
+                                <el-input v-model="selectedNode.config.agent_message" type="textarea" :rows="3" size="small" placeholder="${query}" />
                             </div>
                         </div>
                     </template>
@@ -386,8 +390,8 @@
                         <div class="panel-section">
                             <div class="panel-section-title">模板配置</div>
                             <div class="panel-field">
-                                <label>模板内容 <span style="font-size:11px;color:#999;" v-pre>（支持 {{node_id.output}} 引用上游输出）</span></label>
-                                <el-input v-model="selectedNode.config.template" type="textarea" :rows="5" size="small" :placeholder="'根据 {{llm_1.output}} 的结果...'" />
+                                <label>模板内容 <span style="font-size:11px;color:#999;">（支持 ${node_id.output} 引用上游输出）</span></label>
+                                <el-input v-model="selectedNode.config.template" type="textarea" :rows="5" size="small" placeholder="根据 ${llm_1.output} 的结果..." />
                             </div>
                         </div>
                     </template>
@@ -410,7 +414,7 @@
                                 <el-input v-model="selectedNode.config.url" size="small" placeholder="https://api.example.com/..." />
                             </div>
                             <div class="panel-field">
-                                <label>请求体 <span style="font-size:11px;color:#999;">（支持 {{}} 引用）</span></label>
+                                <label>请求体 <span style="font-size:11px;color:#999;">（支持 ${} 引用）</span></label>
                                 <el-input v-model="selectedNode.config.body" type="textarea" :rows="3" size="small" placeholder='{"key": "value"}' />
                             </div>
                         </div>
@@ -679,6 +683,38 @@ createApp({
         const editorExecuting = ref(false);
         const editorExecOutput = ref('');
 
+        // 可用工具和 Agent 列表（从后端加载）
+        const availableTools = ref([]);
+        const availableAgents = ref([]);
+        const toolListLoading = ref(false);
+        const agentListLoading = ref(false);
+
+        const loadAvailableTools = async () => {
+            toolListLoading.value = true;
+            try {
+                const r = await fetch('/api/tools', { headers: getAuthHeaders() });
+                const data = await r.json();
+                availableTools.value = (data.tools || []).filter(t => t.name !== 'call_agent');
+            } catch (e) {
+                console.error('加载工具列表失败', e);
+            } finally {
+                toolListLoading.value = false;
+            }
+        };
+
+        const loadAvailableAgents = async () => {
+            agentListLoading.value = true;
+            try {
+                const r = await fetch('/api/agents', { headers: getAuthHeaders() });
+                const data = await r.json();
+                availableAgents.value = (data.agents || []).filter(a => !a.is_master);
+            } catch (e) {
+                console.error('加载 Agent 列表失败', e);
+            } finally {
+                agentListLoading.value = false;
+            }
+        };
+
         // 节点类型定义
         const nodeTypes = [
             { type: 'llm', icon: '🤖', label: 'LLM 对话', desc: '调用大语言模型' },
@@ -711,8 +747,8 @@ createApp({
                     varMap[v.name] = { name: v.name, required: v.required, description: v.description || '', default_value: v.default_value || '' };
                 }
             });
-            // 2. 扫描所有节点配置中的 {{变量名}} 引用（排除 {{node_id.output}} 格式）
-            const simpleVarRe = /\{\{(\w+)\}\}/g;
+            // 2. 扫描所有节点配置中的 ${变量名} 引用（排除 ${node_id.output} 格式）
+            const simpleVarRe = /\$\{(\w+)\}/g;
             const builtinVars = new Set(['current_time', 'current_date']);
             editorNodes.value.forEach(node => {
                 if (!node.config) return;
@@ -779,6 +815,15 @@ createApp({
             selectedNodeId.value = null;
             selectedEdgeId.value = null;
             nodeExecStatus.value = {};
+            // 清除上一次执行面板的状态
+            showEditorExec.value = false;
+            editorExecEvents.value = [];
+            editorExecOutput.value = '';
+            editorExecuting.value = false;
+            Object.keys(editorExecInputs).forEach(k => delete editorExecInputs[k]);
+            // 加载可用工具和 Agent 列表
+            loadAvailableTools();
+            loadAvailableAgents();
             view.value = 'editor';
         };
 
@@ -1115,7 +1160,12 @@ createApp({
         };
 
         // ===== 生命周期 =====
-        onMounted(loadWorkflows);
+        onMounted(() => {
+            loadWorkflows();
+            // 预加载工具和 Agent 列表
+            loadAvailableTools();
+            loadAvailableAgents();
+        });
 
         return {
             // 视图
@@ -1146,6 +1196,8 @@ createApp({
             // 编辑器执行
             showEditorExec, editorExecInputs, editorExecEvents, editorExecuting, editorExecOutput,
             openExecPanel, doEditorExecute, execRequiredVars,
+            // 工具和 Agent 列表
+            availableTools, availableAgents, toolListLoading, agentListLoading,
             // 事件
             eventIcon, eventText, handleExecEvent,
             // Element Plus 图标
