@@ -437,8 +437,9 @@
                     <h4>▶ 执行工作流</h4>
                     <el-button text size="small" @click="showEditorExec = false">✕</el-button>
                 </div>
-                <div v-if="currentWorkflow && currentWorkflow.variables && currentWorkflow.variables.length > 0" style="margin-bottom:12px;">
-                    <div v-for="v in editorVariables" :key="v.name" class="var-input-row">
+                <div v-if="execRequiredVars.length > 0" style="margin-bottom:12px;">
+                    <div style="font-size:12px;color:#999;margin-bottom:6px;">输入变量</div>
+                    <div v-for="v in execRequiredVars" :key="v.name" class="var-input-row">
                         <label>{{ v.name }} <span v-if="v.required" class="var-required">*</span></label>
                         <el-input v-model="editorExecInputs[v.name]" :placeholder="v.description || v.name" size="small" style="flex:1;" />
                     </div>
@@ -701,6 +702,51 @@ createApp({
             return editorNodes.value.find(n => n.id === selectedNodeId.value);
         });
 
+        // 自动检测节点配置中引用的变量（如 {{query}}），合并手动定义的全局变量
+        const execRequiredVars = computed(() => {
+            const varMap = {};
+            // 1. 先加入手动定义的全局变量
+            editorVariables.value.forEach(v => {
+                if (v.name) {
+                    varMap[v.name] = { name: v.name, required: v.required, description: v.description || '', default_value: v.default_value || '' };
+                }
+            });
+            // 2. 扫描所有节点配置中的 {{变量名}} 引用（排除 {{node_id.output}} 格式）
+            const simpleVarRe = /\{\{(\w+)\}\}/g;
+            const builtinVars = new Set(['current_time', 'current_date']);
+            editorNodes.value.forEach(node => {
+                if (!node.config) return;
+                const fields = [
+                    node.config.system_prompt,
+                    node.config.user_prompt,
+                    node.config.agent_message,
+                    node.config.template,
+                    node.config.url,
+                    node.config.body,
+                ];
+                // 也扫描 tool_args 中的值
+                if (node.config.tool_args && typeof node.config.tool_args === 'object') {
+                    Object.values(node.config.tool_args).forEach(v => {
+                        if (typeof v === 'string') fields.push(v);
+                    });
+                }
+                fields.forEach(field => {
+                    if (!field || typeof field !== 'string') return;
+                    let m;
+                    while ((m = simpleVarRe.exec(field)) !== null) {
+                        const varName = m[1];
+                        // 排除内置变量和已存在的节点 ID
+                        if (builtinVars.has(varName)) continue;
+                        if (editorNodes.value.some(n => n.id === varName)) continue;
+                        if (!varMap[varName]) {
+                            varMap[varName] = { name: varName, required: true, description: '节点配置中引用的变量', default_value: '' };
+                        }
+                    }
+                });
+            });
+            return Object.values(varMap);
+        });
+
         // Tool 参数 JSON 编辑
         const toolArgsJson = computed({
             get() {
@@ -939,7 +985,8 @@ createApp({
             editorExecOutput.value = '';
             nodeExecStatus.value = {};
             Object.keys(editorExecInputs).forEach(k => delete editorExecInputs[k]);
-            editorVariables.value.forEach(v => {
+            // 使用自动检测的变量列表初始化输入
+            execRequiredVars.value.forEach(v => {
                 editorExecInputs[v.name] = v.default_value || '';
             });
         };
@@ -1098,7 +1145,7 @@ createApp({
             nodeExecStatus, getNodeExecStatus,
             // 编辑器执行
             showEditorExec, editorExecInputs, editorExecEvents, editorExecuting, editorExecOutput,
-            openExecPanel, doEditorExecute,
+            openExecPanel, doEditorExecute, execRequiredVars,
             // 事件
             eventIcon, eventText, handleExecEvent,
             // Element Plus 图标
