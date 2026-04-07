@@ -341,8 +341,8 @@
                                 <el-input v-model="selectedNode.config.system_prompt" type="textarea" :rows="4" size="small" placeholder="你是一个有用的助手..." />
                             </div>
                             <div class="panel-field">
-                                <label>User Prompt <span style="font-size:11px;color:#999;">（支持 {{变量名}} 或 {{node_id.output}}）</span></label>
-                                <el-input v-model="selectedNode.config.user_prompt" type="textarea" :rows="3" size="small" placeholder="{{query}}" />
+                                <label>User Prompt <span style="font-size:11px;color:#999;" v-pre>（支持 {{变量名}} 或 {{node_id.output}}）</span></label>
+                                <el-input v-model="selectedNode.config.user_prompt" type="textarea" :rows="3" size="small" :placeholder="'{{query}}'" />
                             </div>
                             <div class="panel-field">
                                 <label>模型名称 <span style="font-size:11px;color:#999;">（留空使用默认模型）</span></label>
@@ -361,7 +361,7 @@
                             </div>
                             <div class="panel-field">
                                 <label>工具参数 <span style="font-size:11px;color:#999;">（JSON 格式，支持 {{}} 引用）</span></label>
-                                <el-input v-model="toolArgsJson" type="textarea" :rows="4" size="small" placeholder='{"city": "{{query}}"}' @change="updateToolArgs" />
+                                <el-input v-model="toolArgsJson" type="textarea" :rows="4" size="small" :placeholder="'{\"city\": \"{{query}}\"}' " @change="updateToolArgs" />
                             </div>
                         </div>
                     </template>
@@ -376,7 +376,7 @@
                             </div>
                             <div class="panel-field">
                                 <label>发送消息 <span style="font-size:11px;color:#999;">（支持 {{}} 引用）</span></label>
-                                <el-input v-model="selectedNode.config.agent_message" type="textarea" :rows="3" size="small" placeholder="{{query}}" />
+                                <el-input v-model="selectedNode.config.agent_message" type="textarea" :rows="3" size="small" :placeholder="'{{query}}'" />
                             </div>
                         </div>
                     </template>
@@ -386,8 +386,8 @@
                         <div class="panel-section">
                             <div class="panel-section-title">模板配置</div>
                             <div class="panel-field">
-                                <label>模板内容 <span style="font-size:11px;color:#999;">（支持 {{node_id.output}} 引用上游输出）</span></label>
-                                <el-input v-model="selectedNode.config.template" type="textarea" :rows="5" size="small" placeholder="根据 {{llm_1.output}} 的结果..." />
+                                <label>模板内容 <span style="font-size:11px;color:#999;" v-pre>（支持 {{node_id.output}} 引用上游输出）</span></label>
+                                <el-input v-model="selectedNode.config.template" type="textarea" :rows="5" size="small" :placeholder="'根据 {{llm_1.output}} 的结果...'" />
                             </div>
                         </div>
                     </template>
