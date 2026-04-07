@@ -11,6 +11,7 @@
 - [Agent 管理](#agent-管理)
 - [知识库（RAG）](#知识库rag)
 - [A2A 协议](#a2a-协议)
+- [Workflow 工作流](#workflow-工作流)
 
 ---
 
@@ -610,3 +611,190 @@ data: {"type":"completed","task":{...}}
 ```
 
 > 如果任务已是终态（completed/failed），直接返回 JSON 而非 SSE。
+
+---
+
+## Workflow 工作流
+
+### GET /api/workflows
+
+获取当前用户的工作流列表。
+
+**成功响应（200）：**
+```json
+{
+  "workflows": [
+    {
+      "id": 1,
+      "name": "翻译工作流",
+      "description": "自动翻译文本",
+      "status": "published",
+      "version": 2,
+      "created_at": "2026-04-01T00:00:00Z",
+      "updated_at": "2026-04-07T12:00:00Z"
+    }
+  ],
+  "count": 1
+}
+```
+
+---
+
+### POST /api/workflows
+
+创建新工作流。
+
+**请求体：**
+```json
+{
+  "name": "翻译工作流",
+  "description": "自动翻译文本",
+  "nodes": [
+    { "id": "start_1", "type": "start", "name": "开始", "config": {}, "position": { "x": 100, "y": 200 } },
+    { "id": "llm_1", "type": "llm", "name": "翻译", "config": { "user_prompt": "请翻译：${query}" }, "position": { "x": 300, "y": 200 } },
+    { "id": "end_1", "type": "end", "name": "结束", "config": {}, "position": { "x": 500, "y": 200 } }
+  ],
+  "edges": [
+    { "id": "e1", "source": "start_1", "target": "llm_1" },
+    { "id": "e2", "source": "llm_1", "target": "end_1" }
+  ],
+  "variables": [
+    { "name": "query", "type": "string", "required": true, "description": "待翻译文本" }
+  ]
+}
+```
+
+**成功响应（200）：**
+```json
+{
+  "id": 1,
+  "name": "翻译工作流",
+  "status": "draft",
+  "version": 1
+}
+```
+
+---
+
+### GET /api/workflows/{id}
+
+获取工作流详情（含完整节点/边/变量定义）。
+
+---
+
+### PUT /api/workflows/{id}
+
+更新工作流定义。请求体同创建接口。
+
+---
+
+### DELETE /api/workflows/{id}
+
+删除工作流。
+
+---
+
+### POST /api/workflows/{id}/publish
+
+发布工作流（draft → published），版本号自动递增。
+
+**成功响应（200）：**
+```json
+{
+  "message": "工作流已发布",
+  "version": 2
+}
+```
+
+---
+
+### POST /api/workflows/{id}/execute
+
+执行工作流（SSE 流式推送执行事件）。
+
+**请求体：**
+```json
+{
+  "inputs": {
+    "query": "Hello, world!"
+  }
+}
+```
+
+**响应：** `Content-Type: text/event-stream`
+
+SSE 事件格式：
+```
+data: {"type":"node_start","node_id":"llm_1","node_name":"翻译","node_type":"llm"}
+
+data: {"type":"node_output","node_id":"llm_1","node_name":"翻译","output":"你好，世界！","duration_ms":1200}
+
+data: {"type":"node_done","node_id":"llm_1","node_name":"翻译","duration_ms":1200}
+
+data: {"type":"workflow_done","output":"你好，世界！","run_id":"uuid-xxx","total_tokens":150}
+```
+
+### Workflow SSE 事件类型
+
+| 事件类型 | 说明 | 包含字段 |
+|---------|------|----------|
+| `node_start` | 节点开始执行 | `node_id`, `node_name`, `node_type` |
+| `node_output` | 节点输出结果 | `node_id`, `node_name`, `output`, `duration_ms` |
+| `node_error` | 节点执行失败 | `node_id`, `node_name`, `error` |
+| `node_done` | 节点执行完成 | `node_id`, `node_name`, `duration_ms` |
+| `workflow_done` | 工作流执行完成 | `output`, `run_id`, `total_tokens` |
+| `workflow_error` | 工作流执行失败 | `error`, `run_id` |
+
+### 节点类型说明
+
+| 节点类型 | 说明 | 关键配置 |
+|---------|------|----------|
+| `start` | 开始节点（入口） | 无 |
+| `end` | 结束节点（出口） | 无 |
+| `llm` | LLM 对话节点 | `model_name`, `system_prompt`, `user_prompt`, `temperature` |
+| `tool` | 工具调用节点 | `tool_name`, `tool_args` |
+| `agent` | 子 Agent 节点 | `agent_name`, `agent_message` |
+| `template` | 模板转换节点 | `template` |
+| `http` | HTTP 请求节点 | `url`, `method`, `headers`, `body` |
+
+### 变量引用语法
+
+工作流使用 `${}` 语法引用变量：
+
+| 语法 | 说明 | 示例 |
+|------|------|------|
+| `${变量名}` | 引用全局变量（用户输入） | `${query}` |
+| `${node_id.output}` | 引用上游节点的输出 | `${llm_1.output}` |
+| `${current_time}` | 内置变量：当前时间 | — |
+| `${current_date}` | 内置变量：当前日期 | — |
+
+---
+
+### GET /api/workflows/{id}/runs
+
+获取工作流的执行记录列表。
+
+**成功响应（200）：**
+```json
+{
+  "runs": [
+    {
+      "id": "uuid-xxx",
+      "workflow_id": 1,
+      "status": "completed",
+      "inputs": { "query": "Hello" },
+      "output": "你好",
+      "total_tokens": 150,
+      "duration_ms": 2500,
+      "created_at": "2026-04-07T12:00:00Z"
+    }
+  ],
+  "count": 1
+}
+```
+
+---
+
+### GET /api/workflow-runs/{run_id}
+
+获取单次执行记录详情（含各节点执行结果）。

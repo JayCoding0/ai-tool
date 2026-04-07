@@ -1,7 +1,7 @@
 # 📋 AI Agent 平台 - TODO List
 
 > 对标 Dify、Coze（扣子）、FastGPT、LangChain/LangGraph、AutoGen、CrewAI 等主流平台
-> 最后更新：2026-03-30
+> 最后更新：2026-04-08
 
 ---
 
@@ -16,16 +16,20 @@
   - 完整 CRUD API（5 个接口）
 - **相关文件**: `application/prompt_template.go`, `application/prompt_vars_service.go`, `infrastructure/promptvars/mysql/`
 
-### 2. 可视化 Workflow / DAG 编排
-- **现状**: 仅有硬编码的主/子 Agent 模式，Agent 定义写死在 `bootstrap.go` 的 `registerAgents()` 中
-- **主流做法**: Dify/Coze 提供拖拽式 DAG 工作流编排，支持条件分支、循环、并行节点
-- **改进方案**:
-  - [ ] 设计 Workflow 引擎：支持 DAG 节点编排
-  - [ ] 节点类型：LLM 节点、工具节点、条件分支、代码节点、HTTP 请求节点
-  - [ ] Workflow 定义存入数据库（JSON Schema）
-  - [ ] 前端提供可视化画布（推荐 Vue Flow / ReactFlow）
-  - [ ] 支持 Workflow 的版本管理和发布
-- **预估工作量**: 3 个月
+### 2. ~~可视化 Workflow / DAG 编排~~ ✅ 已完成
+- **现状**: ~~仅有硬编码的主/子 Agent 模式，Agent 定义写死在 `bootstrap.go` 的 `registerAgents()` 中~~
+- **已实现**:
+  - DAG 工作流引擎：基于 Kahn 拓扑排序的节点编排执行
+  - 7 种节点类型：Start、End、LLM 对话、工具调用、子 Agent、模板转换、HTTP 请求
+  - `${变量名}` / `${node_id.output}` 模板变量系统，支持节点间数据传递
+  - 前端可视化画布编辑器（Vue 3 + Canvas 拖拽连线）
+  - 工作流 CRUD + 版本管理 + 发布/草稿/归档状态
+  - SSE 流式执行事件推送（node_start/node_output/node_done/workflow_done）
+  - 执行记录持久化（workflow_runs 表），支持历史回溯
+  - 全局变量定义 + 自动检测节点配置中的变量引用
+  - 工具/Agent 下拉选择（从后端加载已注册列表）
+- **相关文件**: `domain/workflow/workflow.go`, `application/workflow_engine.go`, `application/workflow_service.go`, `interfaces/http/workflow_handler.go`, `infrastructure/workflow/mysql/`, `frontend/workflow.html`
+- **预估工作量**: ~~3 个月~~ → 实际 Phase 1 完成
 
 ### 3. 长期记忆 / Memory 系统
 - **现状**: 仅有会话级滑动窗口（`maxPromptMessages = 20`），无跨会话记忆
@@ -234,6 +238,7 @@
 ```
 2026 Q2 (4-6月)
 ├── ✅ Prompt 模板变量系统（已完成）
+├── ✅ 可视化 Workflow / DAG 编排（Phase 1 已完成）
 ├── 🔴 向量数据库集成（P1 #5）
 ├── 🔴 RAG 性能优化（P4 #19）
 ├── 🟡 Agent 可观测性（P1 #7）
@@ -268,3 +273,4 @@
 - ✅ **工具系统**: ReAct 循环 + 脚本驱动工具，灵活度高
 - ✅ **架构设计**: DDD 分层架构，代码组织清晰
 - ✅ **Prompt 模板变量**: 三级变量优先级 + 数据库持久化（已实现）
+- ✅ **Workflow 编排**: DAG 可视化工作流引擎 + 7 种节点类型 + SSE 流式执行（已实现）

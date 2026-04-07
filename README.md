@@ -50,6 +50,22 @@
 
 </td>
 </tr>
+<tr>
+<td width="50%">
+
+**🔀 可视化 Workflow 编排**
+
+拖拽式 DAG 工作流编辑器，支持 7 种节点类型（LLM / 工具 / Agent / HTTP / 模板等）。基于 Kahn 拓扑排序执行，`${变量}` 模板语法实现节点间数据传递，SSE 实时推送执行进度。
+
+</td>
+<td width="50%">
+
+**📝 Prompt 模板变量系统**
+
+`${变量名}` 模板语法，内置 7 个系统变量。三级变量优先级（用户级 → 会话级 → 请求级），MySQL 持久化，完整 CRUD API。
+
+</td>
+</tr>
 </table>
 
 ---
@@ -77,7 +93,9 @@
 | **多模型切换** | 同时接入云端模型（阿里云 DashScope / OpenAI 兼容接口）与本地 Ollama 模型，运行时自由切换 |
 | **Function Calling** | ReAct 循环架构，AI 自主决策调用工具（计算器、天气、HTTP、命令执行、文件操作、MySQL 等） |
 | **多 Agent 编排** | 主 Agent 编排多个子 Agent 协同完成复杂任务，思考/工具调用过程实时透传 |
+| **Workflow 编排** | 可视化 DAG 工作流引擎，7 种节点类型，拓扑排序执行，SSE 流式推送执行事件 |
 | **RAG 知识库** | 文档上传 → 自动分块 → 向量化 → 语义检索，增强 AI 回答的准确性 |
+| **Prompt 模板变量** | `${变量名}` 模板语法，三级变量优先级（用户级 → 会话级 → 请求级），数据库持久化 |
 | **Skill 技能系统** | 通过 `SKILL.md` 定义 AI 角色与行为，支持 5 种设计模式 |
 | **SSE 流式输出** | 实时推送 AI 回复、思考过程、工具调用过程 |
 
@@ -107,6 +125,7 @@
 graph TB
     subgraph Frontend["🖥️ 前端 (Vue 3 + Element Plus)"]
         UI[聊天界面]
+        WF_UI[工作流编辑器]
         KB_UI[知识库管理]
         Login[登录/注册]
         Theme[主题切换]
@@ -124,6 +143,8 @@ graph TB
         AuthSvc[AuthService<br/>认证服务]
         SkillSvc[SkillService<br/>技能服务]
         KnowledgeSvc[KnowledgeService<br/>知识库服务]
+        WorkflowSvc[WorkflowService<br/>工作流服务]
+        WorkflowEngine[WorkflowEngine<br/>DAG 执行引擎]
         A2ASvc[A2AService<br/>A2A 任务调度]
         AgentRegistry[AgentRegistry<br/>Agent 注册中心]
     end
@@ -133,6 +154,7 @@ graph TB
         User[用户实体]
         Skill[Skill 实体]
         Tool[工具注册表]
+        Workflow[Workflow 聚合根]
         Task[A2A 任务]
         KnowledgeBase[知识库实体]
     end
@@ -152,10 +174,12 @@ graph TB
     Application --> Infrastructure
     A2ASvc -->|A2A 协议| ChatSvc
     AgentRegistry -->|编排| ChatSvc
+    WorkflowEngine -->|调用| AgentRegistry
+    WorkflowEngine -->|调用| Tool
     KnowledgeSvc -->|RAG 注入| ChatSvc
 ```
 
-> 📊 更多流程图（聊天时序图、多 Agent 编排、RAG 处理流程、A2A 任务流程等）请查看 **[核心流程图集](docs/flowcharts.md)**
+> 📊 更多流程图（聊天时序图、多 Agent 编排、RAG 处理流程、Workflow 执行流程、A2A 任务流程等）请查看 **[核心流程图集](docs/flowcharts.md)**
 
 ---
 
@@ -286,12 +310,17 @@ aiProject/
 │   ├── index.html                       # 主聊天界面
 │   ├── login.html                       # 登录/注册页面
 │   ├── knowledge.html                   # 知识库管理页面
+│   ├── workflow.html                    # 工作流可视化编辑器
 │   ├── style.css                        # 全局样式（含暗色主题）
 │   └── js/                              # 模块化 JS（10 个模块）
 ├── internal/                            # ⚙️ 后端核心（DDD 分层）
 │   ├── bootstrap/                       # 启动编排（路由、中间件、Agent 注册）
-│   ├── application/                     # 应用层（ChatService、AuthService、A2A 等）
+│   ├── application/                     # 应用层（ChatService、WorkflowEngine、A2A 等）
 │   ├── domain/                          # 领域层（实体、聚合根、仓储接口）
+│   │   ├── workflow/                    # 工作流领域（Workflow 聚合根、DAG 拓扑排序）
+│   │   ├── session/                     # 会话领域
+│   │   ├── knowledge/                   # 知识库领域
+│   │   └── ...                          # 其他领域
 │   ├── infrastructure/                  # 基础设施层（MySQL、OpenAI、Ollama、向量化）
 │   ├── interfaces/                      # 接口层（HTTP Handler、MCP Server）
 │   ├── config/                          # 配置管理
@@ -312,7 +341,7 @@ aiProject/
 ├── database/                            # 🗄️ 数据库脚本（schema + seed）
 ├── Dockerfile                           # 🐳 Docker 多阶段构建
 ├── docker-compose.yml                   # 🐳 Docker Compose 编排
-└── docs/                                # 📚 详细文档（8 篇）
+└── docs/                                # 📚 详细文档（9 篇）
 ```
 
 > 完整目录结构见 [docs/architecture.md](docs/architecture.md)
@@ -326,8 +355,8 @@ aiProject/
 | 文档 | 说明 |
 |------|------|
 | [🏗️ 架构设计详解](docs/architecture.md) | DDD 分层架构、数据库 ER 图、组件依赖关系、中间件链、安全机制 |
-| [🔄 核心流程图集](docs/flowcharts.md) | 聊天时序图、多 Agent 编排、RAG 处理流程、A2A 任务流程、认证流程 |
-| [📡 API 接口文档](docs/api-reference.md) | 完整 REST API 参考，含请求/响应示例、SSE 事件类型 |
+| [🔄 核心流程图集](docs/flowcharts.md) | 聊天时序图、多 Agent 编排、RAG 处理流程、Workflow 执行流程、A2A 任务流程、认证流程 |
+| [📡 API 接口文档](docs/api-reference.md) | 完整 REST API 参考，含请求/响应示例、SSE 事件类型、Workflow API |
 | [🎯 Skill 开发指南](docs/skill-guide.md) | Skill 目录结构、SKILL.md 格式、5 种设计模式、工具开发 |
 | [🤖 多 Agent 编排指南](docs/agent-orchestration.md) | Agent 注册、主/子 Agent 配置、call_agent 工具、动态工具管理 |
 | [⚙️ 配置说明](docs/configuration.md) | 完整配置项说明、模型类型判断规则、环境变量 |
@@ -346,12 +375,14 @@ aiProject/
 - [x] MCP 协议支持
 - [x] 多用户权限系统
 - [x] 暗色主题
+- [x] Prompt 模板变量系统（三级优先级 + 数据库持久化）
+- [x] 可视化 Workflow / DAG 编排（7 种节点类型 + SSE 流式执行）
 - [ ] 对话导出（Markdown / PDF）
 - [ ] 插件市场（Skill 在线安装）
 - [ ] 多模态支持（图片理解 / 生成）
 - [ ] WebSocket 替代 SSE
-- [ ] Agent 可视化编排界面
 - [ ] 更多向量数据库支持（Milvus / Qdrant）
+- [ ] 长期记忆 / Memory 系统
 
 ---
 

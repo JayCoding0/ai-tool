@@ -18,6 +18,8 @@ graph TB
         AuthSvc["AuthService"]
         SkillSvc["SkillService"]
         KnowledgeSvc["KnowledgeService"]
+        WorkflowSvc["WorkflowService"]
+        WorkflowEngine["WorkflowEngine"]
         A2ASvc["A2AService"]
         AgentReg["AgentRegistry"]
     end
@@ -28,6 +30,7 @@ graph TB
         User["User 实体"]
         Skill["Skill 实体"]
         Tool["Tool 注册表"]
+        Workflow["Workflow 聚合根"]
         Knowledge["Knowledge 实体"]
         A2ATask["A2A Task"]
     end
@@ -52,7 +55,7 @@ graph TB
 | 层 | 目录 | 职责 |
 |----|------|------|
 | **接口层** | `internal/interfaces/` | 处理 HTTP 请求、协议适配（REST、MCP、A2A），不含业务逻辑 |
-| **应用层** | `internal/application/` | 编排领域对象完成用例，事务管理，不含业务规则 |
+| **应用层** | `internal/application/` | 编排领域对象完成用例，事务管理，不含业务规则（含 WorkflowEngine DAG 执行引擎） |
 | **领域层** | `internal/domain/` | 核心业务逻辑，定义实体、值对象、聚合根、仓储接口 |
 | **基础设施层** | `internal/infrastructure/` | 技术实现：数据库、外部 API、工具执行、向量化 |
 | **启动编排层** | `internal/bootstrap/` | 依赖注入、组件初始化、路由注册、中间件链 |
@@ -67,11 +70,14 @@ erDiagram
     users ||--o{ skills : "创建"
     users ||--o{ knowledge_bases : "创建"
     users ||--o{ auth_tokens : "持有"
+    users ||--o{ workflows : "创建"
     
     chat_sessions ||--o{ chat_messages : "包含"
     
     knowledge_bases ||--o{ knowledge_documents : "包含"
     knowledge_documents ||--o{ knowledge_chunks : "分块"
+    
+    workflows ||--o{ workflow_runs : "执行记录"
     
     users {
         bigint id PK
@@ -158,6 +164,31 @@ erDiagram
         json metadata_json
     }
     
+    workflows {
+        bigint id PK
+        bigint user_id FK
+        varchar name
+        text description
+        json graph_data "nodes + edges + variables"
+        varchar status "draft/published/archived"
+        int version
+        timestamp created_at
+        timestamp updated_at
+    }
+    
+    workflow_runs {
+        varchar id PK "UUID"
+        bigint workflow_id FK
+        bigint user_id FK
+        varchar status "running/completed/failed"
+        json inputs
+        text output
+        json node_outputs "各节点输出"
+        int total_tokens
+        int duration_ms
+        timestamp created_at
+    }
+    
     agent_tools {
         bigint id PK
         varchar agent_name
@@ -181,6 +212,10 @@ graph LR
     ChatHandler --> ChatService
     ChatHandler --> AuthService
     ChatHandler --> KnowledgeService
+    ChatHandler --> WorkflowHandler
+    
+    WorkflowHandler --> WorkflowService
+    WorkflowHandler --> WorkflowEngine
     
     A2AHandler --> A2AService
     A2AService --> ChatService
@@ -199,6 +234,11 @@ graph LR
     
     AuthService --> UserRepo["UserRepository"]
     AuthService --> TokenStore["TokenStore"]
+    
+    WorkflowEngine --> WorkflowRepo["WorkflowRepository"]
+    WorkflowEngine --> RunRepo["RunRepository"]
+    WorkflowEngine --> ModelGenerator
+    WorkflowEngine --> AgentRegistry
     
     MCPServer --> ChatService
 ```

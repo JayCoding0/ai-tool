@@ -7,9 +7,10 @@
 - [聊天 + 工具调用时序图](#1-聊天--工具调用时序图)
 - [多 Agent 编排流程](#2-多-agent-编排流程)
 - [RAG 知识库处理流程](#3-rag-知识库处理流程)
-- [A2A 协议任务流程](#4-a2a-协议任务流程)
-- [用户认证流程](#5-用户认证流程)
-- [请求处理全链路](#6-请求处理全链路)
+- [Workflow DAG 执行流程](#4-workflow-dag-执行流程)
+- [A2A 协议任务流程](#5-a2a-协议任务流程)
+- [用户认证流程](#6-用户认证流程)
+- [请求处理全链路](#7-请求处理全链路)
 
 ---
 
@@ -196,7 +197,100 @@ flowchart TB
 
 ---
 
-## 4. A2A 协议任务流程
+## 4. Workflow DAG 执行流程
+
+展示工作流从用户触发到 DAG 拓扑排序执行、各节点依次处理、SSE 实时推送的完整流程。
+
+```mermaid
+sequenceDiagram
+    actor User as 用户
+    participant FE as 前端编辑器
+    participant API as WorkflowHandler
+    participant Engine as WorkflowEngine
+    participant LLM as AI 模型
+    participant Tool as 工具执行器
+    participant Agent as AgentRunner
+
+    User->>FE: 点击"执行"，填写变量
+    FE->>API: POST /api/workflows/{id}/execute (SSE)
+    API->>Engine: Execute(workflowID, inputs)
+
+    Engine->>Engine: 加载 Workflow 定义
+    Engine->>Engine: Kahn 拓扑排序
+    Engine->>Engine: 初始化执行上下文
+
+    loop 按拓扑顺序遍历节点
+        Engine-->>FE: SSE: node_start
+        
+        alt LLM 节点
+            Engine->>Engine: resolveTemplate(${变量})
+            Engine->>LLM: 发送 Prompt
+            LLM-->>Engine: 返回结果
+        else Tool 节点
+            Engine->>Engine: resolveTemplate(${变量})
+            Engine->>Tool: 执行工具
+            Tool-->>Engine: 返回结果
+        else Agent 节点
+            Engine->>Agent: 调用子 Agent
+            Agent-->>Engine: 返回结果
+        else Template 节点
+            Engine->>Engine: resolveTemplate 文本拼接
+        else HTTP 节点
+            Engine->>Engine: 发送 HTTP 请求
+        end
+
+        Engine->>Engine: 存储节点输出到 NodeOutputs
+        Engine-->>FE: SSE: node_output + node_done
+    end
+
+    Engine->>Engine: 收集最终输出
+    Engine->>Engine: 持久化执行记录 (workflow_runs)
+    Engine-->>FE: SSE: workflow_done
+    FE->>User: 展示执行结果 + 节点状态
+```
+
+### Workflow 节点类型架构
+
+```mermaid
+graph TB
+    subgraph NodeTypes["7 种节点类型"]
+        Start["🟢 Start<br/>开始节点"]
+        LLM["🧠 LLM<br/>AI 对话"]
+        ToolNode["🔧 Tool<br/>工具调用"]
+        AgentNode["🤖 Agent<br/>子 Agent"]
+        Template["📝 Template<br/>模板转换"]
+        HTTP["🌐 HTTP<br/>HTTP 请求"]
+        End["🔴 End<br/>结束节点"]
+    end
+
+    subgraph DataFlow["数据传递"]
+        Vars["${query}<br/>全局变量"]
+        NodeRef["${llm_1.output}<br/>节点输出引用"]
+        Builtin["${current_time}<br/>内置变量"]
+    end
+
+    subgraph Engine["DAG 执行引擎"]
+        Topo["Kahn 拓扑排序"]
+        Resolve["resolveTemplate<br/>变量解析"]
+        Context["ExecutionContext<br/>执行上下文"]
+        SSE["SSE 事件推送"]
+    end
+
+    Start --> LLM
+    Start --> ToolNode
+    LLM --> Template
+    ToolNode --> AgentNode
+    Template --> End
+    AgentNode --> End
+
+    DataFlow --> Resolve
+    Resolve --> Context
+    Engine --> SSE
+```
+
+---
+
+## 5. A2A 协议任务流程
 
 展示外部 Agent/客户端通过 A2A 协议与本系统交互的完整流程。
 
@@ -254,7 +348,7 @@ stateDiagram-v2
 
 ---
 
-## 5. 用户认证流程
+## 6. 用户认证流程
 
 ```mermaid
 sequenceDiagram
@@ -293,7 +387,7 @@ sequenceDiagram
 
 ---
 
-## 6. 请求处理全链路
+## 7. 请求处理全链路
 
 展示一个 HTTP 请求从进入到响应的完整中间件链路。
 
