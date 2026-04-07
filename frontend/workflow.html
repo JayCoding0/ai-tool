@@ -141,7 +141,7 @@
                     </div>
                     <div style="display:flex;gap:8px;flex-shrink:0;margin-left:16px;" @click.stop>
                         <el-button size="small" @click.stop="openEditor(wf)">编辑</el-button>
-                        <el-button size="small" type="success" @click.stop="quickExecute(wf)" :disabled="wf.nodes.length < 2">执行</el-button>
+                        <el-button size="small" type="success" @click.stop="quickExecute(wf)" :disabled="(wf.nodes || []).length < 2">执行</el-button>
                         <el-button size="small" type="warning" @click.stop="publishWorkflow(wf)" :disabled="wf.status === 'published'">发布</el-button>
                         <el-button size="small" type="danger" @click.stop="deleteWorkflow(wf)">删除</el-button>
                     </div>
@@ -704,7 +704,7 @@ createApp({
         // Tool 参数 JSON 编辑
         const toolArgsJson = computed({
             get() {
-                if (!selectedNode.value || !selectedNode.value.config.tool_args) return '';
+                if (!selectedNode.value || !selectedNode.value.config || !selectedNode.value.config.tool_args) return '';
                 return JSON.stringify(selectedNode.value.config.tool_args, null, 2);
             },
             set() {}
@@ -726,6 +726,9 @@ createApp({
             editorNodes.value.forEach(n => {
                 if (!n.config) n.config = {};
                 if (!n.position) n.position = { x: 100, y: 100 };
+                // 确保 config 中的嵌套对象存在
+                if (n.type === 'tool' && !n.config.tool_args) n.config.tool_args = {};
+                if (n.type === 'http' && !n.config.headers) n.config.headers = {};
             });
             selectedNodeId.value = null;
             selectedEdgeId.value = null;
@@ -991,16 +994,20 @@ createApp({
                 else if (evt.type === 'node_output' || evt.type === 'node_done') nodeExecStatus.value[evt.node_id] = 'done';
                 else if (evt.type === 'node_error') nodeExecStatus.value[evt.node_id] = 'error';
             }
-            if (evt.type === 'workflow_done' && evt.output) {
+            if (evt.type === 'workflow_done' && evt.output != null) {
                 // 提取最终输出
                 const outputs = evt.output;
                 if (typeof outputs === 'string') {
                     execFinalOutput.value = outputs;
-                } else if (typeof outputs === 'object') {
+                } else if (outputs && typeof outputs === 'object') {
                     // 取最后一个非空输出
-                    const vals = Object.values(outputs).filter(v => v && v !== null);
-                    const last = vals[vals.length - 1];
-                    execFinalOutput.value = typeof last === 'string' ? last : JSON.stringify(last, null, 2);
+                    const vals = Object.values(outputs).filter(v => v != null);
+                    if (vals.length > 0) {
+                        const last = vals[vals.length - 1];
+                        execFinalOutput.value = typeof last === 'string' ? last : JSON.stringify(last, null, 2);
+                    } else {
+                        execFinalOutput.value = JSON.stringify(outputs, null, 2);
+                    }
                 }
             }
         };
@@ -1012,14 +1019,18 @@ createApp({
                 else if (evt.type === 'node_output' || evt.type === 'node_done') nodeExecStatus.value[evt.node_id] = 'done';
                 else if (evt.type === 'node_error') nodeExecStatus.value[evt.node_id] = 'error';
             }
-            if (evt.type === 'workflow_done' && evt.output) {
+            if (evt.type === 'workflow_done' && evt.output != null) {
                 const outputs = evt.output;
                 if (typeof outputs === 'string') {
                     editorExecOutput.value = outputs;
-                } else if (typeof outputs === 'object') {
-                    const vals = Object.values(outputs).filter(v => v && v !== null);
-                    const last = vals[vals.length - 1];
-                    editorExecOutput.value = typeof last === 'string' ? last : JSON.stringify(last, null, 2);
+                } else if (outputs && typeof outputs === 'object') {
+                    const vals = Object.values(outputs).filter(v => v != null);
+                    if (vals.length > 0) {
+                        const last = vals[vals.length - 1];
+                        editorExecOutput.value = typeof last === 'string' ? last : JSON.stringify(last, null, 2);
+                    } else {
+                        editorExecOutput.value = JSON.stringify(outputs, null, 2);
+                    }
                 }
             }
             if (evt.type === 'workflow_error') {
@@ -1043,7 +1054,8 @@ createApp({
             switch (evt.type) {
                 case 'node_start': return `开始执行：${evt.node_name || evt.node_id}`;
                 case 'node_output': {
-                    const output = typeof evt.output === 'string' ? evt.output : JSON.stringify(evt.output);
+                    const raw = evt.output;
+                    const output = raw == null ? '' : (typeof raw === 'string' ? raw : JSON.stringify(raw));
                     const preview = output.length > 100 ? output.slice(0, 100) + '...' : output;
                     return `${evt.node_name || evt.node_id} 输出：${preview}`;
                 }
