@@ -1,0 +1,1099 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>工作流编排 - 智能Agent平台</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔀</text></svg>">
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5fa; min-height: 100vh; }
+
+        /* 导航栏 */
+        .nav-bar { background: #fff; border-bottom: 1px solid #e8e8f0; padding: 12px 24px; display: flex; align-items: center; gap: 16px; }
+        .nav-logo { font-size: 18px; font-weight: 700; color: #667eea; text-decoration: none; }
+        .nav-link { font-size: 14px; color: #666; text-decoration: none; padding: 6px 12px; border-radius: 6px; transition: background .2s; }
+        .nav-link:hover, .nav-link.active { background: #f0f0ff; color: #667eea; }
+
+        /* 页面容器 */
+        .wf-page { max-width: 1200px; margin: 0 auto; padding: 24px 16px; }
+        .wf-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+        .wf-header h1 { font-size: 22px; font-weight: 700; color: #1a1a2e; margin: 0; }
+
+        /* 工作流卡片 */
+        .wf-card { background: #fff; border-radius: 12px; border: 1px solid #e8e8f0; padding: 20px; margin-bottom: 16px; transition: box-shadow .2s; cursor: pointer; }
+        .wf-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,.08); }
+        .wf-card-header { display: flex; align-items: flex-start; justify-content: space-between; }
+        .wf-card-title { font-size: 16px; font-weight: 600; color: #1a1a2e; margin-bottom: 4px; }
+        .wf-card-desc { font-size: 13px; color: #888; margin-bottom: 12px; }
+        .wf-card-stats { display: flex; gap: 12px; flex-wrap: wrap; }
+        .wf-stat { font-size: 12px; color: #666; background: #f5f5fa; padding: 3px 10px; border-radius: 20px; }
+        .wf-stat.published { background: #e6f7ee; color: #27ae60; }
+        .wf-stat.draft { background: #fff7e6; color: #e67e22; }
+
+        /* 空状态 */
+        .empty-state { text-align: center; padding: 60px 20px; color: #bbb; }
+        .empty-state .empty-icon { font-size: 48px; margin-bottom: 12px; }
+
+        /* ===== 编辑器布局 ===== */
+        .editor-container { display: flex; height: calc(100vh - 60px); overflow: hidden; }
+        .editor-sidebar { width: 220px; background: #fff; border-right: 1px solid #e8e8f0; display: flex; flex-direction: column; flex-shrink: 0; }
+        .editor-sidebar-header { padding: 16px; border-bottom: 1px solid #e8e8f0; }
+        .editor-sidebar-header h3 { font-size: 14px; font-weight: 600; color: #333; margin: 0 0 12px; }
+        .node-palette { padding: 8px 12px; flex: 1; overflow-y: auto; }
+        .palette-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; cursor: grab; border: 1px solid #e8e8f0; margin-bottom: 8px; transition: all .2s; background: #fff; font-size: 13px; }
+        .palette-item:hover { border-color: #667eea; background: #f8f8ff; box-shadow: 0 2px 8px rgba(102,126,234,.15); }
+        .palette-item .p-icon { font-size: 18px; width: 28px; text-align: center; }
+        .palette-item .p-label { font-weight: 500; color: #333; }
+        .palette-item .p-desc { font-size: 11px; color: #999; margin-top: 2px; }
+
+        /* 画布区域 */
+        .editor-canvas { flex: 1; position: relative; overflow: hidden; background: #fafafa; }
+        .canvas-toolbar { position: absolute; top: 12px; left: 12px; z-index: 10; display: flex; gap: 8px; }
+        .canvas-toolbar button { background: #fff; border: 1px solid #e0e0e0; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; transition: all .15s; display: flex; align-items: center; gap: 4px; }
+        .canvas-toolbar button:hover { border-color: #667eea; color: #667eea; }
+        .canvas-actions { position: absolute; top: 12px; right: 12px; z-index: 10; display: flex; gap: 8px; }
+
+        /* SVG 画布 */
+        .dag-svg { width: 100%; height: 100%; }
+        .dag-svg .node-group { cursor: pointer; }
+        .dag-svg .node-group:hover .node-rect { filter: drop-shadow(0 2px 8px rgba(0,0,0,.12)); }
+        .dag-svg .node-rect { rx: 10; ry: 10; transition: filter .15s; }
+        .dag-svg .node-selected .node-rect { stroke: #667eea; stroke-width: 2.5; }
+        .dag-svg .edge-path { fill: none; stroke: #c0c0c0; stroke-width: 2; marker-end: url(#arrowhead); }
+        .dag-svg .edge-path:hover { stroke: #667eea; stroke-width: 2.5; cursor: pointer; }
+        .dag-svg .port { cursor: crosshair; }
+        .dag-svg .port:hover { r: 7; fill: #667eea; }
+
+        /* 节点状态颜色 */
+        .node-running .node-rect { stroke: #e6a23c !important; stroke-width: 2.5; stroke-dasharray: 5 3; animation: dash 1s linear infinite; }
+        .node-done .node-rect { stroke: #67c23a !important; stroke-width: 2.5; }
+        .node-error .node-rect { stroke: #f56c6c !important; stroke-width: 2.5; }
+        @keyframes dash { to { stroke-dashoffset: -16; } }
+
+        /* 右侧配置面板 */
+        .editor-panel { width: 340px; background: #fff; border-left: 1px solid #e8e8f0; display: flex; flex-direction: column; flex-shrink: 0; overflow-y: auto; }
+        .panel-header { padding: 16px; border-bottom: 1px solid #e8e8f0; display: flex; align-items: center; justify-content: space-between; }
+        .panel-header h3 { font-size: 15px; font-weight: 600; margin: 0; }
+        .panel-body { padding: 16px; flex: 1; overflow-y: auto; }
+        .panel-section { margin-bottom: 20px; }
+        .panel-section-title { font-size: 12px; font-weight: 600; color: #999; text-transform: uppercase; margin-bottom: 8px; }
+        .panel-field { margin-bottom: 14px; }
+        .panel-field label { display: block; font-size: 13px; font-weight: 500; color: #555; margin-bottom: 4px; }
+
+        /* 执行面板 */
+        .exec-panel { background: #fff; border-top: 1px solid #e8e8f0; padding: 16px; max-height: 40vh; overflow-y: auto; }
+        .exec-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+        .exec-header h4 { font-size: 14px; font-weight: 600; margin: 0; }
+        .exec-event { padding: 8px 12px; border-radius: 6px; margin-bottom: 6px; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+        .exec-event.node-start { background: #fff7e6; color: #e67e22; }
+        .exec-event.node-output { background: #e6f7ee; color: #27ae60; }
+        .exec-event.node-error { background: #fde8e8; color: #e74c3c; }
+        .exec-event.workflow-done { background: #e8f0fe; color: #4e6ef2; font-weight: 600; }
+        .exec-event.workflow-error { background: #fde8e8; color: #e74c3c; font-weight: 600; }
+        .exec-event .event-icon { font-size: 16px; }
+        .exec-event .event-text { flex: 1; }
+        .exec-event .event-time { font-size: 11px; color: #999; }
+
+        /* 变量输入 */
+        .var-input-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+        .var-input-row label { font-size: 13px; font-weight: 500; color: #555; min-width: 80px; }
+        .var-input-row .var-required { color: #f56c6c; }
+
+        /* 执行结果输出 */
+        .exec-output { background: #f8f8fc; border-radius: 8px; padding: 12px; margin-top: 12px; font-size: 13px; white-space: pre-wrap; word-break: break-all; max-height: 200px; overflow-y: auto; border: 1px solid #e8e8f0; }
+    </style>
+</head>
+<body>
+<div id="wf-app">
+    <!-- ===== 列表视图 ===== -->
+    <template v-if="view === 'list'">
+        <div class="nav-bar">
+            <a href="/" class="nav-logo">🤖 智能Agent平台</a>
+            <a href="/" class="nav-link">💬 对话</a>
+            <a href="/knowledge.html" class="nav-link">📚 知识库</a>
+            <a href="/workflow.html" class="nav-link active">🔀 工作流</a>
+        </div>
+        <div class="wf-page">
+            <div class="wf-header">
+                <h1>🔀 工作流编排</h1>
+                <el-button type="primary" @click="showCreateDialog = true" :icon="Plus">新建工作流</el-button>
+            </div>
+
+            <div v-if="workflows.length === 0 && !listLoading" class="empty-state">
+                <div class="empty-icon">🔀</div>
+                <div>暂无工作流，点击「新建工作流」开始编排</div>
+            </div>
+
+            <div v-for="wf in workflows" :key="wf.id" class="wf-card" @click="openEditor(wf)">
+                <div class="wf-card-header">
+                    <div>
+                        <div class="wf-card-title">{{ wf.name }}</div>
+                        <div class="wf-card-desc">{{ wf.description || '暂无描述' }}</div>
+                        <div class="wf-card-stats">
+                            <span class="wf-stat" :class="wf.status">{{ statusLabel(wf.status) }}</span>
+                            <span class="wf-stat">📦 {{ (wf.nodes || []).length }} 个节点</span>
+                            <span class="wf-stat">🔗 {{ (wf.edges || []).length }} 条连线</span>
+                            <span class="wf-stat">v{{ wf.version }}</span>
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:8px;flex-shrink:0;margin-left:16px;" @click.stop>
+                        <el-button size="small" @click.stop="openEditor(wf)">编辑</el-button>
+                        <el-button size="small" type="success" @click.stop="quickExecute(wf)" :disabled="wf.nodes.length < 2">执行</el-button>
+                        <el-button size="small" type="warning" @click.stop="publishWorkflow(wf)" :disabled="wf.status === 'published'">发布</el-button>
+                        <el-button size="small" type="danger" @click.stop="deleteWorkflow(wf)">删除</el-button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 新建工作流对话框 -->
+        <el-dialog v-model="showCreateDialog" title="新建工作流" width="480px">
+            <el-form :model="createForm" label-width="80px">
+                <el-form-item label="名称" required>
+                    <el-input v-model="createForm.name" placeholder="例如：智能客服流程" />
+                </el-form-item>
+                <el-form-item label="描述">
+                    <el-input v-model="createForm.description" type="textarea" :rows="3" placeholder="工作流用途说明（可选）" />
+                </el-form-item>
+            </el-form>
+            <template #footer>
+                <el-button @click="showCreateDialog = false">取消</el-button>
+                <el-button type="primary" @click="createWorkflow" :loading="creating">创建</el-button>
+            </template>
+        </el-dialog>
+
+        <!-- 快速执行对话框 -->
+        <el-dialog v-model="showExecDialog" :title="'执行工作流：' + (execWorkflow ? execWorkflow.name : '')" width="640px" :close-on-click-modal="false">
+            <div v-if="execWorkflow && execWorkflow.variables && execWorkflow.variables.length > 0" style="margin-bottom:16px;">
+                <div style="font-size:13px;font-weight:600;color:#555;margin-bottom:8px;">输入变量</div>
+                <div v-for="v in execWorkflow.variables" :key="v.name" class="var-input-row">
+                    <label>{{ v.name }} <span v-if="v.required" class="var-required">*</span></label>
+                    <el-input v-model="execInputs[v.name]" :placeholder="v.description || v.name" size="small" style="flex:1;" />
+                </div>
+            </div>
+            <div v-else style="font-size:13px;color:#999;margin-bottom:12px;">该工作流无需输入变量</div>
+
+            <div v-if="execEvents.length > 0" style="margin-top:8px;">
+                <div style="font-size:13px;font-weight:600;color:#555;margin-bottom:8px;">执行日志</div>
+                <div style="max-height:300px;overflow-y:auto;">
+                    <div v-for="(evt, i) in execEvents" :key="i" class="exec-event" :class="evt.type">
+                        <span class="event-icon">{{ eventIcon(evt.type) }}</span>
+                        <span class="event-text">{{ eventText(evt) }}</span>
+                        <span v-if="evt.duration_ms" class="event-time">{{ evt.duration_ms }}ms</span>
+                    </div>
+                </div>
+                <div v-if="execFinalOutput" class="exec-output">{{ execFinalOutput }}</div>
+            </div>
+
+            <template #footer>
+                <el-button @click="showExecDialog = false">关闭</el-button>
+                <el-button type="primary" @click="doExecute" :loading="executing" :disabled="executing">
+                    {{ executing ? '执行中...' : '▶ 执行' }}
+                </el-button>
+            </template>
+        </el-dialog>
+    </template>
+
+    <!-- ===== 编辑器视图 ===== -->
+    <template v-if="view === 'editor'">
+        <div class="editor-container">
+            <!-- 左侧节点面板 -->
+            <div class="editor-sidebar">
+                <div class="editor-sidebar-header">
+                    <div style="display:flex;align-items:center;justify-content:space-between;">
+                        <h3>🔀 {{ currentWorkflow ? currentWorkflow.name : '' }}</h3>
+                        <el-button text size="small" @click="backToList" style="padding:4px;">✕</el-button>
+                    </div>
+                    <div style="display:flex;gap:6px;margin-top:8px;">
+                        <el-button size="small" type="primary" @click="saveWorkflow" :loading="saving">💾 保存</el-button>
+                        <el-button size="small" type="success" @click="openExecPanel">▶ 执行</el-button>
+                    </div>
+                </div>
+                <div class="node-palette">
+                    <div style="font-size:12px;font-weight:600;color:#999;margin-bottom:8px;">拖拽添加节点</div>
+                    <div v-for="nt in nodeTypes" :key="nt.type" class="palette-item"
+                         draggable="true"
+                         @dragstart="onDragStart($event, nt.type)">
+                        <span class="p-icon">{{ nt.icon }}</span>
+                        <div>
+                            <div class="p-label">{{ nt.label }}</div>
+                            <div class="p-desc">{{ nt.desc }}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 变量管理 -->
+                <div style="padding:12px;border-top:1px solid #e8e8f0;">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                        <span style="font-size:12px;font-weight:600;color:#999;">全局变量</span>
+                        <el-button text size="small" @click="addVariable">+ 添加</el-button>
+                    </div>
+                    <div v-for="(v, i) in editorVariables" :key="i" style="display:flex;align-items:center;gap:4px;margin-bottom:4px;">
+                        <el-input v-model="v.name" size="small" placeholder="变量名" style="flex:1;" />
+                        <el-checkbox v-model="v.required" size="small" title="必填" />
+                        <el-button text size="small" type="danger" @click="editorVariables.splice(i,1)">✕</el-button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 中间画布 -->
+            <div class="editor-canvas" ref="canvasRef"
+                 @drop.prevent="onCanvasDrop"
+                 @dragover.prevent
+                 @mousedown="onCanvasMouseDown"
+                 @mousemove="onCanvasMouseMove"
+                 @mouseup="onCanvasMouseUp"
+                 @click="onCanvasClick">
+                <div class="canvas-toolbar">
+                    <button @click="zoomIn" title="放大">🔍+</button>
+                    <button @click="zoomOut" title="缩小">🔍-</button>
+                    <button @click="resetZoom" title="重置">↺</button>
+                    <span style="font-size:11px;color:#999;padding:6px;">{{ Math.round(zoom * 100) }}%</span>
+                </div>
+                <div class="canvas-actions">
+                    <el-button size="small" type="danger" plain @click="deleteSelected" :disabled="!selectedNodeId && !selectedEdgeId">🗑 删除选中</el-button>
+                </div>
+
+                <svg class="dag-svg" ref="svgRef"
+                     :viewBox="svgViewBox">
+                    <defs>
+                        <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+                            <polygon points="0 0, 10 3.5, 0 7" fill="#c0c0c0" />
+                        </marker>
+                        <marker id="arrowhead-active" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+                            <polygon points="0 0, 10 3.5, 0 7" fill="#667eea" />
+                        </marker>
+                    </defs>
+
+                    <!-- 网格背景 -->
+                    <defs>
+                        <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+                            <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e8e8f0" stroke-width="0.5"/>
+                        </pattern>
+                    </defs>
+                    <rect width="5000" height="5000" x="-2500" y="-2500" fill="url(#grid)" />
+
+                    <!-- 连线 -->
+                    <g v-for="edge in editorEdges" :key="edge.id">
+                        <path :d="getEdgePath(edge)"
+                              class="edge-path"
+                              :class="{'edge-selected': selectedEdgeId === edge.id}"
+                              :style="selectedEdgeId === edge.id ? 'stroke:#667eea;stroke-width:2.5;marker-end:url(#arrowhead-active)' : ''"
+                              @click.stop="selectEdge(edge.id)" />
+                    </g>
+
+                    <!-- 正在拖拽的连线 -->
+                    <path v-if="draggingEdge" :d="draggingEdgePath" class="edge-path" style="stroke:#667eea;stroke-dasharray:5 3;" />
+
+                    <!-- 节点 -->
+                    <g v-for="node in editorNodes" :key="node.id"
+                       class="node-group"
+                       :class="{'node-selected': selectedNodeId === node.id, ['node-' + getNodeExecStatus(node.id)]: getNodeExecStatus(node.id)}"
+                       :transform="'translate(' + node.position.x + ',' + node.position.y + ')'"
+                       @mousedown.stop="onNodeMouseDown($event, node)"
+                       @click.stop="selectNode(node.id)">
+                        <rect class="node-rect" x="0" y="0" :width="nodeWidth(node)" height="60"
+                              :fill="nodeColor(node.type)" stroke="#e0e0e0" stroke-width="1" />
+                        <text :x="nodeWidth(node)/2" y="24" text-anchor="middle" font-size="16" fill="#fff">{{ nodeIcon(node.type) }}</text>
+                        <text :x="nodeWidth(node)/2" y="44" text-anchor="middle" font-size="11" fill="#fff" font-weight="500">{{ node.name || nodeLabel(node.type) }}</text>
+
+                        <!-- 输入端口（左侧） -->
+                        <circle v-if="node.type !== 'start'" class="port port-in"
+                                cx="0" cy="30" r="5" fill="#fff" stroke="#999" stroke-width="1.5"
+                                @mouseup.stop="onPortMouseUp(node.id, 'in')" />
+                        <!-- 输出端口（右侧） -->
+                        <circle v-if="node.type !== 'end'" class="port port-out"
+                                :cx="nodeWidth(node)" cy="30" r="5" fill="#fff" stroke="#999" stroke-width="1.5"
+                                @mousedown.stop="onPortMouseDown($event, node.id, 'out')" />
+                    </g>
+                </svg>
+            </div>
+
+            <!-- 右侧配置面板 -->
+            <div class="editor-panel" v-if="selectedNodeId">
+                <div class="panel-header">
+                    <h3>{{ selectedNode ? (nodeIcon(selectedNode.type) + ' ' + (selectedNode.name || nodeLabel(selectedNode.type))) : '节点配置' }}</h3>
+                    <el-button text size="small" @click="selectedNodeId = null">✕</el-button>
+                </div>
+                <div class="panel-body" v-if="selectedNode">
+                    <!-- 基本信息 -->
+                    <div class="panel-section">
+                        <div class="panel-section-title">基本信息</div>
+                        <div class="panel-field">
+                            <label>节点名称</label>
+                            <el-input v-model="selectedNode.name" size="small" placeholder="节点名称" />
+                        </div>
+                        <div class="panel-field">
+                            <label>节点类型</label>
+                            <el-tag size="small">{{ nodeLabel(selectedNode.type) }}</el-tag>
+                        </div>
+                    </div>
+
+                    <!-- LLM 节点配置 -->
+                    <template v-if="selectedNode.type === 'llm'">
+                        <div class="panel-section">
+                            <div class="panel-section-title">LLM 配置</div>
+                            <div class="panel-field">
+                                <label>System Prompt</label>
+                                <el-input v-model="selectedNode.config.system_prompt" type="textarea" :rows="4" size="small" placeholder="你是一个有用的助手..." />
+                            </div>
+                            <div class="panel-field">
+                                <label>User Prompt <span style="font-size:11px;color:#999;">（支持 {{变量名}} 或 {{node_id.output}}）</span></label>
+                                <el-input v-model="selectedNode.config.user_prompt" type="textarea" :rows="3" size="small" placeholder="{{query}}" />
+                            </div>
+                            <div class="panel-field">
+                                <label>模型名称 <span style="font-size:11px;color:#999;">（留空使用默认模型）</span></label>
+                                <el-input v-model="selectedNode.config.model_name" size="small" placeholder="默认模型" />
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- Tool 节点配置 -->
+                    <template v-if="selectedNode.type === 'tool'">
+                        <div class="panel-section">
+                            <div class="panel-section-title">工具配置</div>
+                            <div class="panel-field">
+                                <label>工具名称</label>
+                                <el-input v-model="selectedNode.config.tool_name" size="small" placeholder="例如：get_weather" />
+                            </div>
+                            <div class="panel-field">
+                                <label>工具参数 <span style="font-size:11px;color:#999;">（JSON 格式，支持 {{}} 引用）</span></label>
+                                <el-input v-model="toolArgsJson" type="textarea" :rows="4" size="small" placeholder='{"city": "{{query}}"}' @change="updateToolArgs" />
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- Agent 节点配置 -->
+                    <template v-if="selectedNode.type === 'agent'">
+                        <div class="panel-section">
+                            <div class="panel-section-title">Agent 配置</div>
+                            <div class="panel-field">
+                                <label>Agent 名称</label>
+                                <el-input v-model="selectedNode.config.agent_name" size="small" placeholder="例如：weather_agent" />
+                            </div>
+                            <div class="panel-field">
+                                <label>发送消息 <span style="font-size:11px;color:#999;">（支持 {{}} 引用）</span></label>
+                                <el-input v-model="selectedNode.config.agent_message" type="textarea" :rows="3" size="small" placeholder="{{query}}" />
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- Template 节点配置 -->
+                    <template v-if="selectedNode.type === 'template'">
+                        <div class="panel-section">
+                            <div class="panel-section-title">模板配置</div>
+                            <div class="panel-field">
+                                <label>模板内容 <span style="font-size:11px;color:#999;">（支持 {{node_id.output}} 引用上游输出）</span></label>
+                                <el-input v-model="selectedNode.config.template" type="textarea" :rows="5" size="small" placeholder="根据 {{llm_1.output}} 的结果..." />
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- HTTP 节点配置 -->
+                    <template v-if="selectedNode.type === 'http'">
+                        <div class="panel-section">
+                            <div class="panel-section-title">HTTP 配置</div>
+                            <div class="panel-field">
+                                <label>请求方法</label>
+                                <el-select v-model="selectedNode.config.method" size="small" style="width:100%;">
+                                    <el-option label="GET" value="GET" />
+                                    <el-option label="POST" value="POST" />
+                                    <el-option label="PUT" value="PUT" />
+                                    <el-option label="DELETE" value="DELETE" />
+                                </el-select>
+                            </div>
+                            <div class="panel-field">
+                                <label>URL</label>
+                                <el-input v-model="selectedNode.config.url" size="small" placeholder="https://api.example.com/..." />
+                            </div>
+                            <div class="panel-field">
+                                <label>请求体 <span style="font-size:11px;color:#999;">（支持 {{}} 引用）</span></label>
+                                <el-input v-model="selectedNode.config.body" type="textarea" :rows="3" size="small" placeholder='{"key": "value"}' />
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- 通用配置 -->
+                    <div class="panel-section" v-if="selectedNode.type !== 'start' && selectedNode.type !== 'end'">
+                        <div class="panel-section-title">高级配置</div>
+                        <div class="panel-field">
+                            <label>超时时间（秒）</label>
+                            <el-input-number v-model="selectedNode.config.timeout_sec" :min="0" :max="300" size="small" style="width:100%;" />
+                        </div>
+                        <div class="panel-field">
+                            <label>重试次数</label>
+                            <el-input-number v-model="selectedNode.config.retry_count" :min="0" :max="5" size="small" style="width:100%;" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 执行面板（底部弹出） -->
+            <div v-if="showEditorExec" class="exec-panel" style="position:absolute;bottom:0;left:220px;right:0;z-index:20;">
+                <div class="exec-header">
+                    <h4>▶ 执行工作流</h4>
+                    <el-button text size="small" @click="showEditorExec = false">✕</el-button>
+                </div>
+                <div v-if="currentWorkflow && currentWorkflow.variables && currentWorkflow.variables.length > 0" style="margin-bottom:12px;">
+                    <div v-for="v in editorVariables" :key="v.name" class="var-input-row">
+                        <label>{{ v.name }} <span v-if="v.required" class="var-required">*</span></label>
+                        <el-input v-model="editorExecInputs[v.name]" :placeholder="v.description || v.name" size="small" style="flex:1;" />
+                    </div>
+                </div>
+                <div style="margin-bottom:12px;">
+                    <el-button type="primary" size="small" @click="doEditorExecute" :loading="editorExecuting">
+                        {{ editorExecuting ? '执行中...' : '▶ 开始执行' }}
+                    </el-button>
+                </div>
+                <div v-if="editorExecEvents.length > 0" style="max-height:200px;overflow-y:auto;">
+                    <div v-for="(evt, i) in editorExecEvents" :key="i" class="exec-event" :class="evt.type">
+                        <span class="event-icon">{{ eventIcon(evt.type) }}</span>
+                        <span class="event-text">{{ eventText(evt) }}</span>
+                        <span v-if="evt.duration_ms" class="event-time">{{ evt.duration_ms }}ms</span>
+                    </div>
+                </div>
+                <div v-if="editorExecOutput" class="exec-output">{{ editorExecOutput }}</div>
+            </div>
+        </div>
+    </template>
+</div>
+
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script src="https://unpkg.com/@element-plus/icons-vue"></script>
+<script src="https://unpkg.com/element-plus/dist/index.full.js"></script>
+<script>
+const { createApp, ref, reactive, computed, onMounted, watch, nextTick } = Vue;
+
+createApp({
+    setup() {
+        // ===== 视图状态 =====
+        const view = ref('list'); // 'list' | 'editor'
+
+        // ===== 列表视图状态 =====
+        const workflows = ref([]);
+        const listLoading = ref(false);
+        const showCreateDialog = ref(false);
+        const creating = ref(false);
+        const createForm = reactive({ name: '', description: '' });
+
+        const statusLabel = (s) => ({ draft: '草稿', published: '已发布', archived: '已归档' }[s] || s);
+
+        // 获取认证头
+        function getAuthHeaders() {
+            const token = localStorage.getItem('auth_token');
+            const headers = { 'Content-Type': 'application/json' };
+            if (token) headers['Authorization'] = 'Bearer ' + token;
+            return headers;
+        }
+
+        // 加载工作流列表
+        const loadWorkflows = async () => {
+            listLoading.value = true;
+            try {
+                const r = await fetch('/api/workflows', { headers: getAuthHeaders() });
+                const data = await r.json();
+                workflows.value = data.workflows || [];
+            } catch (e) {
+                ElementPlus.ElMessage.error('加载工作流列表失败');
+            } finally {
+                listLoading.value = false;
+            }
+        };
+
+        // 创建工作流
+        const createWorkflow = async () => {
+            if (!createForm.name.trim()) {
+                ElementPlus.ElMessage.warning('请输入工作流名称');
+                return;
+            }
+            creating.value = true;
+            try {
+                const r = await fetch('/api/workflows', {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({
+                        name: createForm.name,
+                        description: createForm.description,
+                        nodes: [
+                            { id: 'start', type: 'start', name: '开始', config: {}, position: { x: 100, y: 200 } },
+                            { id: 'end', type: 'end', name: '结束', config: {}, position: { x: 600, y: 200 } }
+                        ],
+                        edges: [],
+                        variables: []
+                    })
+                });
+                if (!r.ok) {
+                    const err = await r.json();
+                    throw new Error(err.error || '创建失败');
+                }
+                const wf = await r.json();
+                ElementPlus.ElMessage.success('工作流创建成功');
+                showCreateDialog.value = false;
+                createForm.name = '';
+                createForm.description = '';
+                await loadWorkflows();
+                // 自动打开编辑器
+                const created = workflows.value.find(w => w.name === wf.name) || wf;
+                openEditor(created);
+            } catch (e) {
+                ElementPlus.ElMessage.error(e.message);
+            } finally {
+                creating.value = false;
+            }
+        };
+
+        // 删除工作流
+        const deleteWorkflow = async (wf) => {
+            try {
+                await ElementPlus.ElMessageBox.confirm(`确定删除工作流「${wf.name}」？`, '确认删除', { type: 'warning' });
+                const r = await fetch(`/api/workflows/${wf.id}`, { method: 'DELETE', headers: getAuthHeaders() });
+                if (!r.ok) throw new Error('删除失败');
+                ElementPlus.ElMessage.success('已删除');
+                await loadWorkflows();
+            } catch (e) {
+                if (e !== 'cancel' && e.message !== 'cancel') ElementPlus.ElMessage.error(e.message || '删除失败');
+            }
+        };
+
+        // 发布工作流
+        const publishWorkflow = async (wf) => {
+            try {
+                const r = await fetch(`/api/workflows/${wf.id}/publish`, { method: 'POST', headers: getAuthHeaders() });
+                if (!r.ok) {
+                    const err = await r.json();
+                    throw new Error(err.error || '发布失败');
+                }
+                ElementPlus.ElMessage.success('工作流已发布');
+                await loadWorkflows();
+            } catch (e) {
+                ElementPlus.ElMessage.error(e.message);
+            }
+        };
+
+        // ===== 快速执行 =====
+        const showExecDialog = ref(false);
+        const execWorkflow = ref(null);
+        const execInputs = reactive({});
+        const execEvents = ref([]);
+        const executing = ref(false);
+        const execFinalOutput = ref('');
+
+        const quickExecute = (wf) => {
+            execWorkflow.value = wf;
+            execEvents.value = [];
+            execFinalOutput.value = '';
+            // 初始化输入
+            Object.keys(execInputs).forEach(k => delete execInputs[k]);
+            if (wf.variables) {
+                wf.variables.forEach(v => {
+                    execInputs[v.name] = v.default_value || '';
+                });
+            }
+            showExecDialog.value = true;
+        };
+
+        const doExecute = async () => {
+            if (!execWorkflow.value) return;
+            executing.value = true;
+            execEvents.value = [];
+            execFinalOutput.value = '';
+            nodeExecStatus.value = {};
+
+            try {
+                const r = await fetch(`/api/workflows/${execWorkflow.value.id}/execute`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ inputs: { ...execInputs } })
+                });
+
+                const reader = r.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop();
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const evt = JSON.parse(line.slice(6));
+                                execEvents.value.push(evt);
+                                handleExecEvent(evt);
+                            } catch (e) {}
+                        }
+                    }
+                }
+            } catch (e) {
+                ElementPlus.ElMessage.error('执行失败: ' + e.message);
+            } finally {
+                executing.value = false;
+            }
+        };
+
+        // ===== 编辑器视图状态 =====
+        const currentWorkflow = ref(null);
+        const editorNodes = ref([]);
+        const editorEdges = ref([]);
+        const editorVariables = ref([]);
+        const selectedNodeId = ref(null);
+        const selectedEdgeId = ref(null);
+        const saving = ref(false);
+        const canvasRef = ref(null);
+        const svgRef = ref(null);
+
+        // 缩放和平移
+        const zoom = ref(1);
+        const panX = ref(0);
+        const panY = ref(0);
+        const svgViewBox = computed(() => {
+            const w = 2000 / zoom.value;
+            const h = 1200 / zoom.value;
+            const x = -panX.value / zoom.value;
+            const y = -panY.value / zoom.value;
+            return `${x} ${y} ${w} ${h}`;
+        });
+
+        // 节点拖拽
+        const draggingNode = ref(null);
+        const dragOffset = reactive({ x: 0, y: 0 });
+
+        // 连线拖拽
+        const draggingEdge = ref(false);
+        const edgeFrom = ref(null);
+        const edgeMouse = reactive({ x: 0, y: 0 });
+
+        // 节点执行状态
+        const nodeExecStatus = ref({});
+
+        // 编辑器执行
+        const showEditorExec = ref(false);
+        const editorExecInputs = reactive({});
+        const editorExecEvents = ref([]);
+        const editorExecuting = ref(false);
+        const editorExecOutput = ref('');
+
+        // 节点类型定义
+        const nodeTypes = [
+            { type: 'llm', icon: '🤖', label: 'LLM 对话', desc: '调用大语言模型' },
+            { type: 'tool', icon: '🔧', label: '工具调用', desc: '调用已注册工具' },
+            { type: 'agent', icon: '🤝', label: '子 Agent', desc: '调用子 Agent' },
+            { type: 'template', icon: '📝', label: '模板转换', desc: '文本拼接/格式化' },
+            { type: 'http', icon: '🌐', label: 'HTTP 请求', desc: '发起 HTTP 请求' },
+        ];
+
+        const nodeIcon = (type) => ({ start: '▶', end: '⏹', llm: '🤖', tool: '🔧', agent: '🤝', template: '📝', http: '🌐' }[type] || '❓');
+        const nodeLabel = (type) => ({ start: '开始', end: '结束', llm: 'LLM 对话', tool: '工具调用', agent: '子 Agent', template: '模板转换', http: 'HTTP 请求' }[type] || type);
+        const nodeColor = (type) => ({ start: '#67c23a', end: '#909399', llm: '#667eea', tool: '#e6a23c', agent: '#7c5cfc', template: '#409eff', http: '#f56c6c' }[type] || '#999');
+        const nodeWidth = (node) => {
+            const name = node.name || nodeLabel(node.type);
+            return Math.max(120, name.length * 12 + 40);
+        };
+
+        // 选中的节点
+        const selectedNode = computed(() => {
+            if (!selectedNodeId.value) return null;
+            return editorNodes.value.find(n => n.id === selectedNodeId.value);
+        });
+
+        // Tool 参数 JSON 编辑
+        const toolArgsJson = computed({
+            get() {
+                if (!selectedNode.value || !selectedNode.value.config.tool_args) return '';
+                return JSON.stringify(selectedNode.value.config.tool_args, null, 2);
+            },
+            set() {}
+        });
+        const updateToolArgs = (val) => {
+            if (!selectedNode.value) return;
+            try {
+                selectedNode.value.config.tool_args = JSON.parse(val);
+            } catch (e) {}
+        };
+
+        // 打开编辑器
+        const openEditor = (wf) => {
+            currentWorkflow.value = wf;
+            editorNodes.value = JSON.parse(JSON.stringify(wf.nodes || []));
+            editorEdges.value = JSON.parse(JSON.stringify(wf.edges || []));
+            editorVariables.value = JSON.parse(JSON.stringify(wf.variables || []));
+            // 确保每个节点都有 config
+            editorNodes.value.forEach(n => {
+                if (!n.config) n.config = {};
+                if (!n.position) n.position = { x: 100, y: 100 };
+            });
+            selectedNodeId.value = null;
+            selectedEdgeId.value = null;
+            nodeExecStatus.value = {};
+            view.value = 'editor';
+        };
+
+        const backToList = () => {
+            view.value = 'list';
+            currentWorkflow.value = null;
+            loadWorkflows();
+        };
+
+        // 保存工作流
+        const saveWorkflow = async () => {
+            if (!currentWorkflow.value) return;
+            saving.value = true;
+            try {
+                const r = await fetch(`/api/workflows/${currentWorkflow.value.id}`, {
+                    method: 'PUT',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({
+                        name: currentWorkflow.value.name,
+                        description: currentWorkflow.value.description,
+                        nodes: editorNodes.value,
+                        edges: editorEdges.value,
+                        variables: editorVariables.value,
+                        status: 'draft'
+                    })
+                });
+                if (!r.ok) {
+                    const err = await r.json();
+                    throw new Error(err.error || '保存失败');
+                }
+                ElementPlus.ElMessage.success('工作流已保存');
+            } catch (e) {
+                ElementPlus.ElMessage.error(e.message);
+            } finally {
+                saving.value = false;
+            }
+        };
+
+        // ===== 画布交互 =====
+
+        // 拖拽添加节点
+        let dragNodeType = null;
+        const onDragStart = (e, type) => {
+            dragNodeType = type;
+            e.dataTransfer.effectAllowed = 'copy';
+        };
+
+        const onCanvasDrop = (e) => {
+            if (!dragNodeType) return;
+            const rect = canvasRef.value.getBoundingClientRect();
+            const x = (e.clientX - rect.left) / zoom.value - panX.value / zoom.value;
+            const y = (e.clientY - rect.top) / zoom.value - panY.value / zoom.value;
+            const id = dragNodeType + '_' + Date.now().toString(36);
+            editorNodes.value.push({
+                id,
+                type: dragNodeType,
+                name: nodeLabel(dragNodeType),
+                description: '',
+                config: {},
+                position: { x: Math.round(x), y: Math.round(y) }
+            });
+            dragNodeType = null;
+            selectedNodeId.value = id;
+        };
+
+        // 节点拖拽移动
+        const onNodeMouseDown = (e, node) => {
+            if (e.target.classList.contains('port')) return;
+            draggingNode.value = node.id;
+            const rect = canvasRef.value.getBoundingClientRect();
+            dragOffset.x = (e.clientX - rect.left) / zoom.value - panX.value / zoom.value - node.position.x;
+            dragOffset.y = (e.clientY - rect.top) / zoom.value - panY.value / zoom.value - node.position.y;
+        };
+
+        const onCanvasMouseMove = (e) => {
+            if (draggingNode.value) {
+                const rect = canvasRef.value.getBoundingClientRect();
+                const node = editorNodes.value.find(n => n.id === draggingNode.value);
+                if (node) {
+                    node.position.x = Math.round((e.clientX - rect.left) / zoom.value - panX.value / zoom.value - dragOffset.x);
+                    node.position.y = Math.round((e.clientY - rect.top) / zoom.value - panY.value / zoom.value - dragOffset.y);
+                }
+            }
+            if (draggingEdge.value) {
+                const rect = canvasRef.value.getBoundingClientRect();
+                edgeMouse.x = (e.clientX - rect.left) / zoom.value - panX.value / zoom.value;
+                edgeMouse.y = (e.clientY - rect.top) / zoom.value - panY.value / zoom.value;
+            }
+        };
+
+        const onCanvasMouseUp = () => {
+            draggingNode.value = null;
+            if (draggingEdge.value) {
+                draggingEdge.value = false;
+                edgeFrom.value = null;
+            }
+        };
+
+        const onCanvasMouseDown = (e) => {
+            // 点击空白区域取消选中
+        };
+
+        const onCanvasClick = () => {
+            selectedNodeId.value = null;
+            selectedEdgeId.value = null;
+        };
+
+        // 节点选中
+        const selectNode = (id) => {
+            selectedNodeId.value = id;
+            selectedEdgeId.value = null;
+        };
+
+        const selectEdge = (id) => {
+            selectedEdgeId.value = id;
+            selectedNodeId.value = null;
+        };
+
+        // 连线端口交互
+        const onPortMouseDown = (e, nodeId, portType) => {
+            e.preventDefault();
+            e.stopPropagation();
+            draggingEdge.value = true;
+            edgeFrom.value = nodeId;
+            const rect = canvasRef.value.getBoundingClientRect();
+            edgeMouse.x = (e.clientX - rect.left) / zoom.value - panX.value / zoom.value;
+            edgeMouse.y = (e.clientY - rect.top) / zoom.value - panY.value / zoom.value;
+        };
+
+        const onPortMouseUp = (nodeId, portType) => {
+            if (draggingEdge.value && edgeFrom.value && edgeFrom.value !== nodeId) {
+                // 检查是否已存在相同连线
+                const exists = editorEdges.value.some(e => e.source === edgeFrom.value && e.target === nodeId);
+                if (!exists) {
+                    editorEdges.value.push({
+                        id: 'e_' + Date.now().toString(36),
+                        source: edgeFrom.value,
+                        target: nodeId
+                    });
+                }
+            }
+            draggingEdge.value = false;
+            edgeFrom.value = null;
+        };
+
+        // 正在拖拽的连线路径
+        const draggingEdgePath = computed(() => {
+            if (!draggingEdge.value || !edgeFrom.value) return '';
+            const fromNode = editorNodes.value.find(n => n.id === edgeFrom.value);
+            if (!fromNode) return '';
+            const sx = fromNode.position.x + nodeWidth(fromNode);
+            const sy = fromNode.position.y + 30;
+            const ex = edgeMouse.x;
+            const ey = edgeMouse.y;
+            const cx = (sx + ex) / 2;
+            return `M ${sx} ${sy} C ${cx} ${sy}, ${cx} ${ey}, ${ex} ${ey}`;
+        });
+
+        // 计算连线路径（贝塞尔曲线）
+        const getEdgePath = (edge) => {
+            const fromNode = editorNodes.value.find(n => n.id === edge.source);
+            const toNode = editorNodes.value.find(n => n.id === edge.target);
+            if (!fromNode || !toNode) return '';
+            const sx = fromNode.position.x + nodeWidth(fromNode);
+            const sy = fromNode.position.y + 30;
+            const ex = toNode.position.x;
+            const ey = toNode.position.y + 30;
+            const cx = (sx + ex) / 2;
+            return `M ${sx} ${sy} C ${cx} ${sy}, ${cx} ${ey}, ${ex} ${ey}`;
+        };
+
+        // 删除选中
+        const deleteSelected = () => {
+            if (selectedNodeId.value) {
+                const id = selectedNodeId.value;
+                if (id === 'start' || editorNodes.value.find(n => n.id === id)?.type === 'start') {
+                    ElementPlus.ElMessage.warning('不能删除开始节点');
+                    return;
+                }
+                editorNodes.value = editorNodes.value.filter(n => n.id !== id);
+                editorEdges.value = editorEdges.value.filter(e => e.source !== id && e.target !== id);
+                selectedNodeId.value = null;
+            }
+            if (selectedEdgeId.value) {
+                editorEdges.value = editorEdges.value.filter(e => e.id !== selectedEdgeId.value);
+                selectedEdgeId.value = null;
+            }
+        };
+
+        // 缩放
+        const zoomIn = () => { zoom.value = Math.min(zoom.value + 0.1, 2); };
+        const zoomOut = () => { zoom.value = Math.max(zoom.value - 0.1, 0.3); };
+        const resetZoom = () => { zoom.value = 1; panX.value = 0; panY.value = 0; };
+
+        // 添加变量
+        const addVariable = () => {
+            editorVariables.value.push({ name: '', type: 'string', default_value: '', description: '', required: false });
+        };
+
+        // ===== 编辑器内执行 =====
+        const openExecPanel = () => {
+            showEditorExec.value = true;
+            editorExecEvents.value = [];
+            editorExecOutput.value = '';
+            nodeExecStatus.value = {};
+            Object.keys(editorExecInputs).forEach(k => delete editorExecInputs[k]);
+            editorVariables.value.forEach(v => {
+                editorExecInputs[v.name] = v.default_value || '';
+            });
+        };
+
+        const doEditorExecute = async () => {
+            if (!currentWorkflow.value) return;
+            // 先保存
+            await saveWorkflow();
+            editorExecuting.value = true;
+            editorExecEvents.value = [];
+            editorExecOutput.value = '';
+            nodeExecStatus.value = {};
+
+            try {
+                const r = await fetch(`/api/workflows/${currentWorkflow.value.id}/execute`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ inputs: { ...editorExecInputs } })
+                });
+
+                const reader = r.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop();
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const evt = JSON.parse(line.slice(6));
+                                editorExecEvents.value.push(evt);
+                                handleEditorExecEvent(evt);
+                            } catch (e) {}
+                        }
+                    }
+                }
+            } catch (e) {
+                ElementPlus.ElMessage.error('执行失败: ' + e.message);
+            } finally {
+                editorExecuting.value = false;
+            }
+        };
+
+        // 处理执行事件（列表视图）
+        const handleExecEvent = (evt) => {
+            if (evt.node_id) {
+                if (evt.type === 'node_start') nodeExecStatus.value[evt.node_id] = 'running';
+                else if (evt.type === 'node_output' || evt.type === 'node_done') nodeExecStatus.value[evt.node_id] = 'done';
+                else if (evt.type === 'node_error') nodeExecStatus.value[evt.node_id] = 'error';
+            }
+            if (evt.type === 'workflow_done' && evt.output) {
+                // 提取最终输出
+                const outputs = evt.output;
+                if (typeof outputs === 'string') {
+                    execFinalOutput.value = outputs;
+                } else if (typeof outputs === 'object') {
+                    // 取最后一个非空输出
+                    const vals = Object.values(outputs).filter(v => v && v !== null);
+                    const last = vals[vals.length - 1];
+                    execFinalOutput.value = typeof last === 'string' ? last : JSON.stringify(last, null, 2);
+                }
+            }
+        };
+
+        // 处理执行事件（编辑器视图）
+        const handleEditorExecEvent = (evt) => {
+            if (evt.node_id) {
+                if (evt.type === 'node_start') nodeExecStatus.value[evt.node_id] = 'running';
+                else if (evt.type === 'node_output' || evt.type === 'node_done') nodeExecStatus.value[evt.node_id] = 'done';
+                else if (evt.type === 'node_error') nodeExecStatus.value[evt.node_id] = 'error';
+            }
+            if (evt.type === 'workflow_done' && evt.output) {
+                const outputs = evt.output;
+                if (typeof outputs === 'string') {
+                    editorExecOutput.value = outputs;
+                } else if (typeof outputs === 'object') {
+                    const vals = Object.values(outputs).filter(v => v && v !== null);
+                    const last = vals[vals.length - 1];
+                    editorExecOutput.value = typeof last === 'string' ? last : JSON.stringify(last, null, 2);
+                }
+            }
+            if (evt.type === 'workflow_error') {
+                editorExecOutput.value = '❌ 执行失败: ' + (evt.error || '未知错误');
+            }
+        };
+
+        const getNodeExecStatus = (nodeId) => nodeExecStatus.value[nodeId] || '';
+
+        // 事件显示
+        const eventIcon = (type) => ({
+            'node_start': '⏳',
+            'node_output': '✅',
+            'node_done': '✅',
+            'node_error': '❌',
+            'workflow_done': '🎉',
+            'workflow_error': '💥'
+        }[type] || '📌');
+
+        const eventText = (evt) => {
+            switch (evt.type) {
+                case 'node_start': return `开始执行：${evt.node_name || evt.node_id}`;
+                case 'node_output': {
+                    const output = typeof evt.output === 'string' ? evt.output : JSON.stringify(evt.output);
+                    const preview = output.length > 100 ? output.slice(0, 100) + '...' : output;
+                    return `${evt.node_name || evt.node_id} 输出：${preview}`;
+                }
+                case 'node_done': return `${evt.node_name || evt.node_id} 完成`;
+                case 'node_error': return `${evt.node_name || evt.node_id} 失败：${evt.error}`;
+                case 'workflow_done': return `🎉 工作流执行完成（${evt.duration_ms}ms，${evt.total_tokens || 0} tokens）`;
+                case 'workflow_error': return `💥 工作流执行失败：${evt.error}`;
+                default: return JSON.stringify(evt);
+            }
+        };
+
+        // ===== 生命周期 =====
+        onMounted(loadWorkflows);
+
+        return {
+            // 视图
+            view,
+            // 列表
+            workflows, listLoading, showCreateDialog, creating, createForm,
+            statusLabel, loadWorkflows, createWorkflow, deleteWorkflow, publishWorkflow,
+            // 快速执行
+            showExecDialog, execWorkflow, execInputs, execEvents, executing, execFinalOutput,
+            quickExecute, doExecute,
+            // 编辑器
+            currentWorkflow, editorNodes, editorEdges, editorVariables,
+            selectedNodeId, selectedEdgeId, selectedNode, saving,
+            canvasRef, svgRef, zoom, svgViewBox,
+            nodeTypes, nodeIcon, nodeLabel, nodeColor, nodeWidth,
+            toolArgsJson, updateToolArgs,
+            openEditor, backToList, saveWorkflow,
+            // 画布交互
+            onDragStart, onCanvasDrop,
+            onNodeMouseDown, onCanvasMouseDown, onCanvasMouseMove, onCanvasMouseUp, onCanvasClick,
+            selectNode, selectEdge, deleteSelected,
+            onPortMouseDown, onPortMouseUp,
+            draggingEdge, draggingEdgePath, getEdgePath,
+            zoomIn, zoomOut, resetZoom,
+            addVariable,
+            // 节点执行状态
+            nodeExecStatus, getNodeExecStatus,
+            // 编辑器执行
+            showEditorExec, editorExecInputs, editorExecEvents, editorExecuting, editorExecOutput,
+            openExecPanel, doEditorExecute,
+            // 事件
+            eventIcon, eventText, handleExecEvent,
+            // Element Plus 图标
+            Plus: ElementPlusIconsVue.Plus,
+        };
+    }
+}).use(ElementPlus).mount('#wf-app');
+</script>
+</body>
+</html>
