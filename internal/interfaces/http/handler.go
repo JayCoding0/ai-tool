@@ -87,6 +87,7 @@ type ChatHandler struct {
 	agentRegistry  *application.AgentRegistry
 	knowledgeSvc   *application.KnowledgeService
 	promptVarsSvc  *application.PromptVarsService // Prompt 模板变量服务
+	workflowHandler *WorkflowHandler               // Workflow 工作流处理程序
 	appConfig      *config.Config
 	logger         *zap.Logger
 }
@@ -114,6 +115,19 @@ func (h *ChatHandler) SetKnowledgeService(ks *application.KnowledgeService) {
 // SetPromptVarsService 注入 Prompt 变量服务
 func (h *ChatHandler) SetPromptVarsService(pvs *application.PromptVarsService) {
 	h.promptVarsSvc = pvs
+}
+
+// SetWorkflowService 注入 Workflow 工作流服务
+func (h *ChatHandler) SetWorkflowService(workflowSvc *application.WorkflowService, workflowEngine *application.WorkflowEngine) {
+	h.workflowHandler = NewWorkflowHandler(workflowSvc, workflowEngine, h.logger, func(r *http.Request) int64 {
+		userID, _, _ := h.getCurrentUser(r)
+		return userID
+	})
+}
+
+// GetWorkflowHandler 获取 Workflow 处理程序（供路由注册使用）
+func (h *ChatHandler) GetWorkflowHandler() *WorkflowHandler {
+	return h.workflowHandler
 }
 
 // ─── 聊天流式处理 ──────────────────────────────────────────────────────────────

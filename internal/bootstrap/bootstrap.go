@@ -21,6 +21,7 @@ import (
 	mysql_session "aiProject/internal/infrastructure/session/mysql"
 	infra_tools "aiProject/internal/infrastructure/tools"
 	mysql_user "aiProject/internal/infrastructure/user/mysql"
+	mysql_workflow "aiProject/internal/infrastructure/workflow/mysql"
 	http_handler "aiProject/internal/interfaces/http"
 	mcp_server "aiProject/internal/interfaces/mcp"
 	"aiProject/internal/shared"
@@ -149,6 +150,9 @@ func InitComponents(appConfig *config.Config) (*http_handler.ChatHandler, *appli
 
 	// 初始化 RAG 知识库服务（需要数据库已连接）
 	initKnowledgeService(appConfig, frontendChatService, handler)
+
+	// 初始化 Workflow 工作流服务（需要数据库已连接）
+	initWorkflowService(appConfig, handler, registry)
 
 	return handler, frontendChatService
 }
@@ -305,6 +309,27 @@ func restoreAgentToolsFromDB(registry *application.AgentRegistry) {
 			)
 		}
 	}
+}
+
+// ─── Workflow 工作流初始化 ──────────────────────────────────────────────────────
+
+// initWorkflowService 初始化 Workflow 工作流服务
+func initWorkflowService(appConfig *config.Config, handler *http_handler.ChatHandler, registry *application.AgentRegistry) {
+	if database.GetDB() == nil {
+		shared.GetLogger().Info("Workflow 服务未启用（数据库未连接）")
+		return
+	}
+
+	workflowRepo := mysql_workflow.NewWorkflowRepository()
+	runRepo := mysql_workflow.NewWorkflowRunRepository()
+	modelFactory := newModelFactory(appConfig)
+
+	workflowSvc := application.NewWorkflowService(workflowRepo, runRepo)
+	workflowEngine := application.NewWorkflowEngine(workflowRepo, runRepo, modelFactory, appConfig.Model.Name, registry)
+
+	handler.SetWorkflowService(workflowSvc, workflowEngine)
+
+	shared.GetLogger().Info("Workflow 工作流服务已启用")
 }
 
 // ─── A2A & MCP 初始化 ─────────────────────────────────────────────────────────

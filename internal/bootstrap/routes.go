@@ -62,6 +62,47 @@ func RegisterRoutes(chatHandler *http_handler.ChatHandler, appConfig *config.Con
 	mux.HandleFunc("/api/knowledge/documents/delete", chatHandler.HandleDeleteDocument)
 	mux.HandleFunc("/api/knowledge/search", chatHandler.HandleKnowledgeSearch)
 
+	// Workflow 工作流接口
+	if chatHandler.GetWorkflowHandler() != nil {
+		wfHandler := chatHandler.GetWorkflowHandler()
+		// 工作流 CRUD
+		mux.HandleFunc("/api/workflows", func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				wfHandler.HandleListWorkflows(w, r)
+			case http.MethodPost:
+				wfHandler.HandleCreateWorkflow(w, r)
+			default:
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			}
+		})
+		// 工作流执行记录查询
+		mux.HandleFunc("/api/workflow-runs/", wfHandler.HandleGetWorkflowRun)
+		// 工作流详情/更新/删除/发布/执行/执行记录（通过路径后缀区分）
+		mux.HandleFunc("/api/workflows/", func(w http.ResponseWriter, r *http.Request) {
+			path := r.URL.Path
+			switch {
+			case strings.HasSuffix(path, "/publish"):
+				wfHandler.HandlePublishWorkflow(w, r)
+			case strings.HasSuffix(path, "/execute"):
+				wfHandler.HandleExecuteWorkflow(w, r)
+			case strings.HasSuffix(path, "/runs"):
+				wfHandler.HandleGetWorkflowRuns(w, r)
+			default:
+				switch r.Method {
+				case http.MethodGet:
+					wfHandler.HandleGetWorkflow(w, r)
+				case http.MethodPut:
+					wfHandler.HandleUpdateWorkflow(w, r)
+				case http.MethodDelete:
+					wfHandler.HandleDeleteWorkflow(w, r)
+				default:
+					http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				}
+			}
+		})
+	}
+
 	// A2A 协议接口
 	if a2aService != nil {
 		a2aHandler := http_handler.NewA2AHandler(a2aService)

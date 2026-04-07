@@ -211,3 +211,43 @@ CREATE TABLE IF NOT EXISTS prompt_vars_session (
     INDEX idx_session_id (session_id),
     FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Prompt 模板变量 - 会话级';
+
+-- -----------------------------------------------------------
+-- 14. 工作流定义表（Workflow DAG 编排）
+-- -----------------------------------------------------------
+CREATE TABLE IF NOT EXISTS workflows (
+    id          BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '工作流ID',
+    name        VARCHAR(128) NOT NULL COMMENT '工作流名称',
+    description TEXT COMMENT '工作流描述',
+    graph_json  JSON NOT NULL COMMENT '完整的 DAG 定义（nodes + edges + variables）',
+    status      ENUM('draft', 'published', 'archived') NOT NULL DEFAULT 'draft' COMMENT '状态',
+    version     INT NOT NULL DEFAULT 1 COMMENT '版本号',
+    user_id     BIGINT NOT NULL COMMENT '创建者用户ID',
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    INDEX idx_user_status (user_id, status),
+    INDEX idx_updated_at (updated_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='工作流定义表（DAG 编排）';
+
+-- -----------------------------------------------------------
+-- 15. 工作流执行记录表
+-- -----------------------------------------------------------
+CREATE TABLE IF NOT EXISTS workflow_runs (
+    id            BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '记录ID',
+    workflow_id   BIGINT NOT NULL COMMENT '工作流ID',
+    run_id        VARCHAR(64) NOT NULL UNIQUE COMMENT '执行唯一ID（UUID）',
+    status        ENUM('running', 'completed', 'failed', 'cancelled') NOT NULL DEFAULT 'running' COMMENT '执行状态',
+    inputs        JSON COMMENT '输入变量',
+    outputs       JSON COMMENT '最终输出',
+    node_results  JSON COMMENT '各节点执行结果快照',
+    total_tokens  INT NOT NULL DEFAULT 0 COMMENT '总 token 消耗',
+    duration_ms   BIGINT NOT NULL DEFAULT 0 COMMENT '总耗时（毫秒）',
+    error_message TEXT COMMENT '错误信息',
+    user_id       BIGINT NOT NULL COMMENT '执行者用户ID',
+    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    INDEX idx_workflow_id (workflow_id),
+    INDEX idx_user_id (user_id),
+    INDEX idx_run_id (run_id),
+    INDEX idx_created_at (created_at),
+    FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='工作流执行记录表';
