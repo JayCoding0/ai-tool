@@ -31,6 +31,20 @@
 - **相关文件**: `domain/workflow/workflow.go`, `application/workflow_engine.go`, `application/workflow_service.go`, `interfaces/http/workflow_handler.go`, `infrastructure/workflow/mysql/`, `frontend/workflow.html`
 - **预估工作量**: ~~3 个月~~ → 实际 Phase 1 完成
 
+- **Phase 2（4 周）— 条件分支 + 并行**:
+  - [ ] Condition 节点（条件表达式评估，支持 `==`/`!=`/`>`/`<`/`contains` 等操作符，根据条件走不同分支）
+  - [ ] Parallel 并行网关节点（多分支并行执行，汇聚后合并结果）
+  - [ ] Agent 节点增强（复用 CallSubAgent，支持传入上下文和接收结构化输出）
+  - [ ] HTTP 请求节点增强（支持请求头模板变量、响应 JSONPath 提取、超时/重试配置）
+  - [ ] 前端可视化画布升级（Vue Flow / ReactFlow 替代原生 Canvas，支持条件分支连线、并行分支布局）
+
+- **Phase 3（4 周）— 高级特性**:
+  - [ ] Code 节点（嵌入式 JavaScript/Python 代码执行，沙箱隔离，支持读取上游节点输出）
+  - [ ] Loop 循环节点（支持 for-each 遍历列表、while 条件循环，可配置最大迭代次数）
+  - [ ] Workflow 版本管理增强（草稿 → 发布 → 归档，版本对比 diff，回滚到历史版本）
+  - [ ] 执行历史 + 回放（可视化回放每个节点的执行过程，查看中间数据）
+  - [ ] Workflow 导入/导出（JSON 格式，支持跨实例迁移）
+
 ### 3. 长期记忆 / Memory 系统
 - **现状**: 仅有会话级滑动窗口（`maxPromptMessages = 20`），无跨会话记忆
 - **主流做法**: Coze/Dify 支持变量持久化、用户画像记忆、向量记忆库
@@ -239,6 +253,8 @@
 2026 Q2 (4-6月)
 ├── ✅ Prompt 模板变量系统（已完成）
 ├── ✅ 可视化 Workflow / DAG 编排（Phase 1 已完成）
+├── 🔴 Workflow Phase 2：条件分支 + 并行（P0 #2）
+├── 🔴 Workflow Phase 3：高级特性（P0 #2）
 ├── 🔴 向量数据库集成（P1 #5）
 ├── 🔴 RAG 性能优化（P4 #19）
 ├── 🟡 Agent 可观测性（P1 #7）
@@ -252,7 +268,6 @@
 └── 🟢 对话导出（P2 #13）
 
 2026 Q4 (10-12月)
-├── 🔴 可视化 Workflow 编排（P0 #2）
 ├── 🟡 API Key / Provider 管理（P1 #10）
 ├── 🟢 安全护栏（P2 #12）
 ├── 🟢 WebSocket（P2 #15）
