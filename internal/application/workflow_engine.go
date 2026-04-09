@@ -544,6 +544,11 @@ func (e *WorkflowEngine) propagateSkip(
 
 // evaluateCondition 评估单个条件表达式
 func (e *WorkflowEngine) evaluateCondition(cond workflow.ConditionBranch, execCtx *ExecutionContext) bool {
+	// 空字段视为未配置条件，直接不命中，走默认分支
+	if cond.Field == "" && cond.Operator != "is_empty" && cond.Operator != "is_not_empty" {
+		return false
+	}
+
 	// 解析字段值（支持模板变量）
 	fieldValue := e.resolveTemplate(cond.Field, execCtx)
 	compareValue := e.resolveTemplate(cond.Value, execCtx)

@@ -39,42 +39,45 @@
 
         /* ===== 编辑器布局 ===== */
         .editor-container { display: flex; height: calc(100vh - 60px); overflow: hidden; }
-        .editor-sidebar { width: 220px; background: #fff; border-right: 1px solid #e8e8f0; display: flex; flex-direction: column; flex-shrink: 0; }
+        .editor-sidebar { width: 220px; background: #fff; border-right: 1px solid #e8e8f0; display: flex; flex-direction: column; flex-shrink: 0; box-shadow: 2px 0 12px rgba(0,0,0,.04); z-index: 1; }
         .editor-sidebar-header { padding: 16px; border-bottom: 1px solid #e8e8f0; }
         .editor-sidebar-header h3 { font-size: 14px; font-weight: 600; color: #333; margin: 0 0 12px; }
         .node-palette { padding: 8px 12px; flex: 1; overflow-y: auto; }
-        .palette-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; cursor: grab; border: 1px solid #e8e8f0; margin-bottom: 8px; transition: all .2s; background: #fff; font-size: 13px; }
-        .palette-item:hover { border-color: #667eea; background: #f8f8ff; box-shadow: 0 2px 8px rgba(102,126,234,.15); }
+        .palette-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; cursor: grab; border: 1px solid #e8e8f0; margin-bottom: 8px; transition: all .2s; background: #fff; font-size: 13px; position: relative; overflow: hidden; }
+        .palette-item::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; border-radius: 8px 0 0 8px; background: var(--palette-color, #667eea); }
+        .palette-item:hover { border-color: var(--palette-color, #667eea); background: #fafbff; box-shadow: 0 2px 8px rgba(102,126,234,.12); transform: translateY(-1px); }
         .palette-item .p-icon { font-size: 18px; width: 28px; text-align: center; }
         .palette-item .p-label { font-weight: 500; color: #333; }
         .palette-item .p-desc { font-size: 11px; color: #999; margin-top: 2px; }
 
         /* 画布区域 */
-        .editor-canvas { flex: 1; position: relative; overflow: hidden; background: #fafafa; }
+        .editor-canvas { flex: 1; position: relative; overflow: hidden; background: #f8f9fe; }
         .canvas-toolbar { position: absolute; top: 12px; left: 12px; z-index: 10; display: flex; gap: 8px; }
-        .canvas-toolbar button { background: #fff; border: 1px solid #e0e0e0; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; transition: all .15s; display: flex; align-items: center; gap: 4px; }
-        .canvas-toolbar button:hover { border-color: #667eea; color: #667eea; }
+        .canvas-toolbar button { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 6px 14px; font-size: 12px; cursor: pointer; transition: all .15s; display: flex; align-items: center; gap: 4px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+        .canvas-toolbar button:hover { border-color: #667eea; color: #667eea; box-shadow: 0 2px 8px rgba(102,126,234,.15); }
         .canvas-actions { position: absolute; top: 12px; right: 12px; z-index: 10; display: flex; gap: 8px; }
 
         /* SVG 画布 */
         .dag-svg { width: 100%; height: 100%; }
         .dag-svg .node-group { cursor: pointer; }
-        .dag-svg .node-group:hover .node-rect { filter: drop-shadow(0 2px 8px rgba(0,0,0,.12)); }
-        .dag-svg .node-rect { rx: 10; ry: 10; transition: filter .15s; }
-        .dag-svg .node-selected .node-rect { stroke: #667eea; stroke-width: 2.5; }
-        .dag-svg .edge-path { fill: none; stroke: #c0c0c0; stroke-width: 2; marker-end: url(#arrowhead); }
-        .dag-svg .edge-path:hover { stroke: #667eea; stroke-width: 2.5; cursor: pointer; }
-        .dag-svg .port { cursor: crosshair; }
-        .dag-svg .port:hover { r: 7; fill: #667eea; }
+        .dag-svg .node-group:hover .node-shape { filter: drop-shadow(0 4px 12px rgba(0,0,0,.18)); }
+        .dag-svg .node-shape { transition: filter .15s; }
+        .dag-svg .node-rect { rx: 12; ry: 12; transition: filter .15s; }
+        .dag-svg .node-selected .node-shape { stroke: #667eea; stroke-width: 2.5; filter: drop-shadow(0 0 8px rgba(102,126,234,.4)); }
+        .dag-svg .edge-path { fill: none; stroke: #c0c0d0; stroke-width: 1.8; marker-end: url(#arrowhead); transition: stroke .15s; }
+        .dag-svg .edge-path:hover { stroke: #667eea; stroke-width: 2.5; cursor: pointer; marker-end: url(#arrowhead-active); }
+        .dag-svg .port { cursor: crosshair; transition: all .15s; opacity: 0; }
+        .dag-svg .node-group:hover .port { opacity: 1; }
+        .dag-svg .port:hover { r: 7; fill: #667eea; stroke: #667eea; }
 
         /* 节点状态颜色 */
-        .node-running .node-rect { stroke: #e6a23c !important; stroke-width: 2.5; stroke-dasharray: 5 3; animation: dash 1s linear infinite; }
-        .node-done .node-rect { stroke: #67c23a !important; stroke-width: 2.5; }
-        .node-error .node-rect { stroke: #f56c6c !important; stroke-width: 2.5; }
+        .node-running .node-shape { stroke: #e6a23c !important; stroke-width: 2.5; stroke-dasharray: 5 3; animation: dash 1s linear infinite; }
+        .node-done .node-shape { stroke: #67c23a !important; stroke-width: 2.5; }
+        .node-error .node-shape { stroke: #f56c6c !important; stroke-width: 2.5; }
         @keyframes dash { to { stroke-dashoffset: -16; } }
 
         /* 右侧配置面板 */
-        .editor-panel { width: 340px; background: #fff; border-left: 1px solid #e8e8f0; display: flex; flex-direction: column; flex-shrink: 0; overflow-y: auto; }
+        .editor-panel { width: 340px; background: #fff; border-left: 1px solid #e8e8f0; display: flex; flex-direction: column; flex-shrink: 0; overflow-y: auto; box-shadow: -2px 0 12px rgba(0,0,0,.04); }
         .panel-header { padding: 16px; border-bottom: 1px solid #e8e8f0; display: flex; align-items: center; justify-content: space-between; }
         .panel-header h3 { font-size: 15px; font-weight: 600; margin: 0; }
         .panel-body { padding: 16px; flex: 1; overflow-y: auto; }
@@ -222,6 +225,7 @@
                     <div style="font-size:12px;font-weight:600;color:#999;margin-bottom:8px;">拖拽添加节点</div>
                     <div v-for="nt in nodeTypes" :key="nt.type" class="palette-item"
                          draggable="true"
+                         :style="'--palette-color:' + paletteColor(nt.type)"
                          @dragstart="onDragStart($event, nt.type)">
                         <span class="p-icon">{{ nt.icon }}</span>
                         <div>
@@ -266,21 +270,53 @@
                 <svg class="dag-svg" ref="svgRef"
                      :viewBox="svgViewBox">
                     <defs>
-                        <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
-                            <polygon points="0 0, 10 3.5, 0 7" fill="#c0c0c0" />
+                        <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                            <polygon points="0 0, 8 3, 0 6" fill="#c0c0d0" />
                         </marker>
-                        <marker id="arrowhead-active" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
-                            <polygon points="0 0, 10 3.5, 0 7" fill="#667eea" />
+                        <marker id="arrowhead-active" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                            <polygon points="0 0, 8 3, 0 6" fill="#667eea" />
                         </marker>
+                        <!-- 节点渐变色 -->
+                        <linearGradient id="grad-start" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#52c41a" /><stop offset="100%" stop-color="#389e0d" />
+                        </linearGradient>
+                        <linearGradient id="grad-end" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#8c8c8c" /><stop offset="100%" stop-color="#595959" />
+                        </linearGradient>
+                        <linearGradient id="grad-llm" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#7c8cf5" /><stop offset="100%" stop-color="#5b6de8" />
+                        </linearGradient>
+                        <linearGradient id="grad-tool" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#faad14" /><stop offset="100%" stop-color="#d48806" />
+                        </linearGradient>
+                        <linearGradient id="grad-agent" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#9254de" /><stop offset="100%" stop-color="#722ed1" />
+                        </linearGradient>
+                        <linearGradient id="grad-template" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#40a9ff" /><stop offset="100%" stop-color="#1890ff" />
+                        </linearGradient>
+                        <linearGradient id="grad-http" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#ff7875" /><stop offset="100%" stop-color="#f5222d" />
+                        </linearGradient>
+                        <linearGradient id="grad-condition" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#ffc53d" /><stop offset="100%" stop-color="#faad14" />
+                        </linearGradient>
+                        <linearGradient id="grad-parallel" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#36cfc9" /><stop offset="100%" stop-color="#13c2c2" />
+                        </linearGradient>
                     </defs>
 
                     <!-- 网格背景 -->
                     <defs>
-                        <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
-                            <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e8e8f0" stroke-width="0.5"/>
+                        <pattern id="grid-small" width="20" height="20" patternUnits="userSpaceOnUse">
+                            <circle cx="10" cy="10" r="0.8" fill="#d0d0e0" />
+                        </pattern>
+                        <pattern id="grid-large" width="100" height="100" patternUnits="userSpaceOnUse">
+                            <rect width="100" height="100" fill="url(#grid-small)" />
+                            <path d="M 100 0 L 0 0 0 100" fill="none" stroke="#e0e0f0" stroke-width="0.5" />
                         </pattern>
                     </defs>
-                    <rect width="5000" height="5000" x="-2500" y="-2500" fill="url(#grid)" />
+                    <rect width="5000" height="5000" x="-2500" y="-2500" fill="url(#grid-large)" />
 
                     <!-- 连线 -->
                     <g v-for="edge in editorEdges" :key="edge.id">
@@ -290,10 +326,16 @@
                               :style="selectedEdgeId === edge.id ? 'stroke:#667eea;stroke-width:2.5;marker-end:url(#arrowhead-active)' : ''"
                               @click.stop="selectEdge(edge.id)" />
                         <!-- 边标签（条件分支名称） -->
-                        <text v-if="edge.label" :x="getEdgeMidpoint(edge).x" :y="getEdgeMidpoint(edge).y - 6"
-                              text-anchor="middle" font-size="10" fill="#e6a23c" font-weight="500">
-                            {{ edge.label }}
-                        </text>
+                        <g v-if="edge.label">
+                            <rect :x="getEdgeMidpoint(edge).x - edge.label.length * 5 - 6"
+                                  :y="getEdgeMidpoint(edge).y - 16"
+                                  :width="edge.label.length * 10 + 12" height="18"
+                                  rx="9" ry="9" fill="#fff" stroke="#e6a23c" stroke-width="1" opacity="0.95" />
+                            <text :x="getEdgeMidpoint(edge).x" :y="getEdgeMidpoint(edge).y - 4"
+                                  text-anchor="middle" font-size="10" fill="#d48806" font-weight="600">
+                                {{ edge.label }}
+                            </text>
+                        </g>
                     </g>
 
                     <!-- 正在拖拽的连线 -->
@@ -306,36 +348,73 @@
                        :transform="'translate(' + node.position.x + ',' + node.position.y + ')'"
                        @mousedown.stop="onNodeMouseDown($event, node)"
                        @click.stop="selectNode(node.id)">
-                        <rect class="node-rect" x="0" y="0" :width="nodeWidth(node)" :height="nodeHeight(node)"
-                              :fill="nodeColor(node.type)" stroke="#e0e0e0" stroke-width="1" />
-                        <text :x="nodeWidth(node)/2" y="24" text-anchor="middle" font-size="16" fill="#fff">{{ nodeIcon(node.type) }}</text>
-                        <text :x="nodeWidth(node)/2" y="44" text-anchor="middle" font-size="11" fill="#fff" font-weight="500">{{ node.name || nodeLabel(node.type) }}</text>
 
-                        <!-- 条件节点：显示分支标签 -->
+                        <!-- 开始/结束节点：胶囊形 -->
+                        <template v-if="node.type === 'start' || node.type === 'end'">
+                            <rect class="node-shape" x="0" y="0" :width="nodeWidth(node)" :height="nodeHeight(node)"
+                                  :rx="nodeHeight(node)/2" :ry="nodeHeight(node)/2"
+                                  :fill="nodeColor(node.type)" stroke="#e0e0e0" stroke-width="1" />
+                        </template>
+
+                        <!-- 条件节点：菱形 -->
+                        <template v-else-if="node.type === 'condition'">
+                            <polygon class="node-shape"
+                                     :points="diamondPoints(node)"
+                                     :fill="nodeColor(node.type)" stroke="#e0e0e0" stroke-width="1" />
+                        </template>
+
+                        <!-- 并行汇聚节点：六边形 -->
+                        <template v-else-if="node.type === 'parallel'">
+                            <polygon class="node-shape"
+                                     :points="hexagonPoints(node)"
+                                     :fill="nodeColor(node.type)" stroke="#e0e0e0" stroke-width="1" />
+                        </template>
+
+                        <!-- 普通节点：圆角矩形 -->
+                        <template v-else>
+                            <rect class="node-shape node-rect" x="0" y="0" :width="nodeWidth(node)" :height="nodeHeight(node)"
+                                  :fill="nodeColor(node.type)" stroke="#e0e0e0" stroke-width="1" />
+                        </template>
+
+                        <!-- 图标和名称 -->
+                        <text :x="nodeWidth(node)/2" :y="nodeHeight(node)/2 - 6" text-anchor="middle" font-size="18" fill="#fff">{{ nodeIcon(node.type) }}</text>
+                        <text :x="nodeWidth(node)/2" :y="nodeHeight(node)/2 + 12" text-anchor="middle" font-size="11" fill="#fff" font-weight="500">{{ node.name || nodeLabel(node.type) }}</text>
+
+                        <!-- 条件节点：分支标签（显示在右侧端口旁） -->
                         <template v-if="node.type === 'condition' && node.config && node.config.conditions">
                             <text v-for="(cond, ci) in node.config.conditions" :key="'label_' + ci"
-                                  :x="nodeWidth(node) - 8" :y="conditionPortY(ci, node) + 4"
-                                  text-anchor="end" font-size="9" fill="rgba(255,255,255,0.8)">
+                                  :x="nodeWidth(node) + 14" :y="conditionPortY(ci, node) + 4"
+                                  text-anchor="start" font-size="9" fill="#e6a23c" font-weight="500">
                                 {{ cond.label || (cond.is_default ? '默认' : ('分支' + (ci+1))) }}
                             </text>
                         </template>
 
                         <!-- 输入端口（左侧） -->
                         <circle v-if="node.type !== 'start'" class="port port-in"
-                                cx="0" :cy="nodeHeight(node) / 2" r="5" fill="#fff" stroke="#999" stroke-width="1.5"
+                                :cx="getPortPos(node, 'in').x" :cy="getPortPos(node, 'in').y" r="5" fill="#fff" stroke="#b0b0b0" stroke-width="1.5"
+                                @mouseup.stop="onPortMouseUp(node.id, 'in')" />
+
+                        <!-- 输入端口（顶部，额外） -->
+                        <circle v-if="node.type !== 'start' && node.type !== 'condition'" class="port port-in"
+                                :cx="nodeWidth(node)/2" cy="0" r="5" fill="#fff" stroke="#b0b0b0" stroke-width="1.5"
                                 @mouseup.stop="onPortMouseUp(node.id, 'in')" />
 
                         <!-- 普通输出端口（右侧，非条件节点） -->
                         <circle v-if="node.type !== 'end' && node.type !== 'condition'" class="port port-out"
-                                :cx="nodeWidth(node)" :cy="nodeHeight(node) / 2" r="5" fill="#fff" stroke="#999" stroke-width="1.5"
+                                :cx="getPortPos(node, 'out').x" :cy="getPortPos(node, 'out').y" r="5" fill="#fff" stroke="#b0b0b0" stroke-width="1.5"
                                 @mousedown.stop="onPortMouseDown($event, node.id, 'out')" />
 
-                        <!-- 条件节点：多个输出端口（每个分支一个） -->
+                        <!-- 底部输出端口（额外） -->
+                        <circle v-if="node.type !== 'end' && node.type !== 'condition'" class="port port-out"
+                                :cx="nodeWidth(node)/2" :cy="nodeHeight(node)" r="5" fill="#fff" stroke="#b0b0b0" stroke-width="1.5"
+                                @mousedown.stop="onPortMouseDown($event, node.id, 'out')" />
+
+                        <!-- 条件节点：多个输出端口（每个分支一个，右侧） -->
                         <template v-if="node.type === 'condition' && node.config && node.config.conditions">
                             <circle v-for="(cond, ci) in node.config.conditions" :key="'port_' + ci"
                                     class="port port-out"
                                     :cx="nodeWidth(node)" :cy="conditionPortY(ci, node)" r="5"
-                                    :fill="cond.is_default ? '#ffd666' : '#fff'" stroke="#999" stroke-width="1.5"
+                                    :fill="cond.is_default ? '#ffd666' : '#fff'" stroke="#b0b0b0" stroke-width="1.5"
                                     @mousedown.stop="onPortMouseDown($event, node.id, 'out', cond.id)" />
                         </template>
                     </g>
@@ -843,18 +922,26 @@ createApp({
 
         const nodeIcon = (type) => ({ start: '▶', end: '⏹', llm: '🤖', tool: '🔧', agent: '🤝', template: '📝', http: '🌐', condition: '🔀', parallel: '⚡' }[type] || '❓');
         const nodeLabel = (type) => ({ start: '开始', end: '结束', llm: 'LLM 对话', tool: '工具调用', agent: '子 Agent', template: '模板转换', http: 'HTTP 请求', condition: '条件分支', parallel: '并行汇聚' }[type] || type);
-        const nodeColor = (type) => ({ start: '#67c23a', end: '#909399', llm: '#667eea', tool: '#e6a23c', agent: '#7c5cfc', template: '#409eff', http: '#f56c6c', condition: '#e6a23c', parallel: '#19be6b' }[type] || '#999');
+        const paletteColor = (type) => ({ llm: '#667eea', tool: '#faad14', agent: '#722ed1', template: '#1890ff', http: '#f5222d', condition: '#faad14', parallel: '#13c2c2' }[type] || '#667eea');
+        const nodeColor = (type) => ({
+            start: 'url(#grad-start)', end: 'url(#grad-end)',
+            llm: 'url(#grad-llm)', tool: 'url(#grad-tool)', agent: 'url(#grad-agent)',
+            template: 'url(#grad-template)', http: 'url(#grad-http)',
+            condition: 'url(#grad-condition)', parallel: 'url(#grad-parallel)'
+        }[type] || '#999');
         const nodeWidth = (node) => {
             const name = node.name || nodeLabel(node.type);
-            return Math.max(120, name.length * 12 + 40);
+            if (node.type === 'condition') return Math.max(140, name.length * 12 + 60);
+            return Math.max(130, name.length * 12 + 44);
         };
 
         // 节点高度：条件节点根据分支数量动态计算
         const nodeHeight = (node) => {
             if (node.type === 'condition' && node.config && node.config.conditions && node.config.conditions.length > 0) {
-                return Math.max(60, 20 + node.config.conditions.length * 22 + 10);
+                return Math.max(70, 24 + node.config.conditions.length * 22 + 14);
             }
-            return 60;
+            if (node.type === 'start' || node.type === 'end') return 48;
+            return 64;
         };
 
         // 条件节点第 i 个分支的输出端口 Y 坐标
@@ -863,6 +950,35 @@ createApp({
             const count = (node.config && node.config.conditions) ? node.config.conditions.length : 1;
             const startY = (h - (count - 1) * 22) / 2;
             return startY + index * 22;
+        };
+
+        // 菱形节点的顶点坐标（条件分支）
+        const diamondPoints = (node) => {
+            const w = nodeWidth(node), h = nodeHeight(node);
+            return `${w/2},0 ${w},${h/2} ${w/2},${h} 0,${h/2}`;
+        };
+
+        // 六边形节点的顶点坐标（并行汇聚）
+        const hexagonPoints = (node) => {
+            const w = nodeWidth(node), h = nodeHeight(node);
+            const inset = h * 0.3;
+            return `${inset},0 ${w - inset},0 ${w},${h/2} ${w - inset},${h} ${inset},${h} 0,${h/2}`;
+        };
+
+        // 获取端口位置（支持不同形状节点）
+        const getPortPos = (node, dir) => {
+            const w = nodeWidth(node), h = nodeHeight(node);
+            if (dir === 'in') {
+                // 输入端口在左侧
+                if (node.type === 'condition') return { x: 0, y: h / 2 }; // 菱形左顶点
+                if (node.type === 'parallel') return { x: 0, y: h / 2 }; // 六边形左顶点
+                return { x: 0, y: h / 2 };
+            } else {
+                // 输出端口在右侧
+                if (node.type === 'condition') return { x: w, y: h / 2 }; // 菱形右顶点
+                if (node.type === 'parallel') return { x: w, y: h / 2 }; // 六边形右顶点
+                return { x: w, y: h / 2 };
+            }
         };
 
         // 选中的节点
@@ -1142,44 +1258,112 @@ createApp({
             edgeFromHandle = null;
         };
 
-        // 正在拖拽的连线路径
+        // 正在拖拽的连线路径（智能方向）
         const draggingEdgePath = computed(() => {
             if (!draggingEdge.value || !edgeFrom.value) return '';
             const fromNode = editorNodes.value.find(n => n.id === edgeFrom.value);
             if (!fromNode) return '';
-            const sx = fromNode.position.x + nodeWidth(fromNode);
-            // 如果是条件节点的某个分支端口，使用对应的 Y 坐标
-            let sy;
+            const fw = nodeWidth(fromNode), fh = nodeHeight(fromNode);
+
+            // 条件节点的分支端口
             if (edgeFromHandle && fromNode.type === 'condition' && fromNode.config && fromNode.config.conditions) {
                 const ci = fromNode.config.conditions.findIndex(c => c.id === edgeFromHandle);
-                sy = fromNode.position.y + (ci >= 0 ? conditionPortY(ci, fromNode) : nodeHeight(fromNode) / 2);
-            } else {
-                sy = fromNode.position.y + nodeHeight(fromNode) / 2;
+                const sx = fromNode.position.x + fw;
+                const sy = fromNode.position.y + (ci >= 0 ? conditionPortY(ci, fromNode) : fh / 2);
+                const ex = edgeMouse.x, ey = edgeMouse.y;
+                const cx = (sx + ex) / 2;
+                return `M ${sx} ${sy} C ${cx} ${sy}, ${cx} ${ey}, ${ex} ${ey}`;
             }
-            const ex = edgeMouse.x;
-            const ey = edgeMouse.y;
-            const cx = (sx + ex) / 2;
-            return `M ${sx} ${sy} C ${cx} ${sy}, ${cx} ${ey}, ${ex} ${ey}`;
+
+            // 智能方向：根据鼠标位置选择最佳出发端口
+            const fromCx = fromNode.position.x + fw / 2;
+            const fromCy = fromNode.position.y + fh / 2;
+            const dx = edgeMouse.x - fromCx;
+            const dy = edgeMouse.y - fromCy;
+
+            let sx, sy;
+            if (Math.abs(dx) >= Math.abs(dy)) {
+                sx = dx >= 0 ? fromNode.position.x + fw : fromNode.position.x;
+                sy = fromNode.position.y + fh / 2;
+                const ex = edgeMouse.x, ey = edgeMouse.y;
+                const cx = (sx + ex) / 2;
+                return `M ${sx} ${sy} C ${cx} ${sy}, ${cx} ${ey}, ${ex} ${ey}`;
+            } else {
+                sx = fromNode.position.x + fw / 2;
+                sy = dy >= 0 ? fromNode.position.y + fh : fromNode.position.y;
+                const ex = edgeMouse.x, ey = edgeMouse.y;
+                const cy = (sy + ey) / 2;
+                return `M ${sx} ${sy} C ${sx} ${cy}, ${ex} ${cy}, ${ex} ${ey}`;
+            }
         });
 
-        // 计算连线路径（贝塞尔曲线）
+        // 计算连线路径（智能贝塞尔曲线，自动选择最佳连接方向）
         const getEdgePath = (edge) => {
             const fromNode = editorNodes.value.find(n => n.id === edge.source);
             const toNode = editorNodes.value.find(n => n.id === edge.target);
             if (!fromNode || !toNode) return '';
-            const sx = fromNode.position.x + nodeWidth(fromNode);
+
+            const fw = nodeWidth(fromNode), fh = nodeHeight(fromNode);
+            const tw = nodeWidth(toNode), th = nodeHeight(toNode);
+
             // 条件节点的连线从对应分支端口出发
-            let sy;
             if (edge.source_handle && fromNode.type === 'condition' && fromNode.config && fromNode.config.conditions) {
                 const ci = fromNode.config.conditions.findIndex(c => c.id === edge.source_handle);
-                sy = fromNode.position.y + (ci >= 0 ? conditionPortY(ci, fromNode) : nodeHeight(fromNode) / 2);
-            } else {
-                sy = fromNode.position.y + nodeHeight(fromNode) / 2;
+                const sx = fromNode.position.x + fw;
+                const sy = fromNode.position.y + (ci >= 0 ? conditionPortY(ci, fromNode) : fh / 2);
+                const ex = toNode.position.x;
+                const ey = toNode.position.y + th / 2;
+                const cx = (sx + ex) / 2;
+                return `M ${sx} ${sy} C ${cx} ${sy}, ${cx} ${ey}, ${ex} ${ey}`;
             }
-            const ex = toNode.position.x;
-            const ey = toNode.position.y + nodeHeight(toNode) / 2;
-            const cx = (sx + ex) / 2;
-            return `M ${sx} ${sy} C ${cx} ${sy}, ${cx} ${ey}, ${ex} ${ey}`;
+
+            // 计算源节点和目标节点的中心点
+            const fromCx = fromNode.position.x + fw / 2;
+            const fromCy = fromNode.position.y + fh / 2;
+            const toCx = toNode.position.x + tw / 2;
+            const toCy = toNode.position.y + th / 2;
+
+            // 判断最佳连接方向
+            const dx = toCx - fromCx;
+            const dy = toCy - fromCy;
+
+            let sx, sy, ex, ey;
+
+            if (Math.abs(dx) >= Math.abs(dy)) {
+                // 水平方向为主：左右连接
+                if (dx >= 0) {
+                    // 目标在右边：从右端口到左端口
+                    sx = fromNode.position.x + fw;
+                    sy = fromNode.position.y + fh / 2;
+                    ex = toNode.position.x;
+                    ey = toNode.position.y + th / 2;
+                } else {
+                    // 目标在左边：从左端口到右端口
+                    sx = fromNode.position.x;
+                    sy = fromNode.position.y + fh / 2;
+                    ex = toNode.position.x + tw;
+                    ey = toNode.position.y + th / 2;
+                }
+                const cx = (sx + ex) / 2;
+                return `M ${sx} ${sy} C ${cx} ${sy}, ${cx} ${ey}, ${ex} ${ey}`;
+            } else {
+                // 垂直方向为主：上下连接
+                if (dy >= 0) {
+                    // 目标在下方：从底部端口到顶部端口
+                    sx = fromNode.position.x + fw / 2;
+                    sy = fromNode.position.y + fh;
+                    ex = toNode.position.x + tw / 2;
+                    ey = toNode.position.y;
+                } else {
+                    // 目标在上方：从顶部端口到底部端口
+                    sx = fromNode.position.x + fw / 2;
+                    sy = fromNode.position.y;
+                    ex = toNode.position.x + tw / 2;
+                    ey = toNode.position.y + th;
+                }
+                const cy = (sy + ey) / 2;
+                return `M ${sx} ${sy} C ${sx} ${cy}, ${ex} ${cy}, ${ex} ${ey}`;
+            }
         };
 
         // 计算边的中点坐标（用于显示标签）
@@ -1187,17 +1371,25 @@ createApp({
             const fromNode = editorNodes.value.find(n => n.id === edge.source);
             const toNode = editorNodes.value.find(n => n.id === edge.target);
             if (!fromNode || !toNode) return { x: 0, y: 0 };
-            const sx = fromNode.position.x + nodeWidth(fromNode);
-            let sy;
+
+            const fw = nodeWidth(fromNode), fh = nodeHeight(fromNode);
+            const tw = nodeWidth(toNode), th = nodeHeight(toNode);
+
+            // 条件节点的连线
             if (edge.source_handle && fromNode.type === 'condition' && fromNode.config && fromNode.config.conditions) {
                 const ci = fromNode.config.conditions.findIndex(c => c.id === edge.source_handle);
-                sy = fromNode.position.y + (ci >= 0 ? conditionPortY(ci, fromNode) : nodeHeight(fromNode) / 2);
-            } else {
-                sy = fromNode.position.y + nodeHeight(fromNode) / 2;
+                const sx = fromNode.position.x + fw;
+                const sy = fromNode.position.y + (ci >= 0 ? conditionPortY(ci, fromNode) : fh / 2);
+                const ex = toNode.position.x;
+                const ey = toNode.position.y + th / 2;
+                return { x: (sx + ex) / 2, y: (sy + ey) / 2 };
             }
-            const ex = toNode.position.x;
-            const ey = toNode.position.y + nodeHeight(toNode) / 2;
-            return { x: (sx + ex) / 2, y: (sy + ey) / 2 };
+
+            const fromCx = fromNode.position.x + fw / 2;
+            const fromCy = fromNode.position.y + fh / 2;
+            const toCx = toNode.position.x + tw / 2;
+            const toCy = toNode.position.y + th / 2;
+            return { x: (fromCx + toCx) / 2, y: (fromCy + toCy) / 2 };
         };
 
         // 删除选中
@@ -1390,7 +1582,8 @@ createApp({
             currentWorkflow, editorNodes, editorEdges, editorVariables,
             selectedNodeId, selectedEdgeId, selectedNode, saving,
             canvasRef, svgRef, zoom, svgViewBox,
-            nodeTypes, nodeIcon, nodeLabel, nodeColor, nodeWidth, nodeHeight, conditionPortY,
+            nodeTypes, nodeIcon, nodeLabel, paletteColor, nodeColor, nodeWidth, nodeHeight, conditionPortY,
+            diamondPoints, hexagonPoints, getPortPos,
             toolArgsJson, updateToolArgs,
             openEditor, backToList, saveWorkflow,
             // 画布交互
