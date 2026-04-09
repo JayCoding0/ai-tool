@@ -13,13 +13,15 @@ import (
 type NodeType string
 
 const (
-	NodeTypeStart    NodeType = "start"    // 开始节点（入口）
-	NodeTypeEnd      NodeType = "end"      // 结束节点（出口）
-	NodeTypeLLM      NodeType = "llm"      // LLM 对话节点
-	NodeTypeTool     NodeType = "tool"     // 工具调用节点
-	NodeTypeAgent    NodeType = "agent"    // 子 Agent 节点（复用现有 AgentRegistry）
-	NodeTypeTemplate NodeType = "template" // 模板转换节点（文本拼接/格式化）
-	NodeTypeHTTP     NodeType = "http"     // HTTP 请求节点
+	NodeTypeStart     NodeType = "start"     // 开始节点（入口）
+	NodeTypeEnd       NodeType = "end"       // 结束节点（出口）
+	NodeTypeLLM       NodeType = "llm"       // LLM 对话节点
+	NodeTypeTool      NodeType = "tool"      // 工具调用节点
+	NodeTypeAgent     NodeType = "agent"     // 子 Agent 节点（复用现有 AgentRegistry）
+	NodeTypeTemplate  NodeType = "template"  // 模板转换节点（文本拼接/格式化）
+	NodeTypeHTTP      NodeType = "http"      // HTTP 请求节点
+	NodeTypeCondition NodeType = "condition" // 条件分支节点（Phase 2）
+	NodeTypeParallel  NodeType = "parallel"  // 并行分叉网关节点（Phase 2）
 )
 
 // ─── 节点定义 ──────────────────────────────────────────────────────────────────
@@ -65,6 +67,12 @@ type NodeConfig struct {
 	// Template 节点配置
 	Template string `json:"template,omitempty"` // 模板字符串，支持 ${node_id.output}
 
+	// Condition 条件分支节点配置（Phase 2）
+	Conditions []ConditionBranch `json:"conditions,omitempty"` // 条件分支列表，按顺序评估，第一个匹配的分支生效
+
+	// Parallel 并行网关节点配置（Phase 2）
+	WaitAll bool `json:"wait_all,omitempty"` // true=等待所有上游分支完成（默认），false=任一完成即继续
+
 	// 通用配置
 	InputMapping map[string]string `json:"input_mapping,omitempty"` // 输入映射：本节点变量名 → 上游节点输出引用
 	OutputKey    string            `json:"output_key,omitempty"`    // 输出变量名（供下游引用）
@@ -74,12 +82,22 @@ type NodeConfig struct {
 
 // ─── 边定义 ──────────────────────────────────────────────────────────────────
 
+// ConditionBranch 条件分支定义
+type ConditionBranch struct {
+	ID       string `json:"id"`                 // 分支 ID（对应 Edge 的 SourceHandle）
+	Operator string `json:"operator"`           // 操作符："==", "!=", ">", "<", ">=", "<=", "contains", "not_contains", "is_empty", "is_not_empty"
+	Field    string `json:"field"`              // 要评估的字段（支持 ${node_id.output} 模板变量）
+	Value    string `json:"value,omitempty"`    // 比较值（支持模板变量）
+	Label    string `json:"label,omitempty"`    // 分支显示标签（如 "是"、"否"）
+	IsDefault bool  `json:"is_default,omitempty"` // 是否为默认分支（所有条件不满足时走此分支）
+}
+
 // Edge DAG 中的一条有向边
 type Edge struct {
 	ID           string `json:"id"`                      // 边唯一 ID
 	Source       string `json:"source"`                  // 源节点 ID
 	Target       string `json:"target"`                  // 目标节点 ID
-	SourceHandle string `json:"source_handle,omitempty"` // 源节点输出端口（条件分支用）
+	SourceHandle string `json:"source_handle,omitempty"` // 源节点输出端口（条件分支用，对应 ConditionBranch.ID）
 	Label        string `json:"label,omitempty"`         // 边标签
 }
 
@@ -179,6 +197,28 @@ func (w *Workflow) GetDownstreamNodes(nodeID string) []string {
 	var downstream []string
 	for _, edge := range w.Edges {
 		if edge.Source == nodeID {
+			downstream = append(downstream, edge.Target)
+		}
+	}
+	return downstream
+}
+
+// GetDownstreamEdges 获取指定节点的所有出边（Phase 2：条件分支需要按 SourceHandle 过滤）
+func (w *Workflow) GetDownstreamEdges(nodeID string) []Edge {
+	var edges []Edge
+	for _, edge := range w.Edges {
+		if edge.Source == nodeID {
+			edges = append(edges, edge)
+		}
+	}
+	return edges
+}
+
+// GetDownstreamNodesByHandle 获取指定节点指定输出端口的下游节点 ID（Phase 2：条件分支用）
+func (w *Workflow) GetDownstreamNodesByHandle(nodeID, handle string) []string {
+	var downstream []string
+	for _, edge := range w.Edges {
+		if edge.Source == nodeID && edge.SourceHandle == handle {
 			downstream = append(downstream, edge.Target)
 		}
 	}

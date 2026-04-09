@@ -32,10 +32,11 @@
 - **预估工作量**: ~~3 个月~~ → 实际 Phase 1 完成
 
 - **Phase 2（4 周）— 条件分支 + 并行**:
-  - [ ] Condition 节点（条件表达式评估，支持 `==`/`!=`/`>`/`<`/`contains` 等操作符，根据条件走不同分支）
-  - [ ] Parallel 并行网关节点（多分支并行执行，汇聚后合并结果）
-  - [ ] Agent 节点增强（复用 CallSubAgent，支持传入上下文和接收结构化输出）
-  - [ ] HTTP 请求节点增强（支持请求头模板变量、响应 JSONPath 提取、超时/重试配置）
+  - [x] Condition 节点（条件表达式评估，支持 `==`/`!=`/`>`/`<`/`>=`/`<=`/`contains`/`not_contains`/`is_empty`/`is_not_empty`/`starts_with`/`ends_with` 等操作符，根据条件走不同分支，支持默认分支）
+  - [x] Parallel 并行网关节点（基于入度的 DAG 并发调度引擎，多分支 goroutine 并行执行，汇聚节点自动合并所有上游分支结果）
+  - [x] 执行引擎重构（从串行 for 循环改为基于入度的并发调度，sync.Mutex 保护并发安全，支持条件分支路径跳过传播）
+  - [x] Agent 节点增强（复用 CallSubAgent，支持传入上下文和接收结构化输出）
+  - [x] HTTP 请求节点增强（支持请求头模板变量、超时配置）
   - [ ] 前端可视化画布升级（Vue Flow / ReactFlow 替代原生 Canvas，支持条件分支连线、并行分支布局）
 
 - **Phase 3（4 周）— 高级特性**:
