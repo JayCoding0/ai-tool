@@ -1,7 +1,7 @@
 # 📋 AI Agent 平台 - TODO List
 
 > 对标 Dify、Coze（扣子）、FastGPT、LangChain/LangGraph、AutoGen、CrewAI 等主流平台
-> 最后更新：2026-04-08
+> 最后更新：2026-04-09
 
 ---
 
@@ -28,7 +28,7 @@
   - 执行记录持久化（workflow_runs 表），支持历史回溯
   - 全局变量定义 + 自动检测节点配置中的变量引用
   - 工具/Agent 下拉选择（从后端加载已注册列表）
-- **相关文件**: `domain/workflow/workflow.go`, `application/workflow_engine.go`, `application/workflow_service.go`, `interfaces/http/workflow_handler.go`, `infrastructure/workflow/mysql/`, `frontend/workflow.html`
+- **相关文件**: `domain/workflow/workflow.go`, `application/workflow_engine.go`（核心定义）, `application/workflow_engine_dag.go`（DAG 调度器）, `application/workflow_engine_nodes.go`（节点执行器）, `application/workflow_service.go`, `interfaces/http/workflow_handler.go`, `infrastructure/workflow/mysql/`, `frontend/workflow.html`（HTML 模板）, `frontend/workflow-style.css`（样式）, `frontend/js/workflow.js`（JS 逻辑）
 - **预估工作量**: ~~3 个月~~ → 实际 Phase 1 完成
 
 - **Phase 2（4 周）— 条件分支 + 并行**:
@@ -37,7 +37,8 @@
   - [x] 执行引擎重构（从串行 for 循环改为基于入度的并发调度，sync.Mutex 保护并发安全，支持条件分支路径跳过传播）
   - [x] Agent 节点增强（复用 CallSubAgent，支持传入上下文和接收结构化输出）
   - [x] HTTP 请求节点增强（支持请求头模板变量、超时配置）
-  - [ ] 前端可视化画布升级（Vue Flow / ReactFlow 替代原生 Canvas，支持条件分支连线、并行分支布局）
+  - [x] 前端可视化画布升级（节点形状差异化、SVG 渐变色、四向连接端口、智能连线路径、点阵背景）
+  - [ ] 进一步升级（Vue Flow / ReactFlow 替代原生 Canvas，支持条件分支连线、并行分支布局）
 
 - **Phase 3（4 周）— 高级特性**:
   - [ ] Code 节点（嵌入式 JavaScript/Python 代码执行，沙箱隔离，支持读取上游节点输出）
@@ -231,14 +232,32 @@
   - [ ] 超长对话自动摘要压缩（LLM 生成摘要替代旧消息）
 
 ### 21. Agent 定义数据库化
-- **现状**: Agent 定义硬编码在 `bootstrap.go` 的 `registerAgents()` 中
+- **现状**: Agent 定义硬编码在 `bootstrap_agents.go` 的 `registerAgents()` 中
 - **改进方案**:
   - [ ] Agent 定义存入数据库（agent 表）
   - [ ] 提供 Agent CRUD API
   - [ ] 前端提供 Agent 配置界面（System Prompt 编辑器、工具选择、模型选择）
   - [ ] 支持 Agent 导入/导出（JSON 格式）
 
-### 22. 测试覆盖率提升
+### 22. ~~大文件 / 大方法拆分~~ ✅ 已完成
+- **现状**: ~~多个文件超过 500 行，职责混杂，不利于维护~~
+- **已完成**:
+  - `workflow_engine.go`（31KB/1023行 → 8KB）拆分为 3 个文件：
+    - `workflow_engine.go` — 引擎核心定义（WorkflowEvent / ExecutionContext / WorkflowEngine 结构体 + Execute 入口）
+    - `workflow_engine_dag.go` — DAG 并发调度器（runDAG / activateDownstream / propagateSkip 等）
+    - `workflow_engine_nodes.go` — 节点执行器（executeLLMNode / executeToolNode 等）+ 条件评估 + 模板解析
+  - `bootstrap.go`（17KB → 12KB）拆分为 2 个文件：
+    - `bootstrap.go` — 组件初始化核心（模型工厂 / AgentCard / InitComponents / A2A / MCP）
+    - `bootstrap_agents.go` — 多 Agent 注册中心（InitAgentRegistry / registerAgents / restoreAgentToolsFromDB）
+  - `builtin_tools.go`（16KB → 5KB）拆分为 2 个文件：
+    - `builtin_tools.go` — 工具加载器核心（LoadToolsFromSkillsDir / registerScriptTool）
+    - `builtin_tools_executors.go` — 工具执行器实现（天气 / IP / 目录 / 脚本执行器）
+  - `workflow.html`（86KB/1614行 → 28KB/566行）拆分为 3 个文件：
+    - `workflow.html` — 仅 HTML 模板结构
+    - `workflow-style.css` — 工作流专用 CSS 样式
+    - `js/workflow.js` — 所有 Vue.js 逻辑
+
+### 23. 测试覆盖率提升
 - **现状**: 缺少单元测试和集成测试
 - **改进方案**:
   - [ ] 核心服务层单元测试（chat_service, agent_runner, knowledge_service）
@@ -254,7 +273,7 @@
 2026 Q2 (4-6月)
 ├── ✅ Prompt 模板变量系统（已完成）
 ├── ✅ 可视化 Workflow / DAG 编排（Phase 1 已完成）
-├── 🔴 Workflow Phase 2：条件分支 + 并行（P0 #2）
+├── ✅ Workflow Phase 2：条件分支 + 并行（P0 #2，已完成）
 ├── 🔴 Workflow Phase 3：高级特性（P0 #2）
 ├── 🔴 向量数据库集成（P1 #5）
 ├── 🔴 RAG 性能优化（P4 #19）
@@ -287,6 +306,6 @@
 
 - ✅ **协议支持**: A2A + MCP 双协议，领先大部分开源平台
 - ✅ **工具系统**: ReAct 循环 + 脚本驱动工具，灵活度高
-- ✅ **架构设计**: DDD 分层架构，代码组织清晰
+- ✅ **架构设计**: DDD 分层架构，代码组织清晰，大文件已按职责拆分
 - ✅ **Prompt 模板变量**: 三级变量优先级 + 数据库持久化（已实现）
-- ✅ **Workflow 编排**: DAG 可视化工作流引擎 + 7 种节点类型 + SSE 流式执行（已实现）
+- ✅ **Workflow 编排**: DAG 可视化工作流引擎 + 9 种节点类型（含 Condition / Parallel）+ SSE 流式执行 + 并发调度（已实现）
