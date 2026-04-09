@@ -824,14 +824,17 @@ func (e *WorkflowEngine) executeAgentNode(ctx context.Context, node workflow.Nod
 		}
 	}
 
+	// 为每个 Agent 节点生成独立的 sessionID（runID + nodeID），避免多个 Agent 节点共用同一 sessionID 导致主键冲突
+	agentSessionID := uuid.NewSHA1(uuid.MustParse(execCtx.RunID), []byte(node.ID)).String()
+
 	logger.Info("[Workflow] Agent 节点调用",
 		zap.String("node_id", node.ID),
 		zap.String("agent_name", agentName),
+		zap.String("session_id", agentSessionID),
 		zap.String("message_preview", msgPreview(message, 80)),
 	)
 
-	// 使用工作流的 runID 作为 sessionID，保持上下文
-	result, err := e.registry.CallSubAgent(agentName, message, execCtx.RunID, nil)
+	result, err := e.registry.CallSubAgent(agentName, message, agentSessionID, nil)
 	if err != nil {
 		return nil, fmt.Errorf("子 Agent %q 调用失败: %w", agentName, err)
 	}
