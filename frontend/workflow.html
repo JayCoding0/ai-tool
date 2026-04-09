@@ -289,6 +289,11 @@
                               :class="{'edge-selected': selectedEdgeId === edge.id}"
                               :style="selectedEdgeId === edge.id ? 'stroke:#667eea;stroke-width:2.5;marker-end:url(#arrowhead-active)' : ''"
                               @click.stop="selectEdge(edge.id)" />
+                        <!-- 边标签（条件分支名称） -->
+                        <text v-if="edge.label" :x="getEdgeMidpoint(edge).x" :y="getEdgeMidpoint(edge).y - 6"
+                              text-anchor="middle" font-size="10" fill="#e6a23c" font-weight="500">
+                            {{ edge.label }}
+                        </text>
                     </g>
 
                     <!-- 正在拖拽的连线 -->
@@ -301,19 +306,38 @@
                        :transform="'translate(' + node.position.x + ',' + node.position.y + ')'"
                        @mousedown.stop="onNodeMouseDown($event, node)"
                        @click.stop="selectNode(node.id)">
-                        <rect class="node-rect" x="0" y="0" :width="nodeWidth(node)" height="60"
+                        <rect class="node-rect" x="0" y="0" :width="nodeWidth(node)" :height="nodeHeight(node)"
                               :fill="nodeColor(node.type)" stroke="#e0e0e0" stroke-width="1" />
                         <text :x="nodeWidth(node)/2" y="24" text-anchor="middle" font-size="16" fill="#fff">{{ nodeIcon(node.type) }}</text>
                         <text :x="nodeWidth(node)/2" y="44" text-anchor="middle" font-size="11" fill="#fff" font-weight="500">{{ node.name || nodeLabel(node.type) }}</text>
 
+                        <!-- 条件节点：显示分支标签 -->
+                        <template v-if="node.type === 'condition' && node.config && node.config.conditions">
+                            <text v-for="(cond, ci) in node.config.conditions" :key="'label_' + ci"
+                                  :x="nodeWidth(node) - 8" :y="conditionPortY(ci, node) + 4"
+                                  text-anchor="end" font-size="9" fill="rgba(255,255,255,0.8)">
+                                {{ cond.label || (cond.is_default ? '默认' : ('分支' + (ci+1))) }}
+                            </text>
+                        </template>
+
                         <!-- 输入端口（左侧） -->
                         <circle v-if="node.type !== 'start'" class="port port-in"
-                                cx="0" cy="30" r="5" fill="#fff" stroke="#999" stroke-width="1.5"
+                                cx="0" :cy="nodeHeight(node) / 2" r="5" fill="#fff" stroke="#999" stroke-width="1.5"
                                 @mouseup.stop="onPortMouseUp(node.id, 'in')" />
-                        <!-- 输出端口（右侧） -->
-                        <circle v-if="node.type !== 'end'" class="port port-out"
-                                :cx="nodeWidth(node)" cy="30" r="5" fill="#fff" stroke="#999" stroke-width="1.5"
+
+                        <!-- 普通输出端口（右侧，非条件节点） -->
+                        <circle v-if="node.type !== 'end' && node.type !== 'condition'" class="port port-out"
+                                :cx="nodeWidth(node)" :cy="nodeHeight(node) / 2" r="5" fill="#fff" stroke="#999" stroke-width="1.5"
                                 @mousedown.stop="onPortMouseDown($event, node.id, 'out')" />
+
+                        <!-- 条件节点：多个输出端口（每个分支一个） -->
+                        <template v-if="node.type === 'condition' && node.config && node.config.conditions">
+                            <circle v-for="(cond, ci) in node.config.conditions" :key="'port_' + ci"
+                                    class="port port-out"
+                                    :cx="nodeWidth(node)" :cy="conditionPortY(ci, node)" r="5"
+                                    :fill="cond.is_default ? '#ffd666' : '#fff'" stroke="#999" stroke-width="1.5"
+                                    @mousedown.stop="onPortMouseDown($event, node.id, 'out', cond.id)" />
+                        </template>
                     </g>
                 </svg>
             </div>
@@ -422,6 +446,87 @@
                             <div class="panel-field">
                                 <label>请求体 <span style="font-size:11px;color:#999;">（支持 ${} 引用）</span></label>
                                 <el-input v-model="selectedNode.config.body" type="textarea" :rows="3" size="small" placeholder='{"key": "value"}' />
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- Condition 条件分支节点配置 -->
+                    <template v-if="selectedNode.type === 'condition'">
+                        <div class="panel-section">
+                            <div class="panel-section-title">
+                                条件分支
+                                <el-button text size="small" type="primary" @click="addConditionBranch" style="float:right;">+ 添加分支</el-button>
+                            </div>
+                            <div v-if="!selectedNode.config.conditions || selectedNode.config.conditions.length === 0"
+                                 style="font-size:12px;color:#999;padding:8px 0;">
+                                暂无条件分支，请点击"+ 添加分支"
+                            </div>
+                            <div v-for="(cond, ci) in (selectedNode.config.conditions || [])" :key="cond.id"
+                                 style="border:1px solid #e8e8f0;border-radius:6px;padding:10px;margin-bottom:8px;background:#fafafa;">
+                                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+                                    <span style="font-size:12px;font-weight:600;color:#555;">
+                                        {{ cond.is_default ? '🔘 默认分支' : ('分支 ' + (ci + 1)) }}
+                                    </span>
+                                    <el-button text size="small" type="danger" @click="selectedNode.config.conditions.splice(ci, 1)">✕</el-button>
+                                </div>
+                                <div class="panel-field" v-if="!cond.is_default">
+                                    <label>分支标签</label>
+                                    <el-input v-model="cond.label" size="small" placeholder="如：是、否、大于100" />
+                                </div>
+                                <div class="panel-field" v-if="!cond.is_default">
+                                    <label>判断字段 <span style="font-size:11px;color:#999;">（支持 ${node_id.output}）</span></label>
+                                    <el-input v-model="cond.field" size="small" placeholder="${llm_1.output}" />
+                                </div>
+                                <div class="panel-field" v-if="!cond.is_default">
+                                    <label>操作符</label>
+                                    <el-select v-model="cond.operator" size="small" style="width:100%;">
+                                        <el-option label="等于 (==)" value="==" />
+                                        <el-option label="不等于 (!=)" value="!=" />
+                                        <el-option label="大于 (>)" value=">" />
+                                        <el-option label="小于 (<)" value="<" />
+                                        <el-option label="大于等于 (>=)" value=">=" />
+                                        <el-option label="小于等于 (<=)" value="<=" />
+                                        <el-option label="包含 (contains)" value="contains" />
+                                        <el-option label="不包含 (not_contains)" value="not_contains" />
+                                        <el-option label="为空 (is_empty)" value="is_empty" />
+                                        <el-option label="不为空 (is_not_empty)" value="is_not_empty" />
+                                        <el-option label="匹配正则 (matches)" value="matches" />
+                                        <el-option label="不匹配正则 (not_matches)" value="not_matches" />
+                                    </el-select>
+                                </div>
+                                <div class="panel-field" v-if="!cond.is_default && !['is_empty','is_not_empty'].includes(cond.operator)">
+                                    <label>比较值</label>
+                                    <el-input v-model="cond.value" size="small" placeholder="比较值（支持 ${} 引用）" />
+                                </div>
+                                <div class="panel-field">
+                                    <el-checkbox v-model="cond.is_default" size="small"
+                                                 @change="(val) => { if(val) { selectedNode.config.conditions.forEach((c,i) => { if(i !== ci) c.is_default = false; }); } }">
+                                        设为默认分支（兜底）
+                                    </el-checkbox>
+                                </div>
+                            </div>
+                            <div style="font-size:11px;color:#999;padding:4px 0;">
+                                💡 条件按顺序评估，第一个匹配的分支生效。建议设置一个默认分支作为兜底。<br>
+                                从条件节点的不同输出端口连线到不同的下游节点即可实现分支路由。
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- Parallel 并行汇聚节点配置 -->
+                    <template v-if="selectedNode.type === 'parallel'">
+                        <div class="panel-section">
+                            <div class="panel-section-title">并行汇聚配置</div>
+                            <div class="panel-field">
+                                <el-checkbox v-model="selectedNode.config.wait_all" size="small">
+                                    等待所有上游分支完成
+                                </el-checkbox>
+                                <div style="font-size:11px;color:#999;margin-top:4px;">
+                                    勾选后，所有上游并行分支执行完毕才继续；否则任一分支完成即继续。
+                                </div>
+                            </div>
+                            <div style="font-size:11px;color:#999;padding:8px 0;">
+                                💡 并行汇聚节点用于合并多个并行分支的输出。<br>
+                                将多个并行分支的输出连线到此节点，它会收集所有上游输出并合并后传递给下游。
                             </div>
                         </div>
                     </template>
@@ -732,14 +837,32 @@ createApp({
             { type: 'agent', icon: '🤝', label: '子 Agent', desc: '调用子 Agent' },
             { type: 'template', icon: '📝', label: '模板转换', desc: '文本拼接/格式化' },
             { type: 'http', icon: '🌐', label: 'HTTP 请求', desc: '发起 HTTP 请求' },
+            { type: 'condition', icon: '🔀', label: '条件分支', desc: '按条件走不同分支' },
+            { type: 'parallel', icon: '⚡', label: '并行汇聚', desc: '合并多个并行分支' },
         ];
 
-        const nodeIcon = (type) => ({ start: '▶', end: '⏹', llm: '🤖', tool: '🔧', agent: '🤝', template: '📝', http: '🌐' }[type] || '❓');
-        const nodeLabel = (type) => ({ start: '开始', end: '结束', llm: 'LLM 对话', tool: '工具调用', agent: '子 Agent', template: '模板转换', http: 'HTTP 请求' }[type] || type);
-        const nodeColor = (type) => ({ start: '#67c23a', end: '#909399', llm: '#667eea', tool: '#e6a23c', agent: '#7c5cfc', template: '#409eff', http: '#f56c6c' }[type] || '#999');
+        const nodeIcon = (type) => ({ start: '▶', end: '⏹', llm: '🤖', tool: '🔧', agent: '🤝', template: '📝', http: '🌐', condition: '🔀', parallel: '⚡' }[type] || '❓');
+        const nodeLabel = (type) => ({ start: '开始', end: '结束', llm: 'LLM 对话', tool: '工具调用', agent: '子 Agent', template: '模板转换', http: 'HTTP 请求', condition: '条件分支', parallel: '并行汇聚' }[type] || type);
+        const nodeColor = (type) => ({ start: '#67c23a', end: '#909399', llm: '#667eea', tool: '#e6a23c', agent: '#7c5cfc', template: '#409eff', http: '#f56c6c', condition: '#e6a23c', parallel: '#19be6b' }[type] || '#999');
         const nodeWidth = (node) => {
             const name = node.name || nodeLabel(node.type);
             return Math.max(120, name.length * 12 + 40);
+        };
+
+        // 节点高度：条件节点根据分支数量动态计算
+        const nodeHeight = (node) => {
+            if (node.type === 'condition' && node.config && node.config.conditions && node.config.conditions.length > 0) {
+                return Math.max(60, 20 + node.config.conditions.length * 22 + 10);
+            }
+            return 60;
+        };
+
+        // 条件节点第 i 个分支的输出端口 Y 坐标
+        const conditionPortY = (index, node) => {
+            const h = nodeHeight(node);
+            const count = (node.config && node.config.conditions) ? node.config.conditions.length : 1;
+            const startY = (h - (count - 1) * 22) / 2;
+            return startY + index * 22;
         };
 
         // 选中的节点
@@ -887,16 +1010,43 @@ createApp({
             const x = (e.clientX - rect.left) / zoom.value - panX.value / zoom.value;
             const y = (e.clientY - rect.top) / zoom.value - panY.value / zoom.value;
             const id = dragNodeType + '_' + Date.now().toString(36);
+            // 为不同节点类型初始化默认配置
+            let config = {};
+            if (dragNodeType === 'condition') {
+                config = {
+                    conditions: [
+                        { id: 'branch_1', operator: '==', field: '', value: '', label: '分支 1', is_default: false },
+                        { id: 'default', operator: '', field: '', value: '', label: '默认', is_default: true },
+                    ]
+                };
+            } else if (dragNodeType === 'parallel') {
+                config = { wait_all: true };
+            }
             editorNodes.value.push({
                 id,
                 type: dragNodeType,
                 name: nodeLabel(dragNodeType),
                 description: '',
-                config: {},
+                config,
                 position: { x: Math.round(x), y: Math.round(y) }
             });
             dragNodeType = null;
             selectedNodeId.value = id;
+        };
+
+        // 添加条件分支
+        const addConditionBranch = () => {
+            if (!selectedNode.value || selectedNode.value.type !== 'condition') return;
+            if (!selectedNode.value.config.conditions) selectedNode.value.config.conditions = [];
+            const idx = selectedNode.value.config.conditions.length + 1;
+            selectedNode.value.config.conditions.push({
+                id: 'branch_' + Date.now().toString(36),
+                operator: '==',
+                field: '',
+                value: '',
+                label: '分支 ' + idx,
+                is_default: false,
+            });
         };
 
         // 节点拖拽移动
@@ -953,11 +1103,13 @@ createApp({
         };
 
         // 连线端口交互
-        const onPortMouseDown = (e, nodeId, portType) => {
+        let edgeFromHandle = null; // 条件节点的 sourceHandle
+        const onPortMouseDown = (e, nodeId, portType, handle) => {
             e.preventDefault();
             e.stopPropagation();
             draggingEdge.value = true;
             edgeFrom.value = nodeId;
+            edgeFromHandle = handle || null;
             const rect = canvasRef.value.getBoundingClientRect();
             edgeMouse.x = (e.clientX - rect.left) / zoom.value - panX.value / zoom.value;
             edgeMouse.y = (e.clientY - rect.top) / zoom.value - panY.value / zoom.value;
@@ -965,18 +1117,29 @@ createApp({
 
         const onPortMouseUp = (nodeId, portType) => {
             if (draggingEdge.value && edgeFrom.value && edgeFrom.value !== nodeId) {
-                // 检查是否已存在相同连线
-                const exists = editorEdges.value.some(e => e.source === edgeFrom.value && e.target === nodeId);
+                // 检查是否已存在相同连线（同源+同目标+同 handle）
+                const exists = editorEdges.value.some(e => e.source === edgeFrom.value && e.target === nodeId && (e.source_handle || '') === (edgeFromHandle || ''));
                 if (!exists) {
-                    editorEdges.value.push({
+                    const newEdge = {
                         id: 'e_' + Date.now().toString(36),
                         source: edgeFrom.value,
                         target: nodeId
-                    });
+                    };
+                    if (edgeFromHandle) {
+                        newEdge.source_handle = edgeFromHandle;
+                        // 自动设置边标签为分支名称
+                        const fromNode = editorNodes.value.find(n => n.id === edgeFrom.value);
+                        if (fromNode && fromNode.config && fromNode.config.conditions) {
+                            const cond = fromNode.config.conditions.find(c => c.id === edgeFromHandle);
+                            if (cond) newEdge.label = cond.label || '';
+                        }
+                    }
+                    editorEdges.value.push(newEdge);
                 }
             }
             draggingEdge.value = false;
             edgeFrom.value = null;
+            edgeFromHandle = null;
         };
 
         // 正在拖拽的连线路径
@@ -985,7 +1148,14 @@ createApp({
             const fromNode = editorNodes.value.find(n => n.id === edgeFrom.value);
             if (!fromNode) return '';
             const sx = fromNode.position.x + nodeWidth(fromNode);
-            const sy = fromNode.position.y + 30;
+            // 如果是条件节点的某个分支端口，使用对应的 Y 坐标
+            let sy;
+            if (edgeFromHandle && fromNode.type === 'condition' && fromNode.config && fromNode.config.conditions) {
+                const ci = fromNode.config.conditions.findIndex(c => c.id === edgeFromHandle);
+                sy = fromNode.position.y + (ci >= 0 ? conditionPortY(ci, fromNode) : nodeHeight(fromNode) / 2);
+            } else {
+                sy = fromNode.position.y + nodeHeight(fromNode) / 2;
+            }
             const ex = edgeMouse.x;
             const ey = edgeMouse.y;
             const cx = (sx + ex) / 2;
@@ -998,11 +1168,36 @@ createApp({
             const toNode = editorNodes.value.find(n => n.id === edge.target);
             if (!fromNode || !toNode) return '';
             const sx = fromNode.position.x + nodeWidth(fromNode);
-            const sy = fromNode.position.y + 30;
+            // 条件节点的连线从对应分支端口出发
+            let sy;
+            if (edge.source_handle && fromNode.type === 'condition' && fromNode.config && fromNode.config.conditions) {
+                const ci = fromNode.config.conditions.findIndex(c => c.id === edge.source_handle);
+                sy = fromNode.position.y + (ci >= 0 ? conditionPortY(ci, fromNode) : nodeHeight(fromNode) / 2);
+            } else {
+                sy = fromNode.position.y + nodeHeight(fromNode) / 2;
+            }
             const ex = toNode.position.x;
-            const ey = toNode.position.y + 30;
+            const ey = toNode.position.y + nodeHeight(toNode) / 2;
             const cx = (sx + ex) / 2;
             return `M ${sx} ${sy} C ${cx} ${sy}, ${cx} ${ey}, ${ex} ${ey}`;
+        };
+
+        // 计算边的中点坐标（用于显示标签）
+        const getEdgeMidpoint = (edge) => {
+            const fromNode = editorNodes.value.find(n => n.id === edge.source);
+            const toNode = editorNodes.value.find(n => n.id === edge.target);
+            if (!fromNode || !toNode) return { x: 0, y: 0 };
+            const sx = fromNode.position.x + nodeWidth(fromNode);
+            let sy;
+            if (edge.source_handle && fromNode.type === 'condition' && fromNode.config && fromNode.config.conditions) {
+                const ci = fromNode.config.conditions.findIndex(c => c.id === edge.source_handle);
+                sy = fromNode.position.y + (ci >= 0 ? conditionPortY(ci, fromNode) : nodeHeight(fromNode) / 2);
+            } else {
+                sy = fromNode.position.y + nodeHeight(fromNode) / 2;
+            }
+            const ex = toNode.position.x;
+            const ey = toNode.position.y + nodeHeight(toNode) / 2;
+            return { x: (sx + ex) / 2, y: (sy + ey) / 2 };
         };
 
         // 删除选中
@@ -1195,15 +1390,15 @@ createApp({
             currentWorkflow, editorNodes, editorEdges, editorVariables,
             selectedNodeId, selectedEdgeId, selectedNode, saving,
             canvasRef, svgRef, zoom, svgViewBox,
-            nodeTypes, nodeIcon, nodeLabel, nodeColor, nodeWidth,
+            nodeTypes, nodeIcon, nodeLabel, nodeColor, nodeWidth, nodeHeight, conditionPortY,
             toolArgsJson, updateToolArgs,
             openEditor, backToList, saveWorkflow,
             // 画布交互
-            onDragStart, onCanvasDrop,
+            onDragStart, onCanvasDrop, addConditionBranch,
             onNodeMouseDown, onCanvasMouseDown, onCanvasMouseMove, onCanvasMouseUp, onCanvasClick,
             selectNode, selectEdge, deleteSelected,
             onPortMouseDown, onPortMouseUp,
-            draggingEdge, draggingEdgePath, getEdgePath,
+            draggingEdge, draggingEdgePath, getEdgePath, getEdgeMidpoint,
             zoomIn, zoomOut, resetZoom,
             addVariable,
             // 节点执行状态
