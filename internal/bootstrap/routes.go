@@ -76,9 +76,11 @@ func RegisterRoutes(chatHandler *http_handler.ChatHandler, appConfig *config.Con
 				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			}
 		})
+		// 工作流导入接口（Phase 3）
+		mux.HandleFunc("/api/workflows/import", wfHandler.HandleImportWorkflow)
 		// 工作流执行记录查询
 		mux.HandleFunc("/api/workflow-runs/", wfHandler.HandleGetWorkflowRun)
-		// 工作流详情/更新/删除/发布/执行/执行记录（通过路径后缀区分）
+		// 工作流详情/更新/删除/发布/执行/导出/执行记录（通过路径后缀区分）
 		mux.HandleFunc("/api/workflows/", func(w http.ResponseWriter, r *http.Request) {
 			path := r.URL.Path
 			switch {
@@ -88,6 +90,8 @@ func RegisterRoutes(chatHandler *http_handler.ChatHandler, appConfig *config.Con
 				wfHandler.HandleExecuteWorkflow(w, r)
 			case strings.HasSuffix(path, "/runs"):
 				wfHandler.HandleGetWorkflowRuns(w, r)
+			case strings.HasSuffix(path, "/export"):
+				wfHandler.HandleExportWorkflow(w, r)
 			default:
 				switch r.Method {
 				case http.MethodGet:

@@ -252,16 +252,19 @@ createApp({
             { type: 'http', icon: '🌐', label: 'HTTP 请求', desc: '发起 HTTP 请求' },
             { type: 'condition', icon: '🔀', label: '条件分支', desc: '按条件走不同分支' },
             { type: 'parallel', icon: '⚡', label: '并行汇聚', desc: '合并多个并行分支' },
+            { type: 'code', icon: '💻', label: '代码执行', desc: 'JavaScript 沙箱执行' },
+            { type: 'loop', icon: '🔁', label: '循环', desc: 'for-each / while 循环' },
         ];
 
-        const nodeIcon = (type) => ({ start: '▶', end: '⏹', llm: '🤖', tool: '🔧', agent: '🤝', template: '📝', http: '🌐', condition: '🔀', parallel: '⚡' }[type] || '❓');
-        const nodeLabel = (type) => ({ start: '开始', end: '结束', llm: 'LLM 对话', tool: '工具调用', agent: '子 Agent', template: '模板转换', http: 'HTTP 请求', condition: '条件分支', parallel: '并行汇聚' }[type] || type);
-        const paletteColor = (type) => ({ llm: '#667eea', tool: '#faad14', agent: '#722ed1', template: '#1890ff', http: '#f5222d', condition: '#faad14', parallel: '#13c2c2' }[type] || '#667eea');
+        const nodeIcon = (type) => ({ start: '▶', end: '⏹', llm: '🤖', tool: '🔧', agent: '🤝', template: '📝', http: '🌐', condition: '🔀', parallel: '⚡', code: '💻', loop: '🔁' }[type] || '❓');
+        const nodeLabel = (type) => ({ start: '开始', end: '结束', llm: 'LLM 对话', tool: '工具调用', agent: '子 Agent', template: '模板转换', http: 'HTTP 请求', condition: '条件分支', parallel: '并行汇聚', code: '代码执行', loop: '循环' }[type] || type);
+        const paletteColor = (type) => ({ llm: '#667eea', tool: '#faad14', agent: '#722ed1', template: '#1890ff', http: '#f5222d', condition: '#faad14', parallel: '#13c2c2', code: '#52c41a', loop: '#eb2f96' }[type] || '#667eea');
         const nodeColor = (type) => ({
             start: 'url(#grad-start)', end: 'url(#grad-end)',
             llm: 'url(#grad-llm)', tool: 'url(#grad-tool)', agent: 'url(#grad-agent)',
             template: 'url(#grad-template)', http: 'url(#grad-http)',
-            condition: 'url(#grad-condition)', parallel: 'url(#grad-parallel)'
+            condition: 'url(#grad-condition)', parallel: 'url(#grad-parallel)',
+            code: 'url(#grad-code)', loop: 'url(#grad-loop)'
         }[type] || '#999');
         const nodeWidth = (node) => {
             const name = node.name || nodeLabel(node.type);
@@ -381,6 +384,21 @@ createApp({
             } catch (e) {}
         };
 
+        // Code 节点输入变量 JSON 编辑
+        const codeInputsJson = computed({
+            get() {
+                if (!selectedNode.value || !selectedNode.value.config || !selectedNode.value.config.code_inputs) return '';
+                return JSON.stringify(selectedNode.value.config.code_inputs, null, 2);
+            },
+            set() {}
+        });
+        const updateCodeInputs = (val) => {
+            if (!selectedNode.value) return;
+            try {
+                selectedNode.value.config.code_inputs = JSON.parse(val);
+            } catch (e) {}
+        };
+
         // 打开编辑器
         const openEditor = (wf) => {
             currentWorkflow.value = wf;
@@ -414,6 +432,59 @@ createApp({
             view.value = 'list';
             currentWorkflow.value = null;
             loadWorkflows();
+        };
+
+        // ===== 导入/导出（Phase 3）=====
+        const exportWorkflow = async (wf) => {
+            try {
+                const r = await fetch(`/api/workflows/${wf.id}/export`, { headers: getAuthHeaders() });
+                if (!r.ok) {
+                    const err = await r.json();
+                    throw new Error(err.error || '导出失败');
+                }
+                const data = await r.json();
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `workflow_${wf.name || wf.id}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                ElementPlus.ElMessage.success('工作流导出成功');
+            } catch (e) {
+                ElementPlus.ElMessage.error(e.message);
+            }
+        };
+
+        const importFileRef = ref(null);
+        const importWorkflow = () => {
+            // 触发文件选择
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.json';
+            input.onchange = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                try {
+                    const text = await file.text();
+                    const r = await fetch('/api/workflows/import', {
+                        method: 'POST',
+                        headers: getAuthHeaders(),
+                        body: text
+                    });
+                    if (!r.ok) {
+                        const err = await r.json();
+                        throw new Error(err.error || '导入失败');
+                    }
+                    ElementPlus.ElMessage.success('工作流导入成功');
+                    await loadWorkflows();
+                } catch (err) {
+                    ElementPlus.ElMessage.error(err.message);
+                }
+            };
+            input.click();
         };
 
         // 保存工作流
@@ -471,6 +542,10 @@ createApp({
                 };
             } else if (dragNodeType === 'parallel') {
                 config = { wait_all: true };
+            } else if (dragNodeType === 'code') {
+                config = { code_language: 'javascript', code: '// 通过 inputs 对象读取上游节点输出\n// 通过 return 返回结果\nconst data = inputs;\nreturn JSON.stringify(data);', code_inputs: {} };
+            } else if (dragNodeType === 'loop') {
+                config = { loop_type: 'foreach', loop_list: '', loop_item_var: 'item', loop_index_var: 'index', loop_max_iter: 100, loop_body: '// inputs.item = 当前元素\n// inputs.index = 当前索引\n// inputs.results = 之前的迭代结果\nreturn inputs.item;' };
             }
             editorNodes.value.push({
                 id,
@@ -909,6 +984,7 @@ createApp({
             // 列表
             workflows, listLoading, showCreateDialog, creating, createForm,
             statusLabel, loadWorkflows, createWorkflow, deleteWorkflow, publishWorkflow,
+            exportWorkflow, importWorkflow, importFileRef,
             // 快速执行
             showExecDialog, execWorkflow, execInputs, execEvents, executing, execFinalOutput,
             quickExecute, doExecute,
@@ -919,6 +995,7 @@ createApp({
             nodeTypes, nodeIcon, nodeLabel, paletteColor, nodeColor, nodeWidth, nodeHeight, conditionPortY,
             diamondPoints, hexagonPoints, getPortPos,
             toolArgsJson, updateToolArgs,
+            codeInputsJson, updateCodeInputs,
             openEditor, backToList, saveWorkflow,
             // 画布交互
             onDragStart, onCanvasDrop, addConditionBranch,

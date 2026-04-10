@@ -22,7 +22,10 @@
         <div class="wf-page">
             <div class="wf-header">
                 <h1>🔀 工作流编排</h1>
-                <el-button type="primary" @click="showCreateDialog = true" :icon="Plus">新建工作流</el-button>
+                <div style="display:flex;gap:8px;">
+                    <el-button type="success" plain @click="importWorkflow">📥 导入</el-button>
+                    <el-button type="primary" @click="showCreateDialog = true" :icon="Plus">新建工作流</el-button>
+                </div>
             </div>
 
             <div v-if="workflows.length === 0 && !listLoading" class="empty-state">
@@ -45,6 +48,7 @@
                     <div style="display:flex;gap:8px;flex-shrink:0;margin-left:16px;" @click.stop>
                         <el-button size="small" @click.stop="openEditor(wf)">编辑</el-button>
                         <el-button size="small" type="success" @click.stop="quickExecute(wf)" :disabled="(wf.nodes || []).length < 2">执行</el-button>
+                        <el-button size="small" type="info" plain @click.stop="exportWorkflow(wf)">📤 导出</el-button>
                         <el-button size="small" type="warning" @click.stop="publishWorkflow(wf)" :disabled="wf.status === 'published'">发布</el-button>
                         <el-button size="small" type="danger" @click.stop="deleteWorkflow(wf)">删除</el-button>
                     </div>
@@ -201,6 +205,12 @@
                         </linearGradient>
                         <linearGradient id="grad-parallel" x1="0%" y1="0%" x2="100%" y2="100%">
                             <stop offset="0%" stop-color="#36cfc9" /><stop offset="100%" stop-color="#13c2c2" />
+                        </linearGradient>
+                        <linearGradient id="grad-code" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#73d13d" /><stop offset="100%" stop-color="#52c41a" />
+                        </linearGradient>
+                        <linearGradient id="grad-loop" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#f759ab" /><stop offset="100%" stop-color="#eb2f96" />
                         </linearGradient>
                     </defs>
 
@@ -504,6 +514,94 @@
                             <div style="font-size:11px;color:#999;padding:8px 0;">
                                 💡 并行汇聚节点用于合并多个并行分支的输出。<br>
                                 将多个并行分支的输出连线到此节点，它会收集所有上游输出并合并后传递给下游。
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- Code 代码执行节点配置（Phase 3） -->
+                    <template v-if="selectedNode.type === 'code'">
+                        <div class="panel-section">
+                            <div class="panel-section-title">💻 代码执行配置</div>
+                            <div class="panel-field">
+                                <label>代码语言</label>
+                                <el-select v-model="selectedNode.config.code_language" size="small" style="width:100%;">
+                                    <el-option label="JavaScript" value="javascript" />
+                                </el-select>
+                            </div>
+                            <div class="panel-field">
+                                <label>代码 <span style="font-size:11px;color:#999;">（通过 inputs 对象读取上游输出，通过 return 返回结果）</span></label>
+                                <el-input v-model="selectedNode.config.code" type="textarea" :rows="10" size="small"
+                                    placeholder="// 通过 inputs 对象读取上游节点输出&#10;// 通过 return 返回结果&#10;const data = inputs;&#10;return JSON.stringify(data);"
+                                    style="font-family:monospace;" />
+                            </div>
+                            <div class="panel-field">
+                                <label>输入变量映射 <span style="font-size:11px;color:#999;">（JSON 格式：变量名 → ${node_id.output}）</span></label>
+                                <el-input v-model="codeInputsJson" type="textarea" :rows="3" size="small"
+                                    placeholder='{"data": "${llm_1.output}", "query": "${query}"}'
+                                    @change="updateCodeInputs"
+                                    style="font-family:monospace;" />
+                            </div>
+                            <div style="font-size:11px;color:#999;padding:4px 0;">
+                                💡 代码在安全沙箱中执行，无法访问文件系统和网络。<br>
+                                可用 <code>console.log()</code> 输出调试信息，<code>JSON.parse()</code> / <code>JSON.stringify()</code> 处理 JSON。<br>
+                                如果不配置输入变量映射，将自动注入所有上游节点的输出。
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- Loop 循环节点配置（Phase 3） -->
+                    <template v-if="selectedNode.type === 'loop'">
+                        <div class="panel-section">
+                            <div class="panel-section-title">🔁 循环配置</div>
+                            <div class="panel-field">
+                                <label>循环类型</label>
+                                <el-select v-model="selectedNode.config.loop_type" size="small" style="width:100%;">
+                                    <el-option label="for-each（遍历列表）" value="foreach" />
+                                    <el-option label="while（条件循环）" value="while" />
+                                </el-select>
+                            </div>
+
+                            <!-- for-each 模式配置 -->
+                            <template v-if="selectedNode.config.loop_type !== 'while'">
+                                <div class="panel-field">
+                                    <label>遍历列表 <span style="font-size:11px;color:#999;">（JSON 数组或换行分隔的文本，支持 ${} 引用）</span></label>
+                                    <el-input v-model="selectedNode.config.loop_list" type="textarea" :rows="3" size="small"
+                                        placeholder='${llm_1.output} 或 ["a","b","c"]' />
+                                </div>
+                                <div class="panel-field">
+                                    <label>当前元素变量名</label>
+                                    <el-input v-model="selectedNode.config.loop_item_var" size="small" placeholder="item" />
+                                </div>
+                                <div class="panel-field">
+                                    <label>当前索引变量名</label>
+                                    <el-input v-model="selectedNode.config.loop_index_var" size="small" placeholder="index" />
+                                </div>
+                            </template>
+
+                            <!-- while 模式配置 -->
+                            <template v-if="selectedNode.config.loop_type === 'while'">
+                                <div class="panel-field">
+                                    <label>循环条件 <span style="font-size:11px;color:#999;">（JS 代码，返回 true 继续循环）</span></label>
+                                    <el-input v-model="selectedNode.config.loop_condition" type="textarea" :rows="3" size="small"
+                                        placeholder="return inputs.index < 5;"
+                                        style="font-family:monospace;" />
+                                </div>
+                            </template>
+
+                            <div class="panel-field">
+                                <label>循环体代码 <span style="font-size:11px;color:#999;">（JS，每次迭代执行）</span></label>
+                                <el-input v-model="selectedNode.config.loop_body" type="textarea" :rows="6" size="small"
+                                    placeholder="// inputs.item = 当前元素&#10;// inputs.index = 当前索引&#10;// inputs.results = 之前的迭代结果&#10;return inputs.item;"
+                                    style="font-family:monospace;" />
+                            </div>
+                            <div class="panel-field">
+                                <label>最大迭代次数 <span style="font-size:11px;color:#999;">（安全限制）</span></label>
+                                <el-input-number v-model="selectedNode.config.loop_max_iter" :min="1" :max="1000" size="small" style="width:100%;" />
+                            </div>
+                            <div style="font-size:11px;color:#999;padding:4px 0;">
+                                💡 循环节点输出为所有迭代结果的 JSON 数组。<br>
+                                for-each 模式：遍历列表中的每个元素执行循环体。<br>
+                                while 模式：每次迭代先评估条件，为 true 则执行循环体。
                             </div>
                         </div>
                     </template>

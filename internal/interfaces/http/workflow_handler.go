@@ -4,6 +4,7 @@ package http
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -379,6 +380,66 @@ func (h *WorkflowHandler) HandleGetWorkflowRun(w http.ResponseWriter, r *http.Re
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(run)
+}
+
+// ─── 导入/导出接口（Phase 3）──────────────────────────────────────────────────
+
+// HandleExportWorkflow 导出工作流 GET /api/workflows/{id}/export
+func (h *WorkflowHandler) HandleExportWorkflow(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSONError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// 解析路径：/api/workflows/{id}/export
+	path := strings.TrimSuffix(r.URL.Path, "/export")
+	id, err := h.parseWorkflowID(path, "/api/workflows/")
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	exportData, err := h.workflowSvc.ExportWorkflow(r.Context(), id)
+	if err != nil {
+		h.logger.Error("导出工作流失败", zap.Int64("id", id), zap.Error(err))
+		writeJSONError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// 设置下载头
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"workflow_%d.json\"", id))
+	json.NewEncoder(w).Encode(exportData)
+}
+
+// HandleImportWorkflow 导入工作流 POST /api/workflows/import
+func (h *WorkflowHandler) HandleImportWorkflow(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSONError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// 限制请求体大小（10MB）
+	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
+
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeJSONError(w, "读取请求体失败: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	userID := h.getUserID(r)
+
+	wf, err := h.workflowSvc.ImportWorkflow(r.Context(), data, userID)
+	if err != nil {
+		h.logger.Error("导入工作流失败", zap.Error(err))
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(toWorkflowResponse(wf))
 }
 
 // ─── 辅助方法 ──────────────────────────────────────────────────────────────

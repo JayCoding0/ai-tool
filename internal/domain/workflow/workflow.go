@@ -22,6 +22,8 @@ const (
 	NodeTypeHTTP      NodeType = "http"      // HTTP 请求节点
 	NodeTypeCondition NodeType = "condition" // 条件分支节点（Phase 2）
 	NodeTypeParallel  NodeType = "parallel"  // 并行分叉网关节点（Phase 2）
+	NodeTypeCode      NodeType = "code"      // 代码执行节点（Phase 3：嵌入式 JS 沙箱）
+	NodeTypeLoop      NodeType = "loop"      // 循环节点（Phase 3：for-each / while 循环）
 )
 
 // ─── 节点定义 ──────────────────────────────────────────────────────────────────
@@ -72,6 +74,20 @@ type NodeConfig struct {
 
 	// Parallel 并行网关节点配置（Phase 2）
 	WaitAll bool `json:"wait_all,omitempty"` // true=等待所有上游分支完成（默认），false=任一完成即继续
+
+	// Code 代码执行节点配置（Phase 3）
+	CodeLanguage string            `json:"code_language,omitempty"` // 代码语言："javascript"（当前仅支持 JS）
+	Code         string            `json:"code,omitempty"`          // 用户编写的代码（JS 函数体，通过 return 返回结果）
+	CodeInputs   map[string]string `json:"code_inputs,omitempty"`   // 代码输入变量映射：变量名 → 模板引用（如 ${node_id.output}）
+
+	// Loop 循环节点配置（Phase 3）
+	LoopType     string `json:"loop_type,omitempty"`      // 循环类型："foreach" | "while"
+	LoopList     string `json:"loop_list,omitempty"`      // for-each 模式：要遍历的列表（支持 ${} 引用，JSON 数组字符串）
+	LoopItemVar  string `json:"loop_item_var,omitempty"`  // for-each 模式：当前元素变量名（默认 "item"）
+	LoopIndexVar string `json:"loop_index_var,omitempty"` // for-each 模式：当前索引变量名（默认 "index"）
+	LoopCondition string `json:"loop_condition,omitempty"` // while 模式：继续循环的条件表达式（支持 ${} 引用）
+	LoopMaxIter  int    `json:"loop_max_iter,omitempty"`  // 最大迭代次数（安全限制，默认 100）
+	LoopBody     string `json:"loop_body,omitempty"`      // 循环体代码（JS，每次迭代执行，通过 return 返回本次迭代结果）
 
 	// 通用配置
 	InputMapping map[string]string `json:"input_mapping,omitempty"` // 输入映射：本节点变量名 → 上游节点输出引用

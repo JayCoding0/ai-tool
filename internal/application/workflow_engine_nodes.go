@@ -17,6 +17,7 @@ import (
 	"aiProject/internal/domain/tool"
 	"aiProject/internal/domain/workflow"
 	"aiProject/internal/shared"
+	"github.com/dop251/goja"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
@@ -97,6 +98,10 @@ func (e *WorkflowEngine) executeNode(ctx context.Context, wf *workflow.Workflow,
 		return e.executeConditionNode(ctx, wf, node, execCtx)
 	case workflow.NodeTypeParallel:
 		return e.executeParallelNode(ctx, wf, node, execCtx)
+	case workflow.NodeTypeCode:
+		return e.executeCodeNode(ctx, node, execCtx)
+	case workflow.NodeTypeLoop:
+		return e.executeLoopNode(ctx, node, execCtx)
 	default:
 		return nil, fmt.Errorf("不支持的节点类型: %s", node.Type)
 	}
@@ -403,6 +408,408 @@ func (e *WorkflowEngine) executeHTTPNode(ctx context.Context, node workflow.Node
 	}
 
 	return string(respBody), nil
+}
+
+// ─── Code 节点执行器（Phase 3：嵌入式 JS 沙箱）──────────────────────────────────
+
+// executeCodeNode 执行代码节点（使用 goja JS 引擎，沙箱隔离）
+// 用户编写的 JS 代码可以通过 inputs 对象读取上游节点输出，通过 return 返回结果
+func (e *WorkflowEngine) executeCodeNode(ctx context.Context, node workflow.Node, execCtx *ExecutionContext) (interface{}, error) {
+	logger := shared.GetLogger()
+
+	code := node.Config.Code
+	if code == "" {
+		return nil, fmt.Errorf("Code 节点 %q 未配置代码", node.Name)
+	}
+
+	// 构建输入变量
+	inputs := make(map[string]interface{})
+	for varName, tmpl := range node.Config.CodeInputs {
+		resolved := e.resolveTemplate(tmpl, execCtx)
+		// 尝试解析为 JSON 对象，失败则保留为字符串
+		var parsed interface{}
+		if err := json.Unmarshal([]byte(resolved), &parsed); err == nil {
+			inputs[varName] = parsed
+		} else {
+			inputs[varName] = resolved
+		}
+	}
+
+	// 如果没有配置 CodeInputs，自动注入所有上游节点输出
+	if len(inputs) == 0 {
+		snapshot := execCtx.GetNodeOutputsSnapshot()
+		for k, v := range snapshot {
+			// 尝试将字符串类型的输出解析为 JSON
+			if s, ok := v.(string); ok {
+				var parsed interface{}
+				if err := json.Unmarshal([]byte(s), &parsed); err == nil {
+					inputs[k] = parsed
+				} else {
+					inputs[k] = s
+				}
+			} else {
+				inputs[k] = v
+			}
+		}
+	}
+
+	logger.Info("[Workflow] Code 节点执行",
+		zap.String("node_id", node.ID),
+		zap.String("language", node.Config.CodeLanguage),
+		zap.Int("code_len", len(code)),
+		zap.Int("inputs_count", len(inputs)),
+	)
+
+	// 设置超时
+	timeout := 10 * time.Second
+	if node.Config.TimeoutSec > 0 {
+		timeout = time.Duration(node.Config.TimeoutSec) * time.Second
+	}
+
+	// 在 goja 沙箱中执行 JS 代码
+	result, err := e.runJavaScript(ctx, code, inputs, timeout)
+	if err != nil {
+		return nil, fmt.Errorf("Code 节点 %q 执行失败: %w", node.Name, err)
+	}
+
+	logger.Info("[Workflow] Code 节点完成",
+		zap.String("node_id", node.ID),
+	)
+
+	return result, nil
+}
+
+// runJavaScript 在 goja 沙箱中执行 JavaScript 代码
+// 提供 inputs 对象和 console.log 支持，限制执行时间
+func (e *WorkflowEngine) runJavaScript(ctx context.Context, code string, inputs map[string]interface{}, timeout time.Duration) (interface{}, error) {
+	vm := goja.New()
+
+	// 注入 inputs 对象
+	if err := vm.Set("inputs", inputs); err != nil {
+		return nil, fmt.Errorf("注入 inputs 失败: %w", err)
+	}
+
+	// 注入 console.log（输出到日志）
+	logger := shared.GetLogger()
+	consoleObj := vm.NewObject()
+	_ = consoleObj.Set("log", func(call goja.FunctionCall) goja.Value {
+		args := make([]interface{}, len(call.Arguments))
+		for i, arg := range call.Arguments {
+			args[i] = arg.Export()
+		}
+		logger.Info("[Workflow] Code console.log", zap.Any("args", args))
+		return goja.Undefined()
+	})
+	_ = vm.Set("console", consoleObj)
+
+	// 注入 JSON 辅助（goja 内置支持 JSON.parse/JSON.stringify）
+
+	// 将用户代码包装为立即执行函数（支持 return 语句）
+	wrappedCode := fmt.Sprintf("(function() {\n%s\n})()", code)
+
+	// 超时控制：启动定时器，超时后中断 VM
+	timer := time.AfterFunc(timeout, func() {
+		vm.Interrupt("代码执行超时（超过 " + timeout.String() + "）")
+	})
+	defer timer.Stop()
+
+	// 执行代码
+	val, err := vm.RunString(wrappedCode)
+	if err != nil {
+		return nil, fmt.Errorf("JS 执行错误: %w", err)
+	}
+
+	// 导出结果
+	result := val.Export()
+
+	// 将结果转为 JSON 友好格式
+	switch v := result.(type) {
+	case nil:
+		return "", nil
+	case string:
+		return v, nil
+	case map[string]interface{}, []interface{}:
+		jsonBytes, err := json.Marshal(v)
+		if err != nil {
+			return fmt.Sprintf("%v", v), nil
+		}
+		return string(jsonBytes), nil
+	default:
+		return fmt.Sprintf("%v", v), nil
+	}
+}
+
+// ─── Loop 循环节点执行器（Phase 3）──────────────────────────────────────────────
+
+// executeLoopNode 执行循环节点
+// 支持两种模式：
+//   - foreach：遍历列表，每次迭代执行循环体代码
+//   - while：条件循环，每次迭代先检查条件再执行循环体
+func (e *WorkflowEngine) executeLoopNode(ctx context.Context, node workflow.Node, execCtx *ExecutionContext) (interface{}, error) {
+	logger := shared.GetLogger()
+
+	loopType := node.Config.LoopType
+	if loopType == "" {
+		loopType = "foreach"
+	}
+
+	maxIter := node.Config.LoopMaxIter
+	if maxIter <= 0 {
+		maxIter = 100 // 默认最大迭代次数
+	}
+
+	// 设置超时
+	timeout := 30 * time.Second
+	if node.Config.TimeoutSec > 0 {
+		timeout = time.Duration(node.Config.TimeoutSec) * time.Second
+	}
+	loopCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	logger.Info("[Workflow] Loop 节点开始",
+		zap.String("node_id", node.ID),
+		zap.String("loop_type", loopType),
+		zap.Int("max_iter", maxIter),
+	)
+
+	var results []interface{}
+
+	switch loopType {
+	case "foreach":
+		results, _ = e.executeForEachLoop(loopCtx, node, execCtx, maxIter)
+	case "while":
+		results, _ = e.executeWhileLoop(loopCtx, node, execCtx, maxIter)
+	default:
+		return nil, fmt.Errorf("Loop 节点 %q 不支持的循环类型: %s", node.Name, loopType)
+	}
+
+	logger.Info("[Workflow] Loop 节点完成",
+		zap.String("node_id", node.ID),
+		zap.Int("iterations", len(results)),
+	)
+
+	// 返回所有迭代结果的 JSON 数组
+	jsonBytes, err := json.Marshal(results)
+	if err != nil {
+		return fmt.Sprintf("%v", results), nil
+	}
+	return string(jsonBytes), nil
+}
+
+// executeForEachLoop 执行 for-each 循环
+func (e *WorkflowEngine) executeForEachLoop(ctx context.Context, node workflow.Node, execCtx *ExecutionContext, maxIter int) ([]interface{}, error) {
+	logger := shared.GetLogger()
+
+	// 解析要遍历的列表
+	listStr := e.resolveTemplate(node.Config.LoopList, execCtx)
+	if listStr == "" {
+		return nil, fmt.Errorf("Loop 节点 %q 未配置遍历列表（loop_list）", node.Name)
+	}
+
+	// 尝试解析为 JSON 数组
+	var list []interface{}
+	if err := json.Unmarshal([]byte(listStr), &list); err != nil {
+		// 如果不是 JSON 数组，按换行符分割为字符串列表
+		lines := strings.Split(listStr, "\n")
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if trimmed != "" {
+				list = append(list, trimmed)
+			}
+		}
+	}
+
+	if len(list) == 0 {
+		return []interface{}{}, nil
+	}
+
+	// 限制列表长度
+	if len(list) > maxIter {
+		logger.Warn("[Workflow] Loop 列表长度超过最大迭代次数，截断",
+			zap.Int("list_len", len(list)),
+			zap.Int("max_iter", maxIter),
+		)
+		list = list[:maxIter]
+	}
+
+	itemVar := node.Config.LoopItemVar
+	if itemVar == "" {
+		itemVar = "item"
+	}
+	indexVar := node.Config.LoopIndexVar
+	if indexVar == "" {
+		indexVar = "index"
+	}
+
+	bodyCode := node.Config.LoopBody
+	if bodyCode == "" {
+		// 没有循环体代码，直接返回列表本身
+		return list, nil
+	}
+
+	// 设置超时
+	timeout := 10 * time.Second
+	if node.Config.TimeoutSec > 0 {
+		timeout = time.Duration(node.Config.TimeoutSec) * time.Second
+	}
+
+	var results []interface{}
+	for i, item := range list {
+		select {
+		case <-ctx.Done():
+			return results, fmt.Errorf("循环被取消或超时")
+		default:
+		}
+
+		// 构建本次迭代的输入
+		inputs := make(map[string]interface{})
+		// 注入所有上游节点输出
+		snapshot := execCtx.GetNodeOutputsSnapshot()
+		for k, v := range snapshot {
+			if s, ok := v.(string); ok {
+				var parsed interface{}
+				if err := json.Unmarshal([]byte(s), &parsed); err == nil {
+					inputs[k] = parsed
+				} else {
+					inputs[k] = s
+				}
+			} else {
+				inputs[k] = v
+			}
+		}
+		// 注入当前元素和索引
+		inputs[itemVar] = item
+		inputs[indexVar] = i
+		// 注入之前的迭代结果
+		inputs["results"] = results
+
+		result, err := e.runJavaScript(ctx, bodyCode, inputs, timeout)
+		if err != nil {
+			logger.Warn("[Workflow] Loop 迭代执行失败",
+				zap.String("node_id", node.ID),
+				zap.Int("index", i),
+				zap.Error(err),
+			)
+			results = append(results, map[string]interface{}{
+				"error": err.Error(),
+				"index": i,
+			})
+			continue
+		}
+		results = append(results, result)
+	}
+
+	return results, nil
+}
+
+// executeWhileLoop 执行 while 条件循环
+func (e *WorkflowEngine) executeWhileLoop(ctx context.Context, node workflow.Node, execCtx *ExecutionContext, maxIter int) ([]interface{}, error) {
+	logger := shared.GetLogger()
+
+	conditionCode := node.Config.LoopCondition
+	if conditionCode == "" {
+		return nil, fmt.Errorf("Loop 节点 %q while 模式未配置条件表达式（loop_condition）", node.Name)
+	}
+
+	bodyCode := node.Config.LoopBody
+	if bodyCode == "" {
+		return nil, fmt.Errorf("Loop 节点 %q while 模式未配置循环体代码（loop_body）", node.Name)
+	}
+
+	// 设置超时
+	timeout := 10 * time.Second
+	if node.Config.TimeoutSec > 0 {
+		timeout = time.Duration(node.Config.TimeoutSec) * time.Second
+	}
+
+	var results []interface{}
+	for i := 0; i < maxIter; i++ {
+		select {
+		case <-ctx.Done():
+			return results, fmt.Errorf("循环被取消或超时")
+		default:
+		}
+
+		// 构建输入
+		inputs := make(map[string]interface{})
+		snapshot := execCtx.GetNodeOutputsSnapshot()
+		for k, v := range snapshot {
+			if s, ok := v.(string); ok {
+				var parsed interface{}
+				if err := json.Unmarshal([]byte(s), &parsed); err == nil {
+					inputs[k] = parsed
+				} else {
+					inputs[k] = s
+				}
+			} else {
+				inputs[k] = v
+			}
+		}
+		inputs["index"] = i
+		inputs["results"] = results
+
+		// 评估条件
+		condResult, err := e.runJavaScript(ctx, conditionCode, inputs, timeout)
+		if err != nil {
+			logger.Warn("[Workflow] Loop while 条件评估失败",
+				zap.String("node_id", node.ID),
+				zap.Int("iteration", i),
+				zap.Error(err),
+			)
+			break
+		}
+
+		// 判断条件是否为真
+		if !isTruthy(condResult) {
+			logger.Info("[Workflow] Loop while 条件不满足，退出循环",
+				zap.String("node_id", node.ID),
+				zap.Int("iteration", i),
+			)
+			break
+		}
+
+		// 执行循环体
+		result, err := e.runJavaScript(ctx, bodyCode, inputs, timeout)
+		if err != nil {
+			logger.Warn("[Workflow] Loop while 循环体执行失败",
+				zap.String("node_id", node.ID),
+				zap.Int("iteration", i),
+				zap.Error(err),
+			)
+			results = append(results, map[string]interface{}{
+				"error": err.Error(),
+				"index": i,
+			})
+			break
+		}
+		results = append(results, result)
+
+		// 将本次迭代结果也存入执行上下文（供条件表达式引用）
+		execCtx.SetNodeOutput(node.ID+"_iter", result)
+	}
+
+	return results, nil
+}
+
+// isTruthy 判断一个值是否为"真"（JS 风格的 truthy 判断）
+func isTruthy(val interface{}) bool {
+	if val == nil {
+		return false
+	}
+	switch v := val.(type) {
+	case bool:
+		return v
+	case string:
+		return v != "" && v != "false" && v != "0" && v != "null" && v != "undefined"
+	case float64:
+		return v != 0
+	case int:
+		return v != 0
+	case int64:
+		return v != 0
+	default:
+		return true
+	}
 }
 
 // ─── 模板解析辅助方法 ──────────────────────────────────────────────────────────
