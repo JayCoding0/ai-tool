@@ -50,4 +50,11 @@ type Repository interface {
 	UpdateSessionSystemPrompt(ctx context.Context, sessID SessionID, systemPrompt string) error
 	// GetSessionSystemPrompt 获取会话的 System Prompt
 	GetSessionSystemPrompt(ctx context.Context, sessID SessionID) (string, error)
+
+	// GetSessionSummary 获取会话摘要
+	GetSessionSummary(ctx context.Context, sessID SessionID) (string, error)
+	// UpdateSessionSummary 更新会话摘要
+	UpdateSessionSummary(ctx context.Context, sessID SessionID, summary string) error
+	// GetSessionMessageCount 获取会话消息数量
+	GetSessionMessageCount(ctx context.Context, sessID SessionID) (int, error)
 }

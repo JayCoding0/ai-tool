@@ -65,13 +65,15 @@ type StreamChatResponse struct {
 
 // ChatService 聊天应用服务
 type ChatService struct {
-	sessionRepo    session.Repository
-	modelGen       model.Generator
-	defaultModel   string
-	modelFactory   func(modelName string) model.Generator
-	genCache       sync.Map              // 模型生成器缓存，key=modelName value=model.Generator
-	knowledgeSvc   *KnowledgeService     // RAG 知识库服务（可选）
-	promptVarsSvc  *PromptVarsService    // Prompt 模板变量服务（可选）
+	sessionRepo      session.Repository
+	modelGen         model.Generator
+	defaultModel     string
+	modelFactory     func(modelName string) model.Generator
+	genCache         sync.Map              // 模型生成器缓存，key=modelName value=model.Generator
+	knowledgeSvc     *KnowledgeService     // RAG 知识库服务（可选）
+	promptVarsSvc    *PromptVarsService    // Prompt 模板变量服务（可选）
+	summarySvc       *SummaryService       // 会话摘要服务（可选）
+	maxContextTokens int                   // 模型最大上下文 token 数（从配置获取）
 }
 
 // NewChatService 创建聊天服务
@@ -102,6 +104,16 @@ func (s *ChatService) SetKnowledgeService(ks *KnowledgeService) {
 // SetPromptVarsService 注入 Prompt 模板变量服务
 func (s *ChatService) SetPromptVarsService(pvs *PromptVarsService) {
 	s.promptVarsSvc = pvs
+}
+
+// SetSummaryService 注入会话摘要服务（启用自动摘要能力）
+func (s *ChatService) SetSummaryService(ss *SummaryService) {
+	s.summarySvc = ss
+}
+
+// SetMaxContextTokens 设置模型最大上下文 token 数
+func (s *ChatService) SetMaxContextTokens(maxTokens int) {
+	s.maxContextTokens = maxTokens
 }
 
 // getModelGen 获取模型生成器（带缓存）
@@ -165,8 +177,21 @@ func (s *ChatService) ProcessMessageStream(ctx context.Context, req ChatRequest)
 	// 渲染 Prompt 模板变量
 	systemPrompt = s.renderPromptTemplate(ctx, systemPrompt, req, "")
 
-	// 统一使用结构化 messages（支持多轮对话格式）
-	messages := buildMessages(sess.GetHistory(), systemPrompt)
+	// 获取会话摘要
+	var sessionSummary string
+	if s.summarySvc != nil {
+		sessionSummary, _ = s.summarySvc.GetSessionSummary(ctx, sess.ID())
+	}
+
+	// 统一使用结构化 messages（支持动态 token 预算 + 摘要注入）
+	messages, evicted := buildMessagesWithContext(sess.GetHistory(), systemPrompt, "", sessionSummary, s.maxContextTokens)
+
+	// 异步触发摘要生成（如果有消息被裁剪）
+	if s.summarySvc != nil && len(evicted) > 0 {
+		if s.summarySvc.ShouldGenerateSummary(ctx, sess.ID(), len(evicted)) {
+			go s.summarySvc.GenerateIncrementalSummary(context.Background(), sess.ID(), evicted, modelName)
+		}
+	}
 
 	// 流式生成（使用 chat 接口）
 	streamCh, err := modelGen.GenerateStreamWithMessages(ctx, messages)
@@ -403,8 +428,21 @@ func (s *ChatService) ProcessMessageWithTools(ctx context.Context, req ChatReque
 	// 渲染 Prompt 模板变量（RAG 上下文作为内置变量注入）
 	systemPrompt = s.renderPromptTemplate(ctx, systemPrompt, req, ragContext)
 
-	messages := buildMessagesWithRAG(sess.GetHistory(), systemPrompt, ragContext)
+	// 获取会话摘要
+	var sessionSummary string
+	if s.summarySvc != nil {
+		sessionSummary, _ = s.summarySvc.GetSessionSummary(ctx, sess.ID())
+	}
+
+	messages, evicted := buildMessagesWithContext(sess.GetHistory(), systemPrompt, ragContext, sessionSummary, s.maxContextTokens)
 	isFirstMessage := len(sess.GetHistory()) <= 1
+
+	// 异步触发摘要生成（如果有消息被裁剪）
+	if s.summarySvc != nil && len(evicted) > 0 {
+		if s.summarySvc.ShouldGenerateSummary(ctx, sess.ID(), len(evicted)) {
+			go s.summarySvc.GenerateIncrementalSummary(context.Background(), sess.ID(), evicted, modelName)
+		}
+	}
 
 	outCh := make(chan StreamChatResponse, 64)
 	go func() {
@@ -454,27 +492,55 @@ func (s *ChatService) ProcessMessageWithTools(ctx context.Context, req ChatReque
 
 // buildMessages 将会话历史转换为 model.Message 列表（统一用于流式和工具调用）
 func buildMessages(history []session.Message, systemPrompt string) []model.Message {
-	return buildMessagesWithRAG(history, systemPrompt, "")
+	msgs, _ := buildMessagesWithContext(history, systemPrompt, "", "", 0)
+	return msgs
 }
 
-// buildMessagesWithRAG 将会话历史转换为 model.Message 列表，支持 RAG 上下文注入
+// buildMessagesWithRAG 将会话历史转换为 model.Message 列表，支持 RAG 上下文注入（兼容旧调用）
 func buildMessagesWithRAG(history []session.Message, systemPrompt, ragContext string) []model.Message {
+	msgs, _ := buildMessagesWithContext(history, systemPrompt, ragContext, "", 0)
+	return msgs
+}
+
+// buildMessagesWithContext 将会话历史转换为 model.Message 列表
+// 支持动态 token 预算管理、RAG 上下文注入、会话摘要注入
+// 返回构建好的消息列表和被裁剪掉的历史消息（用于触发摘要生成）
+func buildMessagesWithContext(history []session.Message, systemPrompt, ragContext, summary string, maxContextTokens int) ([]model.Message, []session.Message) {
 	if systemPrompt == "" {
 		systemPrompt = "你是一个智能助手，请始终使用中文回答用户的问题。"
 	}
+
+	// 将会话摘要注入 System Prompt
+	if summary != "" {
+		systemPrompt += "\n\n## 对话历史摘要\n以下是之前对话的摘要，请参考这些信息保持对话连贯性：\n" + summary
+	}
+
 	// 将 RAG 检索结果注入 System Prompt
 	if ragContext != "" {
 		systemPrompt += "\n\n## 参考知识库\n以下是与用户问题相关的知识库内容，请优先基于这些内容回答，并在回答末尾注明参考来源编号（如 [1][2]）：\n\n" + ragContext
 	}
+
+	// 计算 token 预算，决定保留多少历史消息
+	var kept, evicted []session.Message
+	if maxContextTokens > 0 {
+		// 动态 token 预算模式
+		budget := CalculateTokenBudget(maxContextTokens, systemPrompt, ragContext, summary)
+		kept, evicted = TrimHistoryByTokenBudget(history, budget.HistoryBudget)
+	} else {
+		// 回退到固定消息数滑动窗口（兼容未配置 maxContextTokens 的场景）
+		if len(history) > maxPromptMessages {
+			evicted = history[:len(history)-maxPromptMessages]
+			kept = history[len(history)-maxPromptMessages:]
+		} else {
+			kept = history
+		}
+	}
+
 	messages := []model.Message{
 		{Role: model.RoleSystem, Content: systemPrompt},
 	}
 
-	start := 0
-	if len(history) > maxPromptMessages {
-		start = len(history) - maxPromptMessages
-	}
-	for _, msg := range history[start:] {
+	for _, msg := range kept {
 		role := model.RoleUser
 		if msg.Role == "ai" {
 			role = model.RoleAssistant
@@ -484,7 +550,7 @@ func buildMessagesWithRAG(history []session.Message, systemPrompt, ragContext st
 			Content: msg.Content,
 		})
 	}
-	return messages
+	return messages, evicted
 }
 
 // renderPromptTemplate 渲染 System Prompt 中的模板变量

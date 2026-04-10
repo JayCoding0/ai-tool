@@ -49,13 +49,95 @@
 
 ### 3. 长期记忆 / Memory 系统
 - **现状**: 仅有会话级滑动窗口（`maxPromptMessages = 20`），无跨会话记忆
-- **主流做法**: Coze/Dify 支持变量持久化、用户画像记忆、向量记忆库
-- **改进方案**:
-  - [ ] 摘要记忆：长对话自动摘要压缩（LLM 生成摘要替代旧消息）
-  - [ ] 向量记忆：跨会话语义检索（将重要对话片段向量化存储）
-  - [ ] 用户画像：结构化 KV 存储（自动提取用户偏好、习惯）
-  - [ ] 基于 token 计数的上下文窗口管理（替代当前的消息数滑动窗口）
-- **预估工作量**: 2 个月
+- **主流做法**: Mem0（提取→更新双阶段记忆管理）、Coze（变量持久化+用户画像）、Dify（会话摘要+向量记忆库）、ChatGPT（跨会话记忆+用户偏好提取）
+- **参考架构**: Mem0 论文 — 从对话中提取候选记忆 → 与现有记忆库比对 → 决定 ADD/UPDATE/DELETE/NOOP 操作，维护一致性知识库
+
+- **Phase 1（3 周）— 会话摘要记忆 + Token 窗口管理**:
+  - [x] **Token 计数器**：基于 rune 计数的混合估算策略（中英文混合场景经验公式），实现 `EstimateTokens()` / `EstimateMessagesTokens()`
+  - [x] **动态上下文窗口**：替代当前 `maxPromptMessages = 20` 的固定消息数滑动窗口，改为基于模型 `max_context_tokens` 的动态 token 预算管理（预留 System Prompt + RAG + 记忆 + 回复空间），未配置时自动回退到固定消息数模式
+  - [x] **会话摘要生成**：当会话消息超过 token 预算时，自动调用 LLM 将旧消息压缩为摘要（异步执行，不阻塞用户对话）
+  - [x] **摘要持久化**：`chat_sessions` 表增加 `summary TEXT` 字段，存储当前会话的累积摘要
+  - [x] **摘要注入**：`buildMessagesWithRAG()` 升级为 `buildMessagesWithContext()`，在 System Prompt 后注入会话摘要（`## 对话历史摘要\n{summary}`），再拼接最近的消息窗口
+  - [x] **增量摘要策略**：每次摘要不重新处理全部历史，而是将"旧摘要 + 被淘汰的消息"合并生成新摘要（参考 LangChain ConversationSummaryBufferMemory）
+  - **相关文件**: `application/chat_service.go`（`buildMessagesWithContext` 改造）, `application/token_counter.go`（Token 计数与预算管理）, `application/summary_service.go`（摘要服务）, `domain/session/session.go`（增加 Summary 字段）, `infrastructure/session/mysql/`（DDL + 持久化）, `database/migrations/001_add_session_summary.sql`（迁移脚本）
+
+- **Phase 2（4 周）— 向量记忆（跨会话语义检索）**:
+  - [ ] **记忆领域模型**：新建 `domain/memory/` 包，定义 `Memory` 实体（ID/UserID/Content/Embedding/MemoryType/Source/Importance/AccessCount/CreatedAt/UpdatedAt/ExpiredAt）
+  - [ ] **记忆类型枚举**：`fact`（事实性记忆，如"用户是Go开发者"）、`preference`（偏好，如"喜欢简洁回答"）、`episode`（情景记忆，重要对话片段）、`summary`（会话摘要归档）
+  - [ ] **记忆仓储接口**：`memory.Repository`（CreateMemory/UpdateMemory/DeleteMemory/ListByUser/SearchByEmbedding）
+  - [ ] **MySQL 持久化**：新建 `user_memories` 表（id/user_id/content/embedding MEDIUMBLOB/memory_type/source_session_id/importance FLOAT/access_count/created_at/updated_at/expired_at），复用现有 `knowledge_chunks` 的向量存储模式
+  - [ ] **记忆提取器**（参考 Mem0 Extraction Phase）：每轮对话结束后，异步调用 LLM 从对话中提取值得记忆的信息（Prompt: "从以下对话中提取用户的关键信息、偏好、事实，以 JSON 数组格式返回 [{content, type, importance}]"）
+  - [ ] **记忆更新器**（参考 Mem0 Update Phase）：将新提取的记忆与用户现有记忆库做向量相似度比对，决定操作：
+    - 相似度 > 0.9 → **UPDATE**（合并/更新已有记忆）
+    - 相似度 < 0.5 → **ADD**（新增记忆）
+    - 新信息与旧记忆矛盾 → **DELETE** 旧记忆 + **ADD** 新记忆
+    - 无新信息 → **NOOP**
+  - [ ] **记忆检索注入**：`buildMessagesWithRAG()` 增加记忆检索步骤 — 将用户当前消息向量化，从 `user_memories` 中检索 Top-5 相关记忆，注入 System Prompt（`## 用户记忆\n以下是关于该用户的已知信息：\n{memories}`）
+  - [ ] **记忆衰减机制**：长期未被检索命中的记忆降低 importance 分数，低于阈值自动归档/删除（模拟人类遗忘曲线）
+  - [ ] **记忆管理 API**：CRUD 接口（GET/POST/PUT/DELETE `/api/memory`），支持用户查看和手动管理自己的记忆
+  - **相关文件**: `domain/memory/memory.go`（领域模型）, `domain/memory/repository.go`（仓储接口）, `application/memory_service.go`（记忆服务）, `infrastructure/memory/mysql/`（MySQL 实现）, `interfaces/http/memory_handler.go`（API）
+
+- **Phase 3（3 周）— 用户画像 + 智能记忆策略**:
+  - [ ] **用户画像实体**：`domain/memory/user_profile.go`，结构化 KV 存储（姓名/职业/技术栈/语言偏好/沟通风格/常用工具/关注领域等），JSON 格式存入 `user_profiles` 表
+  - [ ] **画像自动提取**：每 N 轮对话后，LLM 从累积记忆中提炼/更新用户画像（Prompt: "根据以下用户记忆，生成/更新结构化用户画像 JSON"）
+  - [ ] **画像注入 System Prompt**：在 `renderPromptTemplate()` 中增加 `{{user_profile}}` 内置变量，自动注入用户画像
+  - [ ] **记忆重要性评估**：引入 LLM 评分机制，对每条候选记忆评估重要性（0-1），仅存储 importance > 0.3 的记忆，避免记忆库膨胀
+  - [ ] **记忆容量管理**：每用户设置记忆上限（如 500 条），超限时按 importance × recency 加权排序，淘汰最低分记忆
+  - [ ] **记忆来源追溯**：每条记忆关联 `source_session_id`，支持追溯记忆来源对话
+  - [ ] **前端记忆面板**：用户可查看/编辑/删除自己的记忆列表和用户画像，支持手动添加记忆
+  - **相关文件**: `domain/memory/user_profile.go`, `application/memory_service.go`（画像提取逻辑）, `application/prompt_template.go`（`{{user_profile}}` 变量）
+
+- **数据库设计**:
+  ```sql
+  -- 用户记忆表（向量记忆 + 结构化记忆统一存储）
+  CREATE TABLE user_memories (
+      id                BIGINT AUTO_INCREMENT PRIMARY KEY,
+      user_id           BIGINT NOT NULL COMMENT '用户ID',
+      content           TEXT NOT NULL COMMENT '记忆内容（自然语言描述）',
+      embedding         MEDIUMBLOB COMMENT '向量（复用 knowledge_chunks 的存储方式）',
+      memory_type       ENUM('fact','preference','episode','summary') NOT NULL DEFAULT 'fact',
+      source_session_id VARCHAR(36) COMMENT '来源会话ID',
+      importance        FLOAT NOT NULL DEFAULT 0.5 COMMENT '重要性分数 0-1',
+      access_count      INT NOT NULL DEFAULT 0 COMMENT '被检索命中次数',
+      created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      expired_at        TIMESTAMP NULL COMMENT '过期时间（NULL=永不过期）',
+      INDEX idx_user_id (user_id),
+      INDEX idx_memory_type (user_id, memory_type),
+      INDEX idx_importance (user_id, importance)
+  );
+
+  -- 用户画像表
+  CREATE TABLE user_profiles (
+      id         BIGINT AUTO_INCREMENT PRIMARY KEY,
+      user_id    BIGINT NOT NULL UNIQUE COMMENT '用户ID',
+      profile    JSON NOT NULL COMMENT '结构化画像（姓名/职业/偏好等）',
+      version    INT NOT NULL DEFAULT 1 COMMENT '画像版本号',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  );
+
+  -- chat_sessions 表增加摘要字段
+  ALTER TABLE chat_sessions ADD COLUMN summary TEXT DEFAULT NULL COMMENT '会话摘要（长对话自动压缩）';
+  ```
+
+- **架构流程图**:
+  ```
+  用户消息 → Token 预算计算 → 检索用户记忆(Top-5) → 检索用户画像
+       ↓                              ↓                    ↓
+  [System Prompt] + [用户画像] + [相关记忆] + [会话摘要] + [最近N条消息] + [RAG知识库]
+       ↓
+  发送给 LLM → 生成回复 → 异步提取记忆 → Mem0 式更新（ADD/UPDATE/DELETE）
+  ```
+
+- **与现有架构的集成点**:
+  - 复用 `knowledge.Embedder` 接口进行记忆向量化（与 RAG 共享 embedding 模型）
+  - 复用 `infrastructure/knowledge/similarity.go` 的余弦相似度计算
+  - 参考 `PromptVarsService` 的服务模式，新建 `MemoryService` 注入 `ChatService`
+  - 参考 `prompt_vars_user` 表的 user_id 隔离模式
+  - `buildMessagesWithRAG()` 扩展为 `buildMessagesWithContext()`，统一管理 RAG + 记忆 + 摘要 + 画像的注入
+
+- **预估工作量**: 2.5 个月（Phase 1: 3周 → Phase 2: 4周 → Phase 3: 3周）
 
 ### 4. 多模态支持
 - **现状**: 仅支持纯文本输入输出
@@ -282,7 +364,9 @@
 └── 🟡 错误恢复/重试（P1 #8）
 
 2026 Q3 (7-9月)
-├── 🔴 长期记忆 / Memory 系统（P0 #3）
+├── 🔴 Memory Phase 1：会话摘要 + Token 窗口管理（P0 #3，3周）
+├── 🔴 Memory Phase 2：向量记忆 + Mem0 式提取更新（P0 #3，4周）
+├── 🔴 Memory Phase 3：用户画像 + 智能记忆策略（P0 #3，3周）
 ├── 🔴 多模态支持 - 图片（P0 #4）
 ├── 🟡 RAG 高级策略（P1 #6）
 ├── 🟡 对话分叉/重新生成（P1 #9）

@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS chat_sessions (
     title         VARCHAR(255) COMMENT '会话标题（第一条消息）',
     system_prompt TEXT DEFAULT NULL COMMENT 'System Prompt（会话级别的系统提示词）',
     model_name    VARCHAR(100) NOT NULL DEFAULT '' COMMENT '会话使用的模型名称',
+    summary       TEXT DEFAULT NULL COMMENT '会话摘要（长对话自动压缩，用于上下文窗口管理）',
     created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     INDEX idx_created_at (created_at),

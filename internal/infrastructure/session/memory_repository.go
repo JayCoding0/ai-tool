@@ -145,3 +145,40 @@ func (r *MemoryRepository) UpdateSessionSystemPrompt(ctx context.Context, sessID
 func (r *MemoryRepository) GetSessionSystemPrompt(ctx context.Context, sessID session.SessionID) (string, error) {
 	return "", nil
 }
+
+// GetSessionSummary 内存实现返回会话摘要
+func (r *MemoryRepository) GetSessionSummary(ctx context.Context, sessID session.SessionID) (string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	sess, exists := r.sessions[sessID]
+	if !exists {
+		return "", nil
+	}
+	return sess.Summary(), nil
+}
+
+// UpdateSessionSummary 内存实现更新会话摘要
+func (r *MemoryRepository) UpdateSessionSummary(ctx context.Context, sessID session.SessionID, summary string) error {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	sess, exists := r.sessions[sessID]
+	if !exists {
+		return nil
+	}
+	sess.SetSummary(summary)
+	return nil
+}
+
+// GetSessionMessageCount 内存实现返回消息数量
+func (r *MemoryRepository) GetSessionMessageCount(ctx context.Context, sessID session.SessionID) (int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	sess, exists := r.sessions[sessID]
+	if !exists {
+		return 0, nil
+	}
+	return len(sess.GetHistory()), nil
+}

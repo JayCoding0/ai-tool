@@ -147,6 +147,9 @@ func InitComponents(appConfig *config.Config) (*http_handler.ChatHandler, *appli
 	// 初始化 Prompt 模板变量服务（需要数据库已连接）
 	initPromptVarsService(frontendChatService, handler)
 
+	// 初始化会话摘要服务（需要数据库已连接）
+	initSummaryService(appConfig, frontendChatService)
+
 	// 初始化 RAG 知识库服务（需要数据库已连接）
 	initKnowledgeService(appConfig, frontendChatService, handler)
 
@@ -166,6 +169,27 @@ func initPromptVarsService(chatService *application.ChatService, handler *http_h
 	chatService.SetPromptVarsService(promptVarsSvc)
 	handler.SetPromptVarsService(promptVarsSvc)
 	shared.GetLogger().Info("Prompt 模板变量服务已启用")
+}
+
+// initSummaryService 初始化会话摘要服务
+func initSummaryService(appConfig *config.Config, chatService *application.ChatService) {
+	if database.GetDB() == nil {
+		return
+	}
+	modelGen := newModelGenerator(appConfig)
+	summarySvc := application.NewSummaryService(
+		mysql_session.NewMySQLRepository(),
+		modelGen,
+	)
+	summarySvc.SetModelFactory(newModelFactory(appConfig), appConfig.Model.Name)
+	chatService.SetSummaryService(summarySvc)
+	// 设置模型最大上下文 token 数
+	if appConfig.Model.MaxContextLength > 0 {
+		chatService.SetMaxContextTokens(appConfig.Model.MaxContextLength)
+	}
+	shared.GetLogger().Info("会话摘要服务已启用",
+		zap.Int("max_context_tokens", appConfig.Model.MaxContextLength),
+	)
 }
 
 // initKnowledgeService 初始化 RAG 知识库服务（如果配置启用）

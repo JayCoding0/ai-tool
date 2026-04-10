@@ -254,6 +254,38 @@ func (r *MySQLRepository) GetSessionSystemPrompt(ctx context.Context, sessID ses
 	return prompt, nil
 }
 
+// GetSessionSummary 获取会话摘要
+func (r *MySQLRepository) GetSessionSummary(ctx context.Context, sessID session.SessionID) (string, error) {
+	var summary string
+	dest := []interface{}{&summary}
+	err := r.db.QueryRow(ctx, dest,
+		"SELECT COALESCE(summary, '') FROM chat_sessions WHERE id = ?",
+		string(sessID))
+	if err != nil {
+		return "", err
+	}
+	return summary, nil
+}
+
+// UpdateSessionSummary 更新会话摘要
+func (r *MySQLRepository) UpdateSessionSummary(ctx context.Context, sessID session.SessionID, summary string) error {
+	_, err := r.db.Exec(ctx, "UPDATE chat_sessions SET summary = ? WHERE id = ?", summary, string(sessID))
+	return err
+}
+
+// GetSessionMessageCount 获取会话消息数量
+func (r *MySQLRepository) GetSessionMessageCount(ctx context.Context, sessID session.SessionID) (int, error) {
+	var count int
+	dest := []interface{}{&count}
+	err := r.db.QueryRow(ctx, dest,
+		"SELECT COUNT(*) FROM chat_messages WHERE session_id = ?",
+		string(sessID))
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
 // GetModelTokenStats 获取各模型 token 消耗统计（userID=0 时统计所有用户）
 func (r *MySQLRepository) GetModelTokenStats(ctx context.Context, userID int64) ([]session.ModelTokenStat, error) {
 	var query string

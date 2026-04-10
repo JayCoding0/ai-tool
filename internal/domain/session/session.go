@@ -36,6 +36,7 @@ type SessionInfo struct {
 	Title        string    `json:"title"`
 	ModelName    string    `json:"model_name,omitempty"`
 	SystemPrompt string    `json:"system_prompt,omitempty"`
+	Summary      string    `json:"summary,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }
@@ -44,6 +45,7 @@ type SessionInfo struct {
 type Session struct {
 	id        SessionID
 	history   []Message
+	summary   string // 会话摘要（长对话自动压缩）
 	createdAt time.Time
 	updatedAt time.Time
 	mu        sync.Mutex
@@ -114,4 +116,19 @@ func (s *Session) CreatedAt() time.Time {
 // UpdatedAt 获取更新时间
 func (s *Session) UpdatedAt() time.Time {
 	return s.updatedAt
+}
+
+// Summary 获取会话摘要
+func (s *Session) Summary() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.summary
+}
+
+// SetSummary 设置会话摘要
+func (s *Session) SetSummary(summary string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.summary = summary
+	s.updatedAt = time.Now()
 }
