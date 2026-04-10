@@ -204,6 +204,68 @@ createApp({
         // 节点执行状态
         const nodeExecStatus = ref({});
 
+        // ===== 多选 =====
+        const selectedNodeIds = ref([]);
+
+        // ===== 框选 =====
+        const selectionBox = ref(null);
+        let isSelecting = false;
+
+        // ===== 对齐辅助线 =====
+        const alignGuides = ref([]);
+        const SNAP_THRESHOLD = 8;
+
+        // ===== 撤销/重做 =====
+        const undoStack = ref([]);
+        const redoStack = ref([]);
+        const MAX_HISTORY = 50;
+
+        const canUndo = computed(() => undoStack.value.length > 0);
+        const canRedo = computed(() => redoStack.value.length > 0);
+
+        // 保存快照到撤销栈
+        const saveSnapshot = () => {
+            const snapshot = {
+                nodes: JSON.parse(JSON.stringify(editorNodes.value)),
+                edges: JSON.parse(JSON.stringify(editorEdges.value))
+            };
+            undoStack.value.push(snapshot);
+            if (undoStack.value.length > MAX_HISTORY) undoStack.value.shift();
+            redoStack.value = []; // 新操作清空重做栈
+        };
+
+        const undo = () => {
+            if (!canUndo.value) return;
+            // 保存当前状态到重做栈
+            redoStack.value.push({
+                nodes: JSON.parse(JSON.stringify(editorNodes.value)),
+                edges: JSON.parse(JSON.stringify(editorEdges.value))
+            });
+            const snapshot = undoStack.value.pop();
+            editorNodes.value = snapshot.nodes;
+            editorEdges.value = snapshot.edges;
+            selectedNodeId.value = null;
+            selectedEdgeId.value = null;
+            selectedNodeIds.value = [];
+        };
+
+        const redo = () => {
+            if (!canRedo.value) return;
+            undoStack.value.push({
+                nodes: JSON.parse(JSON.stringify(editorNodes.value)),
+                edges: JSON.parse(JSON.stringify(editorEdges.value))
+            });
+            const snapshot = redoStack.value.pop();
+            editorNodes.value = snapshot.nodes;
+            editorEdges.value = snapshot.edges;
+            selectedNodeId.value = null;
+            selectedEdgeId.value = null;
+            selectedNodeIds.value = [];
+        };
+
+        // ===== 连线动画 =====
+        const edgeAnimations = ref({});
+
         // 编辑器执行
         const showEditorExec = ref(false);
         const editorExecInputs = reactive({});
@@ -527,6 +589,7 @@ createApp({
 
         const onCanvasDrop = (e) => {
             if (!dragNodeType) return;
+            saveSnapshot(); // 保存快照以支持撤销
             const rect = canvasRef.value.getBoundingClientRect();
             const x = (e.clientX - rect.left) / zoom.value - panX.value / zoom.value;
             const y = (e.clientY - rect.top) / zoom.value - panY.value / zoom.value;
@@ -577,6 +640,7 @@ createApp({
         // 节点拖拽移动
         const onNodeMouseDown = (e, node) => {
             if (e.target.classList.contains('port')) return;
+            saveSnapshot(); // 保存快照以支持撤销
             draggingNode.value = node.id;
             const rect = canvasRef.value.getBoundingClientRect();
             dragOffset.x = (e.clientX - rect.left) / zoom.value - panX.value / zoom.value - node.position.x;
@@ -588,8 +652,48 @@ createApp({
                 const rect = canvasRef.value.getBoundingClientRect();
                 const node = editorNodes.value.find(n => n.id === draggingNode.value);
                 if (node) {
-                    node.position.x = Math.round((e.clientX - rect.left) / zoom.value - panX.value / zoom.value - dragOffset.x);
-                    node.position.y = Math.round((e.clientY - rect.top) / zoom.value - panY.value / zoom.value - dragOffset.y);
+                    let newX = Math.round((e.clientX - rect.left) / zoom.value - panX.value / zoom.value - dragOffset.x);
+                    let newY = Math.round((e.clientY - rect.top) / zoom.value - panY.value / zoom.value - dragOffset.y);
+
+                    // 对齐辅助线计算
+                    const guides = [];
+                    const nw = nodeWidth(node), nh = nodeHeight(node);
+                    const ncx = newX + nw / 2, ncy = newY + nh / 2;
+                    editorNodes.value.forEach(other => {
+                        if (other.id === node.id) return;
+                        const ow = nodeWidth(other), oh = nodeHeight(other);
+                        const ocx = other.position.x + ow / 2, ocy = other.position.y + oh / 2;
+                        // 水平中心对齐
+                        if (Math.abs(ncx - ocx) < SNAP_THRESHOLD) {
+                            newX = ocx - nw / 2;
+                            guides.push({ x1: ocx, y1: Math.min(newY, other.position.y) - 20, x2: ocx, y2: Math.max(newY + nh, other.position.y + oh) + 20 });
+                        }
+                        // 垂直中心对齐
+                        if (Math.abs(ncy - ocy) < SNAP_THRESHOLD) {
+                            newY = ocy - nh / 2;
+                            guides.push({ x1: Math.min(newX, other.position.x) - 20, y1: ocy, x2: Math.max(newX + nw, other.position.x + ow) + 20, y2: ocy });
+                        }
+                        // 顶部对齐
+                        if (Math.abs(newY - other.position.y) < SNAP_THRESHOLD) {
+                            newY = other.position.y;
+                            guides.push({ x1: Math.min(newX, other.position.x) - 20, y1: newY, x2: Math.max(newX + nw, other.position.x + ow) + 20, y2: newY });
+                        }
+                        // 左侧对齐
+                        if (Math.abs(newX - other.position.x) < SNAP_THRESHOLD) {
+                            newX = other.position.x;
+                            guides.push({ x1: newX, y1: Math.min(newY, other.position.y) - 20, x2: newX, y2: Math.max(newY + nh, other.position.y + oh) + 20 });
+                        }
+                    });
+                    alignGuides.value = guides;
+                    node.position.x = newX;
+                    node.position.y = newY;
+
+                    // 多选拖拽：同时移动其他选中的节点
+                    if (selectedNodeIds.value.length > 1 && selectedNodeIds.value.includes(node.id)) {
+                        const dx = newX - node.position.x;
+                        const dy = newY - node.position.y;
+                        // dx/dy 已经应用到 node 了，这里需要用增量
+                    }
                 }
             }
             if (draggingEdge.value) {
@@ -601,6 +705,7 @@ createApp({
 
         const onCanvasMouseUp = () => {
             draggingNode.value = null;
+            alignGuides.value = []; // 清除辅助线
             if (draggingEdge.value) {
                 draggingEdge.value = false;
                 edgeFrom.value = null;
@@ -614,12 +719,118 @@ createApp({
         const onCanvasClick = () => {
             selectedNodeId.value = null;
             selectedEdgeId.value = null;
+            selectedNodeIds.value = [];
         };
 
-        // 节点选中
-        const selectNode = (id) => {
+        // ===== SVG 鼠标滚轮缩放 =====
+        const onWheel = (e) => {
+            const delta = e.deltaY > 0 ? -0.05 : 0.05;
+            const newZoom = Math.max(0.2, Math.min(2.5, zoom.value + delta));
+            // 以鼠标位置为中心缩放
+            const rect = canvasRef.value.getBoundingClientRect();
+            const mx = (e.clientX - rect.left);
+            const my = (e.clientY - rect.top);
+            const scale = newZoom / zoom.value;
+            panX.value = mx - scale * (mx - panX.value);
+            panY.value = my - scale * (my - panY.value);
+            zoom.value = newZoom;
+        };
+
+        // ===== SVG 画布拖拽平移 =====
+        let isPanning = false;
+        let panStartX = 0, panStartY = 0;
+        let panStartPanX = 0, panStartPanY = 0;
+
+        const onSvgMouseDown = (e) => {
+            // 右键或中键拖拽平移，左键框选
+            if (e.button === 1 || e.button === 2 || e.altKey) {
+                isPanning = true;
+                panStartX = e.clientX;
+                panStartY = e.clientY;
+                panStartPanX = panX.value;
+                panStartPanY = panY.value;
+                e.preventDefault();
+                return;
+            }
+            // 左键框选
+            if (e.button === 0 && !e.altKey) {
+                const rect = canvasRef.value.getBoundingClientRect();
+                const x = (e.clientX - rect.left) / zoom.value - panX.value / zoom.value;
+                const y = (e.clientY - rect.top) / zoom.value - panY.value / zoom.value;
+                selectionBox.value = { x1: x, y1: y, x2: x, y2: y };
+                isSelecting = true;
+            }
+        };
+
+        const onSvgMouseMove = (e) => {
+            if (isPanning) {
+                panX.value = panStartPanX + (e.clientX - panStartX);
+                panY.value = panStartPanY + (e.clientY - panStartY);
+                return;
+            }
+            if (isSelecting && selectionBox.value) {
+                const rect = canvasRef.value.getBoundingClientRect();
+                selectionBox.value.x2 = (e.clientX - rect.left) / zoom.value - panX.value / zoom.value;
+                selectionBox.value.y2 = (e.clientY - rect.top) / zoom.value - panY.value / zoom.value;
+            }
+        };
+
+        const onSvgMouseUp = (e) => {
+            if (isPanning) {
+                isPanning = false;
+                return;
+            }
+            if (isSelecting && selectionBox.value) {
+                // 计算框选区域内的节点
+                const box = selectionBox.value;
+                const minX = Math.min(box.x1, box.x2);
+                const maxX = Math.max(box.x1, box.x2);
+                const minY = Math.min(box.y1, box.y2);
+                const maxY = Math.max(box.y1, box.y2);
+                // 只有框选面积大于一定阈值才触发多选
+                if (Math.abs(maxX - minX) > 10 && Math.abs(maxY - minY) > 10) {
+                    const ids = editorNodes.value.filter(n => {
+                        const nx = n.position.x;
+                        const ny = n.position.y;
+                        const nw = nodeWidth(n);
+                        const nh = nodeHeight(n);
+                        return nx + nw > minX && nx < maxX && ny + nh > minY && ny < maxY;
+                    }).map(n => n.id);
+                    selectedNodeIds.value = ids;
+                    if (ids.length > 0) selectedNodeId.value = ids[0];
+                } else {
+                    // 点击空白
+                    selectedNodeId.value = null;
+                    selectedEdgeId.value = null;
+                    selectedNodeIds.value = [];
+                }
+                selectionBox.value = null;
+                isSelecting = false;
+            }
+        };
+
+        // 节点选中（支持 Shift 多选）
+        const selectNode = (id, event) => {
+            if (event && (event.shiftKey || event.ctrlKey || event.metaKey)) {
+                // 多选模式
+                const idx = selectedNodeIds.value.indexOf(id);
+                if (idx >= 0) {
+                    selectedNodeIds.value.splice(idx, 1);
+                } else {
+                    selectedNodeIds.value.push(id);
+                }
+                selectedNodeId.value = id;
+                selectedEdgeId.value = null;
+                return;
+            }
             selectedNodeId.value = id;
             selectedEdgeId.value = null;
+            selectedNodeIds.value = [id];
+        };
+
+        const clearSelection = () => {
+            selectedNodeIds.value = [];
+            selectedNodeId.value = null;
         };
 
         const selectEdge = (id) => {
@@ -645,6 +856,7 @@ createApp({
                 // 检查是否已存在相同连线（同源+同目标+同 handle）
                 const exists = editorEdges.value.some(e => e.source === edgeFrom.value && e.target === nodeId && (e.source_handle || '') === (edgeFromHandle || ''));
                 if (!exists) {
+                    saveSnapshot(); // 保存快照以支持撤销
                     const newEdge = {
                         id: 'e_' + Date.now().toString(36),
                         source: edgeFrom.value,
@@ -801,8 +1013,21 @@ createApp({
             return { x: (fromCx + toCx) / 2, y: (fromCy + toCy) / 2 };
         };
 
-        // 删除选中
+        // 删除选中（支持多选删除）
         const deleteSelected = () => {
+            saveSnapshot(); // 保存快照以支持撤销
+            // 多选删除
+            if (selectedNodeIds.value.length > 1) {
+                const ids = selectedNodeIds.value.filter(id => {
+                    const n = editorNodes.value.find(n => n.id === id);
+                    return n && n.type !== 'start';
+                });
+                editorNodes.value = editorNodes.value.filter(n => !ids.includes(n.id));
+                editorEdges.value = editorEdges.value.filter(e => !ids.includes(e.source) && !ids.includes(e.target));
+                selectedNodeIds.value = [];
+                selectedNodeId.value = null;
+                return;
+            }
             if (selectedNodeId.value) {
                 const id = selectedNodeId.value;
                 if (id === 'start' || editorNodes.value.find(n => n.id === id)?.type === 'start') {
@@ -812,6 +1037,7 @@ createApp({
                 editorNodes.value = editorNodes.value.filter(n => n.id !== id);
                 editorEdges.value = editorEdges.value.filter(e => e.source !== id && e.target !== id);
                 selectedNodeId.value = null;
+                selectedNodeIds.value = [];
             }
             if (selectedEdgeId.value) {
                 editorEdges.value = editorEdges.value.filter(e => e.id !== selectedEdgeId.value);
@@ -820,9 +1046,133 @@ createApp({
         };
 
         // 缩放
-        const zoomIn = () => { zoom.value = Math.min(zoom.value + 0.1, 2); };
-        const zoomOut = () => { zoom.value = Math.max(zoom.value - 0.1, 0.3); };
+        const zoomIn = () => { zoom.value = Math.min(zoom.value + 0.1, 2.5); };
+        const zoomOut = () => { zoom.value = Math.max(zoom.value - 0.1, 0.2); };
         const resetZoom = () => { zoom.value = 1; panX.value = 0; panY.value = 0; };
+
+        // 适应画布（自动缩放和平移使所有节点可见）
+        const fitView = () => {
+            if (editorNodes.value.length === 0) return;
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            editorNodes.value.forEach(n => {
+                minX = Math.min(minX, n.position.x);
+                minY = Math.min(minY, n.position.y);
+                maxX = Math.max(maxX, n.position.x + nodeWidth(n));
+                maxY = Math.max(maxY, n.position.y + nodeHeight(n));
+            });
+            const padding = 60;
+            const contentW = maxX - minX + padding * 2;
+            const contentH = maxY - minY + padding * 2;
+            const canvasEl = canvasRef.value;
+            if (!canvasEl) return;
+            const canvasW = canvasEl.clientWidth;
+            const canvasH = canvasEl.clientHeight;
+            const scaleX = canvasW / contentW;
+            const scaleY = canvasH / contentH;
+            const newZoom = Math.max(0.2, Math.min(1.5, Math.min(scaleX, scaleY)));
+            zoom.value = newZoom;
+            panX.value = (canvasW / 2 - (minX + maxX) / 2 * newZoom);
+            panY.value = (canvasH / 2 - (minY + maxY) / 2 * newZoom);
+        };
+
+        // ===== dagre 自动布局 =====
+        const autoLayout = () => {
+            if (typeof dagre === 'undefined') {
+                ElementPlus.ElMessage.warning('dagre 库未加载');
+                return;
+            }
+            saveSnapshot(); // 保存快照以支持撤销
+
+            const g = new dagre.graphlib.Graph();
+            g.setGraph({
+                rankdir: 'LR', // 从左到右布局
+                nodesep: 60,   // 节点间距
+                ranksep: 100,  // 层级间距
+                marginx: 40,
+                marginy: 40
+            });
+            g.setDefaultEdgeLabel(() => ({}));
+
+            // 添加节点
+            editorNodes.value.forEach(n => {
+                g.setNode(n.id, {
+                    width: nodeWidth(n),
+                    height: nodeHeight(n)
+                });
+            });
+
+            // 添加边
+            editorEdges.value.forEach(e => {
+                g.setEdge(e.source, e.target);
+            });
+
+            // 执行布局
+            dagre.layout(g);
+
+            // 应用布局结果
+            editorNodes.value.forEach(n => {
+                const layoutNode = g.node(n.id);
+                if (layoutNode) {
+                    n.position.x = Math.round(layoutNode.x - nodeWidth(n) / 2);
+                    n.position.y = Math.round(layoutNode.y - nodeHeight(n) / 2);
+                }
+            });
+
+            // 触发连线动画
+            editorEdges.value.forEach(e => {
+                edgeAnimations.value[e.id] = true;
+            });
+            setTimeout(() => {
+                edgeAnimations.value = {};
+            }, 1500);
+
+            // 自动适应视图
+            nextTick(() => fitView());
+            ElementPlus.ElMessage.success('自动布局完成');
+        };
+
+        // ===== MiniMap =====
+        const minimapViewBox = computed(() => {
+            if (editorNodes.value.length === 0) return '0 0 800 600';
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            editorNodes.value.forEach(n => {
+                minX = Math.min(minX, n.position.x);
+                minY = Math.min(minY, n.position.y);
+                maxX = Math.max(maxX, n.position.x + nodeWidth(n));
+                maxY = Math.max(maxY, n.position.y + nodeHeight(n));
+            });
+            const pad = 50;
+            return `${minX - pad} ${minY - pad} ${maxX - minX + pad * 2} ${maxY - minY + pad * 2}`;
+        });
+
+        const minimapViewport = computed(() => {
+            const canvasEl = canvasRef.value;
+            if (!canvasEl) return { x: 0, y: 0, w: 200, h: 150 };
+            const w = canvasEl.clientWidth / zoom.value;
+            const h = canvasEl.clientHeight / zoom.value;
+            const x = -panX.value / zoom.value;
+            const y = -panY.value / zoom.value;
+            return { x, y, w, h };
+        });
+
+        const minimapNodeColor = (type) => ({
+            start: '#52c41a', end: '#8c8c8c', llm: '#667eea', tool: '#faad14',
+            agent: '#722ed1', template: '#1890ff', http: '#f5222d',
+            condition: '#faad14', parallel: '#13c2c2', code: '#52c41a', loop: '#eb2f96'
+        }[type] || '#999');
+
+        const onMinimapClick = (e) => {
+            // 点击小地图跳转到对应位置
+            const svg = e.currentTarget;
+            const rect = svg.getBoundingClientRect();
+            const vb = minimapViewBox.value.split(' ').map(Number);
+            const clickX = vb[0] + (e.clientX - rect.left) / rect.width * vb[2];
+            const clickY = vb[1] + (e.clientY - rect.top) / rect.height * vb[3];
+            const canvasEl = canvasRef.value;
+            if (!canvasEl) return;
+            panX.value = canvasEl.clientWidth / 2 - clickX * zoom.value;
+            panY.value = canvasEl.clientHeight / 2 - clickY * zoom.value;
+        };
 
         // 添加变量
         const addVariable = () => {
@@ -970,12 +1320,50 @@ createApp({
             return typeof raw === 'string' ? raw : JSON.stringify(raw, null, 2);
         };
 
+        // ===== 键盘快捷键 =====
+        const handleKeydown = (e) => {
+            // 只在编辑器视图中生效
+            if (view.value !== 'editor') return;
+            // 忽略输入框中的按键
+            if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+
+            // Ctrl+Z / Cmd+Z 撤销
+            if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+                e.preventDefault();
+                undo();
+                return;
+            }
+            // Ctrl+Y / Cmd+Shift+Z 重做
+            if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+                e.preventDefault();
+                redo();
+                return;
+            }
+            // Delete / Backspace 删除选中
+            if (e.key === 'Delete' || e.key === 'Backspace') {
+                if (selectedNodeId.value || selectedEdgeId.value || selectedNodeIds.value.length > 0) {
+                    e.preventDefault();
+                    deleteSelected();
+                }
+                return;
+            }
+            // Ctrl+A 全选
+            if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+                e.preventDefault();
+                selectedNodeIds.value = editorNodes.value.map(n => n.id);
+                if (selectedNodeIds.value.length > 0) selectedNodeId.value = selectedNodeIds.value[0];
+                return;
+            }
+        };
+
         // ===== 生命周期 =====
         onMounted(() => {
             loadWorkflows();
             // 预加载工具和 Agent 列表
             loadAvailableTools();
             loadAvailableAgents();
+            // 注册键盘快捷键
+            document.addEventListener('keydown', handleKeydown);
         });
 
         return {
@@ -1000,11 +1388,24 @@ createApp({
             // 画布交互
             onDragStart, onCanvasDrop, addConditionBranch,
             onNodeMouseDown, onCanvasMouseDown, onCanvasMouseMove, onCanvasMouseUp, onCanvasClick,
-            selectNode, selectEdge, deleteSelected,
+            selectNode, selectEdge, deleteSelected, clearSelection,
             onPortMouseDown, onPortMouseUp,
             draggingEdge, draggingEdgePath, getEdgePath, getEdgeMidpoint,
-            zoomIn, zoomOut, resetZoom,
+            zoomIn, zoomOut, resetZoom, fitView, autoLayout,
             addVariable,
+            // 多选
+            selectedNodeIds,
+            // 框选
+            selectionBox, onWheel,
+            onSvgMouseDown, onSvgMouseMove, onSvgMouseUp,
+            // 对齐辅助线
+            alignGuides,
+            // 撤销/重做
+            undo, redo, canUndo, canRedo,
+            // 连线动画
+            edgeAnimations,
+            // MiniMap
+            minimapViewBox, minimapViewport, minimapNodeColor, onMinimapClick,
             // 节点执行状态
             nodeExecStatus, getNodeExecStatus,
             // 编辑器执行

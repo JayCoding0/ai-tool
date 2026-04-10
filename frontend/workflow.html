@@ -8,6 +8,8 @@
     <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="workflow-style.css">
+    <!-- dagre 自动布局库 -->
+    <script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
 </head>
 <body>
 <div id="wf-app">
@@ -162,15 +164,24 @@
                 <div class="canvas-toolbar">
                     <button @click="zoomIn" title="放大">🔍+</button>
                     <button @click="zoomOut" title="缩小">🔍-</button>
-                    <button @click="resetZoom" title="重置">↺</button>
+                    <button @click="resetZoom" title="重置视图">↺</button>
+                    <button @click="fitView" title="适应画布">⊞</button>
+                    <button @click="autoLayout" title="自动布局（dagre）">📐 自动布局</button>
+                    <button @click="undo" :disabled="!canUndo" title="撤销 (Ctrl+Z)">↩</button>
+                    <button @click="redo" :disabled="!canRedo" title="重做 (Ctrl+Y)">↪</button>
                     <span style="font-size:11px;color:#999;padding:6px;">{{ Math.round(zoom * 100) }}%</span>
                 </div>
                 <div class="canvas-actions">
-                    <el-button size="small" type="danger" plain @click="deleteSelected" :disabled="!selectedNodeId && !selectedEdgeId">🗑 删除选中</el-button>
+                    <el-button size="small" type="warning" plain @click="clearSelection" v-if="selectedNodeIds.length > 1">取消多选 ({{ selectedNodeIds.length }})</el-button>
+                    <el-button size="small" type="danger" plain @click="deleteSelected" :disabled="!selectedNodeId && !selectedEdgeId && selectedNodeIds.length === 0">🗑 删除选中</el-button>
                 </div>
 
                 <svg class="dag-svg" ref="svgRef"
-                     :viewBox="svgViewBox">
+                     :viewBox="svgViewBox"
+                     @wheel.prevent="onWheel"
+                     @mousedown.self="onSvgMouseDown"
+                     @mousemove="onSvgMouseMove"
+                     @mouseup="onSvgMouseUp">
                     <defs>
                         <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
                             <polygon points="0 0, 8 3, 0 6" fill="#c0c0d0" />
@@ -226,11 +237,23 @@
                     </defs>
                     <rect width="5000" height="5000" x="-2500" y="-2500" fill="url(#grid-large)" />
 
+                    <!-- 对齐辅助线 -->
+                    <line v-for="(guide, gi) in alignGuides" :key="'guide_' + gi"
+                          :x1="guide.x1" :y1="guide.y1" :x2="guide.x2" :y2="guide.y2"
+                          class="align-guide" />
+
+                    <!-- 框选区域 -->
+                    <rect v-if="selectionBox" class="selection-box"
+                          :x="Math.min(selectionBox.x1, selectionBox.x2)"
+                          :y="Math.min(selectionBox.y1, selectionBox.y2)"
+                          :width="Math.abs(selectionBox.x2 - selectionBox.x1)"
+                          :height="Math.abs(selectionBox.y2 - selectionBox.y1)" />
+
                     <!-- 连线 -->
                     <g v-for="edge in editorEdges" :key="edge.id">
                         <path :d="getEdgePath(edge)"
                               class="edge-path"
-                              :class="{'edge-selected': selectedEdgeId === edge.id}"
+                              :class="{'edge-selected': selectedEdgeId === edge.id, 'edge-animated': edgeAnimations[edge.id]}"
                               :style="selectedEdgeId === edge.id ? 'stroke:#667eea;stroke-width:2.5;marker-end:url(#arrowhead-active)' : ''"
                               @click.stop="selectEdge(edge.id)" />
                         <!-- 边标签（条件分支名称） -->
@@ -252,10 +275,10 @@
                     <!-- 节点 -->
                     <g v-for="node in editorNodes" :key="node.id"
                        class="node-group"
-                       :class="{'node-selected': selectedNodeId === node.id, ['node-' + getNodeExecStatus(node.id)]: getNodeExecStatus(node.id)}"
+                       :class="{'node-selected': selectedNodeId === node.id || selectedNodeIds.includes(node.id), ['node-' + getNodeExecStatus(node.id)]: getNodeExecStatus(node.id)}"
                        :transform="'translate(' + node.position.x + ',' + node.position.y + ')'"
                        @mousedown.stop="onNodeMouseDown($event, node)"
-                       @click.stop="selectNode(node.id)">
+                       @click.stop="selectNode(node.id, $event)">
 
                         <!-- 开始/结束节点：胶囊形 -->
                         <template v-if="node.type === 'start' || node.type === 'end'">
@@ -327,6 +350,21 @@
                         </template>
                     </g>
                 </svg>
+
+                <!-- MiniMap 小地图 -->
+                <div class="minimap" v-if="editorNodes.length > 0">
+                    <svg :viewBox="minimapViewBox" class="minimap-svg" @click="onMinimapClick">
+                        <rect v-for="node in editorNodes" :key="'mm_' + node.id"
+                              :x="node.position.x" :y="node.position.y"
+                              :width="nodeWidth(node)" :height="nodeHeight(node)"
+                              :fill="minimapNodeColor(node.type)" rx="3" ry="3" />
+                        <path v-for="edge in editorEdges" :key="'mme_' + edge.id"
+                              :d="getEdgePath(edge)" fill="none" stroke="#c0c0d0" stroke-width="1" />
+                        <rect class="minimap-viewport"
+                              :x="minimapViewport.x" :y="minimapViewport.y"
+                              :width="minimapViewport.w" :height="minimapViewport.h" />
+                    </svg>
+                </div>
             </div>
 
             <!-- 右侧配置面板 -->
