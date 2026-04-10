@@ -61,6 +61,20 @@ func RegisterRoutes(chatHandler *http_handler.ChatHandler, appConfig *config.Con
 	mux.HandleFunc("/api/knowledge/documents/upload-directory", chatHandler.HandleUploadDirectory)
 	mux.HandleFunc("/api/knowledge/documents/delete", chatHandler.HandleDeleteDocument)
 	mux.HandleFunc("/api/knowledge/search", chatHandler.HandleKnowledgeSearch)
+	// 记忆管理接口（跨会话向量记忆）
+	mux.HandleFunc("/api/memory", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			chatHandler.HandleListMemories(w, r)
+		case http.MethodPost:
+			chatHandler.HandleCreateMemory(w, r)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/api/memory/update", chatHandler.HandleUpdateMemory)
+	mux.HandleFunc("/api/memory/delete", chatHandler.HandleDeleteMemory)
+	mux.HandleFunc("/api/memory/search", chatHandler.HandleSearchMemories)
 
 	// Workflow 工作流接口
 	if chatHandler.GetWorkflowHandler() != nil {

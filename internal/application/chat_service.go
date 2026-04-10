@@ -73,6 +73,7 @@ type ChatService struct {
 	knowledgeSvc     *KnowledgeService     // RAG 知识库服务（可选）
 	promptVarsSvc    *PromptVarsService    // Prompt 模板变量服务（可选）
 	summarySvc       *SummaryService       // 会话摘要服务（可选）
+	memorySvc        *MemoryService        // 跨会话向量记忆服务（可选）
 	maxContextTokens int                   // 模型最大上下文 token 数（从配置获取）
 }
 
@@ -109,6 +110,11 @@ func (s *ChatService) SetPromptVarsService(pvs *PromptVarsService) {
 // SetSummaryService 注入会话摘要服务（启用自动摘要能力）
 func (s *ChatService) SetSummaryService(ss *SummaryService) {
 	s.summarySvc = ss
+}
+
+// SetMemoryService 注入跨会话向量记忆服务
+func (s *ChatService) SetMemoryService(ms *MemoryService) {
+	s.memorySvc = ms
 }
 
 // SetMaxContextTokens 设置模型最大上下文 token 数
@@ -183,8 +189,14 @@ func (s *ChatService) ProcessMessageStream(ctx context.Context, req ChatRequest)
 		sessionSummary, _ = s.summarySvc.GetSessionSummary(ctx, sess.ID())
 	}
 
-	// 统一使用结构化 messages（支持动态 token 预算 + 摘要注入）
-	messages, evicted := buildMessagesWithContext(sess.GetHistory(), systemPrompt, "", sessionSummary, s.maxContextTokens)
+	// 检索用户相关记忆（跨会话向量记忆）
+	var memoryContext string
+	if s.memorySvc != nil && req.UserID > 0 {
+		memoryContext, _ = s.memorySvc.RetrieveRelevantMemories(ctx, req.UserID, req.Message, 5)
+	}
+
+	// 统一使用结构化 messages（支持动态 token 预算 + 摘要 + 记忆注入）
+	messages, evicted := buildMessagesWithContext(sess.GetHistory(), systemPrompt, "", sessionSummary, memoryContext, s.maxContextTokens)
 
 	// 异步触发摘要生成（如果有消息被裁剪）
 	if s.summarySvc != nil && len(evicted) > 0 {
@@ -260,6 +272,11 @@ func (s *ChatService) ProcessMessageStream(ctx context.Context, req ChatRequest)
 
 		if isFirstMessage && s.modelFactory != nil {
 			go s.generateSessionTitle(context.Background(), sess.ID(), req.Message, modelName)
+		}
+
+		// 异步提取记忆（Mem0 Extraction Phase）
+		if s.memorySvc != nil && req.UserID > 0 {
+			go s.memorySvc.ExtractMemories(context.Background(), req.UserID, string(sess.ID()), sess.GetHistory(), modelName)
 		}
 	}()
 
@@ -434,7 +451,13 @@ func (s *ChatService) ProcessMessageWithTools(ctx context.Context, req ChatReque
 		sessionSummary, _ = s.summarySvc.GetSessionSummary(ctx, sess.ID())
 	}
 
-	messages, evicted := buildMessagesWithContext(sess.GetHistory(), systemPrompt, ragContext, sessionSummary, s.maxContextTokens)
+	// 检索用户相关记忆（跨会话向量记忆）
+	var memoryContext string
+	if s.memorySvc != nil && req.UserID > 0 {
+		memoryContext, _ = s.memorySvc.RetrieveRelevantMemories(ctx, req.UserID, req.Message, 5)
+	}
+
+	messages, evicted := buildMessagesWithContext(sess.GetHistory(), systemPrompt, ragContext, sessionSummary, memoryContext, s.maxContextTokens)
 	isFirstMessage := len(sess.GetHistory()) <= 1
 
 	// 异步触发摘要生成（如果有消息被裁剪）
@@ -485,6 +508,11 @@ func (s *ChatService) ProcessMessageWithTools(ctx context.Context, req ChatReque
 		if isFirstMessage && s.modelFactory != nil {
 			go s.generateSessionTitle(context.Background(), sess.ID(), req.Message, modelName)
 		}
+
+		// 异步提取记忆（Mem0 Extraction Phase）
+		if s.memorySvc != nil && req.UserID > 0 {
+			go s.memorySvc.ExtractMemories(context.Background(), req.UserID, string(sess.ID()), sess.GetHistory(), modelName)
+		}
 	}()
 
 	return outCh, nil
@@ -492,22 +520,27 @@ func (s *ChatService) ProcessMessageWithTools(ctx context.Context, req ChatReque
 
 // buildMessages 将会话历史转换为 model.Message 列表（统一用于流式和工具调用）
 func buildMessages(history []session.Message, systemPrompt string) []model.Message {
-	msgs, _ := buildMessagesWithContext(history, systemPrompt, "", "", 0)
+	msgs, _ := buildMessagesWithContext(history, systemPrompt, "", "", "", 0)
 	return msgs
 }
 
 // buildMessagesWithRAG 将会话历史转换为 model.Message 列表，支持 RAG 上下文注入（兼容旧调用）
 func buildMessagesWithRAG(history []session.Message, systemPrompt, ragContext string) []model.Message {
-	msgs, _ := buildMessagesWithContext(history, systemPrompt, ragContext, "", 0)
+	msgs, _ := buildMessagesWithContext(history, systemPrompt, ragContext, "", "", 0)
 	return msgs
 }
 
 // buildMessagesWithContext 将会话历史转换为 model.Message 列表
-// 支持动态 token 预算管理、RAG 上下文注入、会话摘要注入
+// 支持动态 token 预算管理、RAG 上下文注入、会话摘要注入、用户记忆注入
 // 返回构建好的消息列表和被裁剪掉的历史消息（用于触发摘要生成）
-func buildMessagesWithContext(history []session.Message, systemPrompt, ragContext, summary string, maxContextTokens int) ([]model.Message, []session.Message) {
+func buildMessagesWithContext(history []session.Message, systemPrompt, ragContext, summary, memoryContext string, maxContextTokens int) ([]model.Message, []session.Message) {
 	if systemPrompt == "" {
 		systemPrompt = "你是一个智能助手，请始终使用中文回答用户的问题。"
+	}
+
+	// 将用户记忆注入 System Prompt（优先级最高，放在最前面）
+	if memoryContext != "" {
+		systemPrompt += "\n\n## 用户记忆\n以下是关于该用户的已知信息，请参考这些信息提供个性化回答：\n" + memoryContext
 	}
 
 	// 将会话摘要注入 System Prompt

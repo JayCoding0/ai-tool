@@ -87,6 +87,7 @@ type ChatHandler struct {
 	agentRegistry  *application.AgentRegistry
 	knowledgeSvc   *application.KnowledgeService
 	promptVarsSvc  *application.PromptVarsService // Prompt 模板变量服务
+	memorySvc      *application.MemoryService     // 记忆服务（跨会话向量记忆）
 	workflowHandler *WorkflowHandler               // Workflow 工作流处理程序
 	appConfig      *config.Config
 	logger         *zap.Logger
@@ -115,6 +116,11 @@ func (h *ChatHandler) SetKnowledgeService(ks *application.KnowledgeService) {
 // SetPromptVarsService 注入 Prompt 变量服务
 func (h *ChatHandler) SetPromptVarsService(pvs *application.PromptVarsService) {
 	h.promptVarsSvc = pvs
+}
+
+// SetMemoryService 注入记忆服务（启用跨会话向量记忆能力）
+func (h *ChatHandler) SetMemoryService(ms *application.MemoryService) {
+	h.memorySvc = ms
 }
 
 // SetWorkflowService 注入 Workflow 工作流服务

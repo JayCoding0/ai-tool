@@ -62,20 +62,20 @@
   - **相关文件**: `application/chat_service.go`（`buildMessagesWithContext` 改造）, `application/token_counter.go`（Token 计数与预算管理）, `application/summary_service.go`（摘要服务）, `domain/session/session.go`（增加 Summary 字段）, `infrastructure/session/mysql/`（DDL + 持久化）, `database/migrations/001_add_session_summary.sql`（迁移脚本）
 
 - **Phase 2（4 周）— 向量记忆（跨会话语义检索）**:
-  - [ ] **记忆领域模型**：新建 `domain/memory/` 包，定义 `Memory` 实体（ID/UserID/Content/Embedding/MemoryType/Source/Importance/AccessCount/CreatedAt/UpdatedAt/ExpiredAt）
-  - [ ] **记忆类型枚举**：`fact`（事实性记忆，如"用户是Go开发者"）、`preference`（偏好，如"喜欢简洁回答"）、`episode`（情景记忆，重要对话片段）、`summary`（会话摘要归档）
-  - [ ] **记忆仓储接口**：`memory.Repository`（CreateMemory/UpdateMemory/DeleteMemory/ListByUser/SearchByEmbedding）
-  - [ ] **MySQL 持久化**：新建 `user_memories` 表（id/user_id/content/embedding MEDIUMBLOB/memory_type/source_session_id/importance FLOAT/access_count/created_at/updated_at/expired_at），复用现有 `knowledge_chunks` 的向量存储模式
-  - [ ] **记忆提取器**（参考 Mem0 Extraction Phase）：每轮对话结束后，异步调用 LLM 从对话中提取值得记忆的信息（Prompt: "从以下对话中提取用户的关键信息、偏好、事实，以 JSON 数组格式返回 [{content, type, importance}]"）
-  - [ ] **记忆更新器**（参考 Mem0 Update Phase）：将新提取的记忆与用户现有记忆库做向量相似度比对，决定操作：
+  - [x] **记忆领域模型**：新建 `domain/memory/` 包，定义 `Memory` 实体（ID/UserID/Content/Embedding/MemoryType/Source/Importance/AccessCount/CreatedAt/UpdatedAt/ExpiredAt）
+  - [x] **记忆类型枚举**：`fact`（事实性记忆，如"用户是Go开发者"）、`preference`（偏好，如"喜欢简洁回答"）、`episode`（情景记忆，重要对话片段）、`summary`（会话摘要归档）
+  - [x] **记忆仓储接口**：`memory.Repository`（CreateMemory/UpdateMemory/DeleteMemory/ListByUser/SearchByEmbedding）
+  - [x] **MySQL 持久化**：新建 `user_memories` 表（id/user_id/content/embedding MEDIUMBLOB/memory_type/source_session_id/importance FLOAT/access_count/created_at/updated_at/expired_at），复用现有 `knowledge_chunks` 的向量存储模式
+  - [x] **记忆提取器**（参考 Mem0 Extraction Phase）：每轮对话结束后，异步调用 LLM 从对话中提取值得记忆的信息（Prompt: "从以下对话中提取用户的关键信息、偏好、事实，以 JSON 数组格式返回 [{content, type, importance}]"）
+  - [x] **记忆更新器**（参考 Mem0 Update Phase）：将新提取的记忆与用户现有记忆库做向量相似度比对，决定操作：
     - 相似度 > 0.9 → **UPDATE**（合并/更新已有记忆）
     - 相似度 < 0.5 → **ADD**（新增记忆）
     - 新信息与旧记忆矛盾 → **DELETE** 旧记忆 + **ADD** 新记忆
     - 无新信息 → **NOOP**
-  - [ ] **记忆检索注入**：`buildMessagesWithRAG()` 增加记忆检索步骤 — 将用户当前消息向量化，从 `user_memories` 中检索 Top-5 相关记忆，注入 System Prompt（`## 用户记忆\n以下是关于该用户的已知信息：\n{memories}`）
-  - [ ] **记忆衰减机制**：长期未被检索命中的记忆降低 importance 分数，低于阈值自动归档/删除（模拟人类遗忘曲线）
-  - [ ] **记忆管理 API**：CRUD 接口（GET/POST/PUT/DELETE `/api/memory`），支持用户查看和手动管理自己的记忆
-  - **相关文件**: `domain/memory/memory.go`（领域模型）, `domain/memory/repository.go`（仓储接口）, `application/memory_service.go`（记忆服务）, `infrastructure/memory/mysql/`（MySQL 实现）, `interfaces/http/memory_handler.go`（API）
+  - [x] **记忆检索注入**：`buildMessagesWithContext()` 增加记忆检索步骤 — 将用户当前消息向量化，从 `user_memories` 中检索 Top-5 相关记忆，注入 System Prompt（`## 用户记忆\n以下是关于该用户的已知信息：\n{memories}`）
+  - [x] **记忆衰减机制**：长期未被检索命中的记忆降低 importance 分数，低于阈值自动归档/删除（模拟人类遗忘曲线）
+  - [x] **记忆管理 API**：CRUD 接口（GET/POST/PUT/DELETE `/api/memory`），支持用户查看和手动管理自己的记忆
+  - **相关文件**: `domain/memory/memory.go`（领域模型）, `domain/memory/repository.go`（仓储接口）, `application/memory_service.go`（记忆服务）, `infrastructure/memory/mysql/memory_repository.go`（MySQL 实现）, `interfaces/http/memory_handler.go`（API）, `database/migrations/002_add_user_memories.sql`（迁移脚本）
 
 - **Phase 3（3 周）— 用户画像 + 智能记忆策略**:
   - [ ] **用户画像实体**：`domain/memory/user_profile.go`，结构化 KV 存储（姓名/职业/技术栈/语言偏好/沟通风格/常用工具/关注领域等），JSON 格式存入 `user_profiles` 表

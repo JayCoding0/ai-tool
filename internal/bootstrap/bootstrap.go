@@ -14,6 +14,7 @@ import (
 	"aiProject/internal/infrastructure/database"
 	infra_knowledge "aiProject/internal/infrastructure/knowledge"
 	mysql_knowledge "aiProject/internal/infrastructure/knowledge/mysql"
+	mysql_memory "aiProject/internal/infrastructure/memory/mysql"
 	infra_model "aiProject/internal/infrastructure/model"
 	mysql_promptvars "aiProject/internal/infrastructure/promptvars/mysql"
 	infra_session "aiProject/internal/infrastructure/session"
@@ -153,6 +154,9 @@ func InitComponents(appConfig *config.Config) (*http_handler.ChatHandler, *appli
 	// 初始化 RAG 知识库服务（需要数据库已连接）
 	initKnowledgeService(appConfig, frontendChatService, handler)
 
+	// 初始化跨会话向量记忆服务（需要数据库 + RAG Embedder）
+	initMemoryService(appConfig, frontendChatService, handler)
+
 	// 初始化 Workflow 工作流服务（需要数据库已连接）
 	initWorkflowService(appConfig, handler, registry)
 
@@ -208,6 +212,33 @@ func initKnowledgeService(appConfig *config.Config, chatService *application.Cha
 	chatService.SetKnowledgeService(knowledgeSvc)
 	handler.SetKnowledgeService(knowledgeSvc)
 	shared.GetLogger().Info("RAG 知识库服务已启用", zap.String("embed_model", embedModel))
+}
+
+// initMemoryService 初始化跨会话向量记忆服务（需要数据库 + Embedding 模型）
+func initMemoryService(appConfig *config.Config, chatService *application.ChatService, handler *http_handler.ChatHandler) {
+	if database.GetDB() == nil {
+		return
+	}
+	if !appConfig.RAG.Enabled {
+		shared.GetLogger().Info("记忆服务未启用（RAG/Embedding 未启用）")
+		return
+	}
+
+	// 复用 RAG 的 Embedding 模型
+	embedModel := appConfig.RAG.EmbedModel
+	if embedModel == "" {
+		embedModel = infra_knowledge.DefaultEmbedModel
+	}
+	embedder := infra_knowledge.NewOpenAIEmbedder(appConfig.Model.OpenAIBaseURL, appConfig.Model.OpenAIAPIKey, embedModel)
+
+	memoryRepo := mysql_memory.NewMemoryRepository()
+	modelGen := newModelGenerator(appConfig)
+	memorySvc := application.NewMemoryService(memoryRepo, embedder, modelGen)
+	memorySvc.SetModelFactory(newModelFactory(appConfig), appConfig.Model.Name)
+
+	chatService.SetMemoryService(memorySvc)
+	handler.SetMemoryService(memorySvc)
+	shared.GetLogger().Info("跨会话向量记忆服务已启用", zap.String("embed_model", embedModel))
 }
 
 // ─── Workflow 工作流初始化 ──────────────────────────────────────────────────────

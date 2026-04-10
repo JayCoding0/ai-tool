@@ -127,7 +127,7 @@ func TestBuildMessagesWithContext_Basic(t *testing.T) {
 		{Role: "user", Content: "你好"},
 		{Role: "ai", Content: "你好！有什么可以帮你的？"},
 	}
-	messages, evicted := buildMessagesWithContext(history, "", "", "", 0)
+	messages, evicted := buildMessagesWithContext(history, "", "", "", "", 0)
 	if len(messages) != 3 { // system + 2 history
 		t.Errorf("期望 3 条消息，实际 %d", len(messages))
 	}
@@ -144,7 +144,7 @@ func TestBuildMessagesWithContext_WithSummary(t *testing.T) {
 		{Role: "user", Content: "继续上次的话题"},
 	}
 	summary := "用户之前讨论了Go语言的并发模型"
-	messages, _ := buildMessagesWithContext(history, "", "", summary, 0)
+	messages, _ := buildMessagesWithContext(history, "", "", summary, "", 0)
 	// System Prompt 应包含摘要
 	systemContent := messages[0].Content
 	if !containsSubstring(systemContent, "对话历史摘要") {
@@ -160,7 +160,7 @@ func TestBuildMessagesWithContext_WithRAG(t *testing.T) {
 		{Role: "user", Content: "什么是量子计算？"},
 	}
 	ragContext := "[1] 量子计算是利用量子力学原理进行计算的技术。"
-	messages, _ := buildMessagesWithContext(history, "", ragContext, "", 0)
+	messages, _ := buildMessagesWithContext(history, "", ragContext, "", "", 0)
 	systemContent := messages[0].Content
 	if !containsSubstring(systemContent, "参考知识库") {
 		t.Error("System Prompt 应包含 RAG 标题")
@@ -181,7 +181,7 @@ func TestBuildMessagesWithContext_WithTokenBudget(t *testing.T) {
 			history[i] = session.Message{Role: "ai", Content: longMsg + longMsg + longMsg}
 		}
 	}
-	messages, evicted := buildMessagesWithContext(history, "你是一个助手", "", "", 4096)
+	messages, evicted := buildMessagesWithContext(history, "你是一个助手", "", "", "", 4096)
 	if len(evicted) == 0 {
 		t.Error("100 条消息在 4096 token 预算下应有裁剪")
 	}
@@ -201,7 +201,7 @@ func TestBuildMessagesWithContext_FallbackToMaxPromptMessages(t *testing.T) {
 	for i := range history {
 		history[i] = session.Message{Role: "user", Content: "消息"}
 	}
-	messages, evicted := buildMessagesWithContext(history, "", "", "", 0)
+	messages, evicted := buildMessagesWithContext(history, "", "", "", "", 0)
 	// 应保留 maxPromptMessages=20 条
 	if len(messages) != 21 { // system + 20
 		t.Errorf("回退模式应保留 %d 条消息（system+20），实际 %d", maxPromptMessages+1, len(messages))
