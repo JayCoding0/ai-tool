@@ -214,18 +214,21 @@ func initKnowledgeService(appConfig *config.Config, chatService *application.Cha
 	shared.GetLogger().Info("RAG 知识库服务已启用", zap.String("embed_model", embedModel))
 }
 
-// initMemoryService 初始化跨会话向量记忆服务（需要数据库 + Embedding 模型）
+// initMemoryService 初始化跨会话向量记忆服务（独立于 RAG，需要数据库 + Embedding 模型）
 func initMemoryService(appConfig *config.Config, chatService *application.ChatService, handler *http_handler.ChatHandler) {
 	if database.GetDB() == nil {
 		return
 	}
-	if !appConfig.RAG.Enabled {
-		shared.GetLogger().Info("记忆服务未启用（RAG/Embedding 未启用）")
+	if !appConfig.Memory.Enabled {
+		shared.GetLogger().Info("记忆服务未启用（memory.enabled = false）")
 		return
 	}
 
-	// 复用 RAG 的 Embedding 模型
-	embedModel := appConfig.RAG.EmbedModel
+	// 优先使用 Memory 独立配置的 embed_model，其次复用 RAG 的，最后回退到默认值
+	embedModel := appConfig.Memory.EmbedModel
+	if embedModel == "" {
+		embedModel = appConfig.RAG.EmbedModel
+	}
 	if embedModel == "" {
 		embedModel = infra_knowledge.DefaultEmbedModel
 	}

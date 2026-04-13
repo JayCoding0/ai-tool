@@ -56,6 +56,37 @@ func (s *MemoryService) getModelGen(modelName string) model.Generator {
 
 // ─── Phase 1: 记忆提取（Mem0 Extraction Phase）─────────────────────────────────
 
+// importanceScoringPrompt 记忆重要性评分 Prompt 模板（Phase 1.5: 独立 LLM 评分）
+const importanceScoringPrompt = `你是一个记忆重要性评估专家。请对以下候选记忆逐条评估其长期记忆价值。
+
+## 评分标准（0-1 分）
+- **0.9-1.0**: 核心身份信息（姓名、职业、公司）、明确的长期偏好、重要决策
+- **0.7-0.8**: 技术栈、项目信息、工作习惯、沟通风格偏好
+- **0.5-0.6**: 具体的技术观点、临时性项目需求、一般性偏好
+- **0.3-0.4**: 可能有用但不确定的信息、模糊的偏好暗示
+- **0.0-0.2**: 临时性信息、闲聊内容、已过时的信息、重复信息
+
+## 评分时需考虑
+1. 这条记忆在未来对话中被用到的概率有多大？
+2. 这条记忆是否包含独特的、不可从常识推断的信息？
+3. 这条记忆是否与用户已有记忆重复或矛盾？
+
+## 用户已有记忆（供参考，避免重复）
+%s
+
+## 待评分的候选记忆
+%s
+
+请以 JSON 数组格式返回，每条包含 index（原始序号，从0开始）和 importance（评分 0-1）。
+示例：[{"index": 0, "importance": 0.85}, {"index": 1, "importance": 0.3}]
+仅返回 JSON 数组，不要其他内容：`
+
+// importanceScore LLM 评分结果
+type importanceScore struct {
+	Index      int     `json:"index"`
+	Importance float64 `json:"importance"`
+}
+
 // extractionPrompt 记忆提取 Prompt 模板
 const extractionPrompt = `请从以下对话中提取用户的关键信息、偏好和事实。
 仅提取值得长期记忆的信息，忽略临时性的对话内容（如问候、闲聊）。
@@ -140,6 +171,9 @@ func (s *MemoryService) ExtractMemories(ctx context.Context, userID int64, sessi
 		zap.Int("extracted_count", len(extracted)),
 	)
 
+	// Phase 1.5: LLM 重要性评分（独立评分步骤，参考已有记忆去重）
+	extracted = s.scoreMemoryImportance(ctx, userID, extracted, modelName)
+
 	// Phase 2: 对每条候选记忆执行 Mem0 式更新
 	for _, em := range extracted {
 		if em.Importance < memory.MinImportanceThreshold {
@@ -153,6 +187,97 @@ func (s *MemoryService) ExtractMemories(ctx context.Context, userID int64, sessi
 
 	// 记忆容量管理：检查是否超限
 	s.enforceMemoryLimit(ctx, userID)
+}
+
+// ─── Phase 1.5: 记忆重要性 LLM 评分 ──────────────────────────────────────────
+
+// scoreMemoryImportance 使用专门的 LLM 调用对候选记忆进行重要性评分
+// 评分时参考用户已有记忆，避免重复存储，提升评分精准度
+// 如果 LLM 调用失败，降级使用提取阶段的原始评分
+func (s *MemoryService) scoreMemoryImportance(
+	ctx context.Context,
+	userID int64,
+	candidates []memory.ExtractedMemory,
+	modelName string,
+) []memory.ExtractedMemory {
+	logger := shared.GetLogger()
+
+	if len(candidates) == 0 {
+		return candidates
+	}
+
+	// 1. 获取用户已有记忆（作为评分上下文，最多取 50 条高重要性记忆）
+	existingMemories, err := s.memoryRepo.ListByUser(ctx, userID, 0, 50)
+	if err != nil {
+		logger.Warn("获取已有记忆失败，使用原始评分", zap.Error(err))
+		return candidates
+	}
+
+	// 构建已有记忆文本
+	var existingText strings.Builder
+	if len(existingMemories) == 0 {
+		existingText.WriteString("（暂无已有记忆）")
+	} else {
+		for _, m := range existingMemories {
+			existingText.WriteString(fmt.Sprintf("- [%s] %s (importance: %.1f)\n",
+				m.MemoryType, m.Content, m.Importance))
+		}
+	}
+
+	// 构建候选记忆文本
+	var candidateText strings.Builder
+	for i, c := range candidates {
+		candidateText.WriteString(fmt.Sprintf("%d. [%s] %s\n", i, c.Type, c.Content))
+	}
+
+	// 2. 调用 LLM 评分
+	prompt := fmt.Sprintf(importanceScoringPrompt, existingText.String(), candidateText.String())
+	gen := s.getModelGen(modelName)
+	result, err := gen.Generate(ctx, model.Prompt(prompt))
+	if err != nil {
+		logger.Warn("记忆重要性 LLM 评分失败，使用原始评分", zap.Error(err))
+		return candidates
+	}
+
+	// 3. 解析评分结果
+	responseText := strings.TrimSpace(string(result.Response))
+	responseText = strings.TrimPrefix(responseText, "```json")
+	responseText = strings.TrimPrefix(responseText, "```")
+	responseText = strings.TrimSuffix(responseText, "```")
+	responseText = strings.TrimSpace(responseText)
+
+	var scores []importanceScore
+	if err := json.Unmarshal([]byte(responseText), &scores); err != nil {
+		logger.Warn("记忆评分结果解析失败，使用原始评分",
+			zap.String("response", responseText[:min(len(responseText), 200)]),
+			zap.Error(err),
+		)
+		return candidates
+	}
+
+	// 4. 用 LLM 评分覆盖原始评分
+	scoreMap := make(map[int]float64, len(scores))
+	for _, sc := range scores {
+		scoreMap[sc.Index] = sc.Importance
+	}
+	for i := range candidates {
+		if newScore, ok := scoreMap[i]; ok {
+			logger.Debug("记忆重要性评分更新",
+				zap.Int("index", i),
+				zap.Float64("old", candidates[i].Importance),
+				zap.Float64("new", newScore),
+				zap.String("content", candidates[i].Content[:min(len(candidates[i].Content), 50)]),
+			)
+			candidates[i].Importance = newScore
+		}
+	}
+
+	logger.Info("记忆重要性 LLM 评分完成",
+		zap.Int("candidates", len(candidates)),
+		zap.Int("scored", len(scores)),
+	)
+
+	return candidates
 }
 
 // ─── Phase 2: 记忆更新（Mem0 Update Phase）──────────────────────────────────────

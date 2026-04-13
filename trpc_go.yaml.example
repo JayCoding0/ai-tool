@@ -64,6 +64,12 @@ custom:
     enabled: true
     service_name: "ai-chat-service"
 
+  # 长期记忆配置（独立于 RAG，可单独启用）
+  memory:
+    enabled: true
+    # Embedding 模型，留空则复用 RAG 的 embed_model
+    embed_model: ""
+
   # 日志配置
   log:
     level: "info"

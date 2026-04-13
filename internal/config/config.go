@@ -18,6 +18,7 @@ type Config struct {
 	Security SecurityConfig `yaml:"security"`
 	Tools    ToolsConfig    `yaml:"tools"`
 	RAG      RAGConfig      `yaml:"rag"`
+	Memory   MemoryConfig   `yaml:"memory"`
 }
 
 // ServerConfig 服务器配置
@@ -79,6 +80,14 @@ type RAGConfig struct {
 	EmbedModel string `yaml:"embed_model"`
 	// Enabled 是否启用 RAG 功能，默认 true
 	Enabled bool `yaml:"enabled"`
+}
+
+// MemoryConfig 长期记忆配置（独立于 RAG，可单独启用）
+type MemoryConfig struct {
+	// Enabled 是否启用跨会话向量记忆，默认 true
+	Enabled bool `yaml:"enabled"`
+	// EmbedModel Embedding 模型名称，留空则复用 RAG 的 embed_model，最终回退到默认值
+	EmbedModel string `yaml:"embed_model"`
 }
 
 // MCPConfig MCP配置
@@ -175,6 +184,10 @@ func DefaultConfig() *Config {
 		RAG: RAGConfig{
 			Enabled:    true,
 			EmbedModel: "text-embedding-3-small",
+		},
+		Memory: MemoryConfig{
+			Enabled:    true,
+			EmbedModel: "", // 留空时优先复用 RAG 的 embed_model
 		},
 	}
 }
@@ -308,4 +321,9 @@ func mergeConfig(dst, src *Config) {
 		dst.RAG.EmbedModel = src.RAG.EmbedModel
 	}
 	dst.RAG.Enabled = src.RAG.Enabled
+	// Memory
+	if src.Memory.EmbedModel != "" {
+		dst.Memory.EmbedModel = src.Memory.EmbedModel
+	}
+	dst.Memory.Enabled = src.Memory.Enabled
 }
