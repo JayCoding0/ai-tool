@@ -32,23 +32,33 @@ const (
 	RunStatusFailed    RunStatus = "failed"    // 失败
 )
 
+// ScorerType 评分器类型
+type ScorerType string
+
+const (
+	ScorerJudge    ScorerType = "judge"    // LLM-as-judge（默认，裁判模型打分）
+	ScorerExact    ScorerType = "exact"    // 精确/包含匹配（适合分类、固定答案）
+	ScorerSemantic ScorerType = "semantic" // 语义相似度（向量余弦，适合开放问答）
+)
+
 // Run 一次评测运行（对某数据集用指定 Agent 配置批量跑分）
 type Run struct {
-	ID           int64     `json:"id"`
-	DatasetID    int64     `json:"dataset_id"`
-	Name         string    `json:"name"`          // 运行名称（便于对比，如"v1-加强Prompt"）
-	ModelName    string    `json:"model_name"`    // 被测 Agent 使用的模型
-	SystemPrompt string    `json:"system_prompt"` // 被测 Agent 的 System Prompt
-	Tools        []string  `json:"tools"`         // 被测 Agent 启用的工具
-	JudgeModel   string    `json:"judge_model"`   // 评分裁判模型
-	Threshold    float64   `json:"threshold"`     // 通过阈值（score >= threshold 视为通过）
-	Status       RunStatus `json:"status"`
-	TotalCases   int       `json:"total_cases"`
-	PassedCases  int       `json:"passed_cases"`
-	AvgScore     float64   `json:"avg_score"`
-	ErrorMessage string    `json:"error_message,omitempty"`
-	UserID       int64     `json:"user_id"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID           int64      `json:"id"`
+	DatasetID    int64      `json:"dataset_id"`
+	Name         string     `json:"name"`          // 运行名称（便于对比，如"v1-加强Prompt"）
+	ModelName    string     `json:"model_name"`    // 被测 Agent 使用的模型
+	SystemPrompt string     `json:"system_prompt"` // 被测 Agent 的 System Prompt
+	Tools        []string   `json:"tools"`         // 被测 Agent 启用的工具
+	Scorer       ScorerType `json:"scorer"`        // 评分器类型
+	JudgeModel   string     `json:"judge_model"`   // 评分裁判模型（scorer=judge 时生效）
+	Threshold    float64    `json:"threshold"`     // 通过阈值（score >= threshold 视为通过）
+	Status       RunStatus  `json:"status"`
+	TotalCases   int        `json:"total_cases"`
+	PassedCases  int        `json:"passed_cases"`
+	AvgScore     float64    `json:"avg_score"`
+	ErrorMessage string     `json:"error_message,omitempty"`
+	UserID       int64      `json:"user_id"`
+	CreatedAt    time.Time  `json:"created_at"`
 	FinishedAt   *time.Time `json:"finished_at,omitempty"`
 }
 

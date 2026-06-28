@@ -6,12 +6,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"aiProject/internal/domain/eval"
+	"aiProject/internal/domain/knowledge"
 	"aiProject/internal/domain/model"
 	"aiProject/internal/domain/session"
 	"aiProject/internal/domain/tool"
+	infra_knowledge "aiProject/internal/infrastructure/knowledge"
 	"aiProject/internal/shared"
 	"go.uber.org/zap"
 )
@@ -21,6 +24,7 @@ type EvalService struct {
 	repo         eval.Repository
 	modelFactory func(string) model.Generator
 	defaultModel string
+	embedder     knowledge.Embedder // 语义相似度评分用（可为 nil）
 }
 
 // NewEvalService 创建评估服务
@@ -30,6 +34,11 @@ func NewEvalService(repo eval.Repository, modelFactory func(string) model.Genera
 		modelFactory: modelFactory,
 		defaultModel: defaultModel,
 	}
+}
+
+// SetEmbedder 注入向量化器（启用语义相似度评分）
+func (s *EvalService) SetEmbedder(e knowledge.Embedder) {
+	s.embedder = e
 }
 
 // ─── 数据集 / 用例管理 ──────────────────────────────────────────────────────────
@@ -105,6 +114,7 @@ type RunConfig struct {
 	ModelName    string
 	SystemPrompt string
 	Tools        []string
+	Scorer       string // "judge"(默认) | "exact" | "semantic"
 	JudgeModel   string
 	Threshold    float64
 	UserID       int64
@@ -132,6 +142,18 @@ func (s *EvalService) StartRun(ctx context.Context, cfg RunConfig) (*eval.Run, e
 	if cfg.Name == "" {
 		cfg.Name = "运行 " + time.Now().Format("01-02 15:04")
 	}
+	// 评分器类型校验与降级
+	scorer := eval.ScorerType(cfg.Scorer)
+	switch scorer {
+	case eval.ScorerExact, eval.ScorerSemantic, eval.ScorerJudge:
+	default:
+		scorer = eval.ScorerJudge
+	}
+	// 语义评分需要 embedder，缺失则降级为裁判
+	if scorer == eval.ScorerSemantic && s.embedder == nil {
+		shared.GetLogger().Warn("[Eval] 未配置 Embedder，语义评分降级为 LLM 裁判")
+		scorer = eval.ScorerJudge
+	}
 
 	run := &eval.Run{
 		DatasetID:    cfg.DatasetID,
@@ -139,6 +161,7 @@ func (s *EvalService) StartRun(ctx context.Context, cfg RunConfig) (*eval.Run, e
 		ModelName:    cfg.ModelName,
 		SystemPrompt: cfg.SystemPrompt,
 		Tools:        cfg.Tools,
+		Scorer:       scorer,
 		JudgeModel:   cfg.JudgeModel,
 		Threshold:    cfg.Threshold,
 		Status:       eval.RunStatusRunning,
@@ -183,7 +206,7 @@ func (s *EvalService) executeRun(ctx context.Context, run *eval.Run, cases []*ev
 			score = 0
 			reason = "Agent 执行失败"
 		} else {
-			score, reason = s.judge(ctx, cfg.JudgeModel, c.Input, c.Expected, actual)
+			score, reason = s.score(ctx, run.Scorer, cfg.JudgeModel, c.Input, c.Expected, actual)
 		}
 
 		isPass := score >= cfg.Threshold
@@ -275,6 +298,58 @@ func (s *EvalService) runAgentOnce(ctx context.Context, modelName, systemPrompt,
 	close(outCh)
 	<-drained
 	return content, u, err
+}
+
+// score 根据评分器类型对实际回答打分，返回 score(0-1) 与理由
+func (s *EvalService) score(ctx context.Context, scorer eval.ScorerType, judgeModel, input, expected, actual string) (float64, string) {
+	switch scorer {
+	case eval.ScorerExact:
+		return exactScore(expected, actual)
+	case eval.ScorerSemantic:
+		return s.semanticScore(ctx, expected, actual)
+	default:
+		return s.judge(ctx, judgeModel, input, expected, actual)
+	}
+}
+
+// exactScore 精确/包含匹配评分：归一化后完全相等或包含则 1 分，否则 0 分
+func exactScore(expected, actual string) (float64, string) {
+	exp := strings.TrimSpace(strings.ToLower(expected))
+	act := strings.TrimSpace(strings.ToLower(actual))
+	if exp == "" {
+		return 0, "精确匹配需要期望答案，但期望为空"
+	}
+	if act == exp {
+		return 1, "完全匹配"
+	}
+	if strings.Contains(act, exp) {
+		return 1, "包含期望答案"
+	}
+	return 0, "未匹配期望答案"
+}
+
+// semanticScore 语义相似度评分：对期望与实际向量化后计算余弦相似度（截断到 [0,1]）
+func (s *EvalService) semanticScore(ctx context.Context, expected, actual string) (float64, string) {
+	if s.embedder == nil {
+		return 0, "未配置向量化器，无法语义评分"
+	}
+	if strings.TrimSpace(expected) == "" {
+		return 0, "语义评分需要期望答案，但期望为空"
+	}
+	vecs, err := s.embedder.EmbedBatch(ctx, []string{expected, actual})
+	if err != nil || len(vecs) < 2 {
+		shared.GetLogger().Warn("[Eval] 语义评分向量化失败", zap.Error(err))
+		return 0, "向量化失败"
+	}
+	sim := infra_knowledge.CosineSimilarity(vecs[0], vecs[1])
+	score := float64(sim)
+	if score < 0 {
+		score = 0
+	}
+	if score > 1 {
+		score = 1
+	}
+	return score, fmt.Sprintf("语义相似度 %.3f", sim)
 }
 
 // judgeSchema LLM-as-judge 的结构化输出 JSON Schema（复用 #24 结构化输出能力）
@@ -370,4 +445,103 @@ func (s *EvalService) GetRunDetail(ctx context.Context, runID int64) (*eval.Run,
 		return run, nil, err
 	}
 	return run, results, nil
+}
+
+// ─── 运行回归对比 ──────────────────────────────────────────────────────────────
+
+// CompareCaseRow 单条用例在两次运行中的对比
+type CompareCaseRow struct {
+	CaseID      int64   `json:"case_id"`
+	Input       string  `json:"input"`
+	Expected    string  `json:"expected"`
+	BaseScore   float64 `json:"base_score"`
+	TargetScore float64 `json:"target_score"`
+	Delta       float64 `json:"delta"` // target - base
+	BaseActual  string  `json:"base_actual"`
+	TargetActual string `json:"target_actual"`
+}
+
+// CompareResult 两次运行的对比结果
+type CompareResult struct {
+	Base       *eval.Run        `json:"base"`
+	Target     *eval.Run        `json:"target"`
+	AvgDelta   float64          `json:"avg_delta"`   // 平均分变化（target - base）
+	Improved   int              `json:"improved"`    // 变好的用例数
+	Regressed  int              `json:"regressed"`   // 变差的用例数
+	Unchanged  int              `json:"unchanged"`   // 持平的用例数
+	Cases      []CompareCaseRow `json:"cases"`
+}
+
+// CompareRuns 对比两次评测运行（按 case_id 匹配，计算逐用例与整体分数变化）
+func (s *EvalService) CompareRuns(ctx context.Context, baseID, targetID int64) (*CompareResult, error) {
+	baseRun, err := s.repo.GetRun(ctx, baseID)
+	if err != nil {
+		return nil, fmt.Errorf("基线运行不存在: %w", err)
+	}
+	targetRun, err := s.repo.GetRun(ctx, targetID)
+	if err != nil {
+		return nil, fmt.Errorf("对比运行不存在: %w", err)
+	}
+
+	baseResults, err := s.repo.ListResults(ctx, baseID)
+	if err != nil {
+		return nil, err
+	}
+	targetResults, err := s.repo.ListResults(ctx, targetID)
+	if err != nil {
+		return nil, err
+	}
+
+	baseMap := make(map[int64]*eval.Result, len(baseResults))
+	for _, r := range baseResults {
+		baseMap[r.CaseID] = r
+	}
+	targetMap := make(map[int64]*eval.Result, len(targetResults))
+	for _, r := range targetResults {
+		targetMap[r.CaseID] = r
+	}
+
+	cmp := &CompareResult{Base: baseRun, Target: targetRun}
+	// 以 base 用例为主序，叠加 target 中独有的用例
+	seen := make(map[int64]bool)
+	appendRow := func(caseID int64) {
+		if seen[caseID] {
+			return
+		}
+		seen[caseID] = true
+		b := baseMap[caseID]
+		t := targetMap[caseID]
+		row := CompareCaseRow{CaseID: caseID}
+		if b != nil {
+			row.Input = b.Input
+			row.Expected = b.Expected
+			row.BaseScore = b.Score
+			row.BaseActual = b.Actual
+		}
+		if t != nil {
+			row.Input = t.Input
+			row.Expected = t.Expected
+			row.TargetScore = t.Score
+			row.TargetActual = t.Actual
+		}
+		row.Delta = row.TargetScore - row.BaseScore
+		switch {
+		case row.Delta > 0.001:
+			cmp.Improved++
+		case row.Delta < -0.001:
+			cmp.Regressed++
+		default:
+			cmp.Unchanged++
+		}
+		cmp.Cases = append(cmp.Cases, row)
+	}
+	for _, r := range baseResults {
+		appendRow(r.CaseID)
+	}
+	for _, r := range targetResults {
+		appendRow(r.CaseID)
+	}
+
+	cmp.AvgDelta = targetRun.AvgScore - baseRun.AvgScore
+	return cmp, nil
 }

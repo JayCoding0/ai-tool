@@ -303,6 +303,7 @@ CREATE TABLE IF NOT EXISTS eval_runs (
     model_name    VARCHAR(100) NOT NULL DEFAULT '' COMMENT '被测Agent模型',
     system_prompt TEXT COMMENT '被测Agent System Prompt',
     tools         JSON COMMENT '被测Agent启用的工具列表',
+    scorer        VARCHAR(20) NOT NULL DEFAULT 'judge' COMMENT '评分器: judge/exact/semantic',
     judge_model   VARCHAR(100) NOT NULL DEFAULT '' COMMENT '裁判模型',
     threshold     FLOAT NOT NULL DEFAULT 0.6 COMMENT '通过阈值',
     status        ENUM('running','completed','failed') NOT NULL DEFAULT 'running' COMMENT '状态',

@@ -279,6 +279,14 @@ func initEvalService(appConfig *config.Config, handler *http_handler.ChatHandler
 	}
 	evalRepo := mysql_eval.NewEvalRepository()
 	evalSvc := application.NewEvalService(evalRepo, newModelFactory(appConfig), appConfig.Model.Name)
+	// 注入 Embedder 以启用语义相似度评分（复用 RAG 的 embedding 配置）
+	embedModel := appConfig.RAG.EmbedModel
+	if embedModel == "" {
+		embedModel = infra_knowledge.DefaultEmbedModel
+	}
+	if appConfig.Model.OpenAIAPIKey != "" {
+		evalSvc.SetEmbedder(infra_knowledge.NewOpenAIEmbedder(appConfig.Model.OpenAIBaseURL, appConfig.Model.OpenAIAPIKey, embedModel))
+	}
 	handler.SetEvalService(evalSvc)
 	shared.GetLogger().Info("Agent 评估体系服务已启用")
 }

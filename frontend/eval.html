@@ -36,6 +36,21 @@
         .score-high { background:#e6f7ee; color:#27ae60; }
         .score-mid { background:#fff7e6; color:#e67e22; }
         .score-low { background:#fde8e8; color:#e74c3c; }
+        .case-row { display:flex; align-items:flex-start; gap:12px; padding:10px 12px; border-radius:8px; background:#f8f8fc; margin-bottom:8px; }
+        .case-row .c-idx { font-weight:700; color:#aaa; min-width:22px; }
+        .case-row .c-body { flex:1; min-width:0; }
+        .case-row .c-in { font-size:13px; color:#333; }
+        .case-row .c-exp { font-size:12px; color:#999; margin-top:3px; }
+        .pass-tag { font-size:11px; padding:1px 8px; border-radius:10px; background:#e6f7ee; color:#27ae60; font-weight:600; }
+        .fail-tag { font-size:11px; padding:1px 8px; border-radius:10px; background:#fde8e8; color:#e74c3c; font-weight:600; }
+        .res-card { border:1px solid #ececf5; border-radius:10px; padding:12px 14px; margin-bottom:12px; }
+        .res-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+        .res-field { margin:6px 0; font-size:13px; line-height:1.55; }
+        .res-field .lbl { display:inline-block; min-width:64px; color:#888; font-size:12px; vertical-align:top; }
+        .res-field .val { display:inline-block; width:calc(100% - 72px); white-space:pre-wrap; word-break:break-word; color:#333; }
+        .res-actual { background:#f8f8fc; border-radius:6px; padding:8px 10px; }
+        .cmp-row { display:grid; grid-template-columns: 1fr 70px 70px 90px; align-items:center; gap:8px; padding:8px 10px; border-bottom:1px solid #f0f0f5; font-size:13px; }
+        .cmp-row.head { font-weight:700; color:#666; background:#f8f8fc; border-radius:6px; }
     </style>
 </head>
 <body>
@@ -91,23 +106,27 @@
                                 <el-button size="small" type="danger" plain @click="deleteDataset(activeDS)">删除数据集</el-button>
                             </span>
                         </div>
-                        <el-table :data="cases" size="small" max-height="260" empty-text="暂无用例">
-                            <el-table-column type="index" width="46" />
-                            <el-table-column prop="input" label="输入" show-overflow-tooltip />
-                            <el-table-column prop="expected" label="期望输出" show-overflow-tooltip />
-                            <el-table-column label="操作" width="70">
-                                <template #default="{ row }">
-                                    <el-button size="small" link type="danger" @click="deleteCase(row)">删除</el-button>
-                                </template>
-                            </el-table-column>
-                        </el-table>
+                        <div v-if="cases.length === 0" class="empty-state" style="padding:24px;">
+                            <div class="empty-icon">📭</div><div>暂无用例，点击"添加用例"或"批量导入"</div>
+                        </div>
+                        <div v-for="(c, i) in cases" :key="c.id" class="case-row">
+                            <span class="c-idx">{{ i + 1 }}</span>
+                            <div class="c-body">
+                                <div class="c-in"><b>输入：</b>{{ c.input }}</div>
+                                <div class="c-exp"><b>期望：</b>{{ c.expected || '（未设置）' }}</div>
+                            </div>
+                            <el-button size="small" link type="danger" @click="deleteCase(c)">删除</el-button>
+                        </div>
                     </div>
 
                     <!-- 运行记录 -->
                     <div class="ev-card">
                         <div class="ev-section-title">
                             <span>🏃 评测运行</span>
-                            <el-button size="small" text :icon="Refresh" @click="loadRuns">刷新</el-button>
+                            <span>
+                                <el-button size="small" text @click="openCompare" :disabled="runs.length < 2">⚖️ 对比</el-button>
+                                <el-button size="small" text :icon="Refresh" @click="loadRuns">刷新</el-button>
+                            </span>
                         </div>
                         <div v-if="runs.length === 0" class="empty-state" style="padding:24px;">
                             <div class="empty-icon">📈</div>
@@ -120,7 +139,7 @@
                                     <el-tag v-else-if="run.status==='completed'" size="small" type="success">已完成</el-tag>
                                     <el-tag v-else size="small" type="danger">失败</el-tag>
                                 </div>
-                                <div class="ev-run-sub">模型 {{ run.model_name }} · 裁判 {{ run.judge_model }} · {{ run.passed_cases }}/{{ run.total_cases }} 通过</div>
+                                <div class="ev-run-sub">{{ scorerLabel(run.scorer) }} · 模型 {{ run.model_name }} · {{ run.passed_cases }}/{{ run.total_cases }} 通过</div>
                             </div>
                             <div style="text-align:right;">
                                 <span class="score-pill" :class="scoreClass(run.avg_score)">{{ (run.avg_score*100).toFixed(0) }} 分</span>
@@ -177,7 +196,14 @@
                     <el-option v-for="t in tools" :key="t.name" :label="(t.display_name||t.name)" :value="t.name" />
                 </el-select>
             </el-form-item>
-            <el-form-item label="裁判模型"><el-input v-model="runForm.judge_model" placeholder="留空使用默认模型" /></el-form-item>
+            <el-form-item label="评分方式">
+                <el-radio-group v-model="runForm.scorer">
+                    <el-radio-button label="judge">LLM 裁判</el-radio-button>
+                    <el-radio-button label="semantic">语义相似度</el-radio-button>
+                    <el-radio-button label="exact">精确匹配</el-radio-button>
+                </el-radio-group>
+            </el-form-item>
+            <el-form-item label="裁判模型" v-if="runForm.scorer === 'judge'"><el-input v-model="runForm.judge_model" placeholder="留空使用默认模型" /></el-form-item>
             <el-form-item label="通过阈值">
                 <el-slider v-model="runForm.threshold" :min="0" :max="1" :step="0.05" show-input style="width:100%;" />
             </el-form-item>
@@ -189,28 +215,80 @@
     </el-dialog>
 
     <!-- 运行详情 -->
-    <el-dialog v-model="showDetail" :title="detailRun ? ('评测报告 - ' + detailRun.name) : '评测报告'" width="900px" top="5vh">
-        <div v-if="detailRun" style="margin-bottom:16px;">
-            <span class="ev-metric"><span class="ev-metric-val">{{ (detailRun.avg_score*100).toFixed(0) }}</span><span class="ev-metric-label">平均分</span></span>
-            <span class="ev-metric"><span class="ev-metric-val">{{ detailRun.total_cases ? ((detailRun.passed_cases/detailRun.total_cases)*100).toFixed(0) : 0 }}%</span><span class="ev-metric-label">通过率</span></span>
-            <span class="ev-metric"><span class="ev-metric-val">{{ detailRun.passed_cases }}/{{ detailRun.total_cases }}</span><span class="ev-metric-label">通过/总数</span></span>
-            <el-tag v-if="detailRun.status==='running'" type="warning" style="margin-left:8px;">运行中（自动刷新）</el-tag>
+    <el-dialog v-model="showDetail" :title="detailRun ? ('评测报告 - ' + detailRun.name) : '评测报告'" width="860px" top="5vh">
+        <div v-if="detailRun">
+            <div style="margin-bottom:12px;">
+                <span class="ev-metric"><span class="ev-metric-val">{{ (detailRun.avg_score*100).toFixed(0) }}</span><span class="ev-metric-label">平均分</span></span>
+                <span class="ev-metric"><span class="ev-metric-val">{{ detailRun.total_cases ? ((detailRun.passed_cases/detailRun.total_cases)*100).toFixed(0) : 0 }}%</span><span class="ev-metric-label">通过率</span></span>
+                <span class="ev-metric"><span class="ev-metric-val">{{ detailRun.passed_cases }}/{{ detailRun.total_cases }}</span><span class="ev-metric-label">通过/总数</span></span>
+                <el-tag v-if="detailRun.status==='running'" type="warning" style="margin-left:8px;">运行中（自动刷新）</el-tag>
+            </div>
+            <!-- 配置与通过条件说明 -->
+            <div style="background:#f8f8fc;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:#666;line-height:1.7;">
+                评分方式：<b>{{ scorerLabel(detailRun.scorer) }}</b>
+                <span v-if="detailRun.scorer==='judge'">（裁判模型 {{ detailRun.judge_model }}）</span>
+                ｜ 被测模型：<b>{{ detailRun.model_name }}</b>
+                ｜ 通过条件：单条得分 ≥ 阈值 <b>{{ (detailRun.threshold*100).toFixed(0) }}</b> 分即判定通过
+            </div>
+            <div v-if="detailResults.length === 0" class="empty-state"><div class="empty-icon">⏳</div><div>{{ detailRun.status==='running' ? '评测进行中，结果陆续生成…' : '暂无结果' }}</div></div>
+            <div v-for="(r, i) in detailResults" :key="r.id" class="res-card">
+                <div class="res-head">
+                    <span style="font-weight:600;color:#555;">用例 {{ i + 1 }}</span>
+                    <span>
+                        <span class="score-pill" :class="scoreClass(r.score)" style="margin-right:8px;">{{ (r.score*100).toFixed(0) }} 分</span>
+                        <span :class="r.passed ? 'pass-tag' : 'fail-tag'">{{ r.passed ? '✓ 通过' : '✗ 未通过' }}</span>
+                    </span>
+                </div>
+                <div class="res-field"><span class="lbl">输入</span><span class="val">{{ r.input }}</span></div>
+                <div class="res-field"><span class="lbl">期望</span><span class="val">{{ r.expected || '（未设置）' }}</span></div>
+                <div class="res-field"><span class="lbl">实际输出</span><span class="val res-actual">{{ r.actual }}</span></div>
+                <div class="res-field"><span class="lbl">评分理由</span><span class="val">{{ r.reason }}</span></div>
+                <div class="res-field"><span class="lbl">耗时</span><span class="val">{{ r.latency_ms }} ms · {{ r.tokens }} tokens</span></div>
+            </div>
         </div>
-        <el-table :data="detailResults" size="small" max-height="520" empty-text="暂无结果">
-            <el-table-column type="index" width="46" />
-            <el-table-column prop="input" label="输入" width="160" show-overflow-tooltip />
-            <el-table-column prop="expected" label="期望" width="150" show-overflow-tooltip />
-            <el-table-column prop="actual" label="实际输出" show-overflow-tooltip />
-            <el-table-column label="得分" width="80">
-                <template #default="{ row }">
-                    <span class="score-pill" :class="scoreClass(row.score)">{{ (row.score*100).toFixed(0) }}</span>
-                </template>
-            </el-table-column>
-            <el-table-column prop="reason" label="评分理由" width="200" show-overflow-tooltip />
-            <el-table-column label="耗时" width="80">
-                <template #default="{ row }">{{ row.latency_ms }}ms</template>
-            </el-table-column>
-        </el-table>
+    </el-dialog>
+
+    <!-- 运行对比 -->
+    <el-dialog v-model="showCompare" title="⚖️ 运行回归对比" width="960px" top="5vh">
+        <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;">
+            <span>基线</span>
+            <el-select v-model="compareForm.base" placeholder="选择基线运行" style="width:240px;" size="small">
+                <el-option v-for="run in runs" :key="run.id" :label="run.name + ' (' + (run.avg_score*100).toFixed(0) + '分)'" :value="run.id" />
+            </el-select>
+            <span>→ 对比</span>
+            <el-select v-model="compareForm.target" placeholder="选择对比运行" style="width:240px;" size="small">
+                <el-option v-for="run in runs" :key="run.id" :label="run.name + ' (' + (run.avg_score*100).toFixed(0) + '分)'" :value="run.id" />
+            </el-select>
+            <el-button type="primary" size="small" @click="doCompare">对比</el-button>
+        </div>
+
+        <div v-if="compareData">
+            <div style="margin-bottom:14px;">
+                <span class="ev-metric">
+                    <span class="ev-metric-val" :style="{color: compareData.avg_delta >= 0 ? '#27ae60' : '#e74c3c'}">
+                        {{ compareData.avg_delta >= 0 ? '+' : '' }}{{ (compareData.avg_delta*100).toFixed(1) }}
+                    </span>
+                    <span class="ev-metric-label">平均分变化</span>
+                </span>
+                <span class="ev-metric"><span class="ev-metric-val" style="color:#27ae60;">{{ compareData.improved }}</span><span class="ev-metric-label">变好</span></span>
+                <span class="ev-metric"><span class="ev-metric-val" style="color:#e74c3c;">{{ compareData.regressed }}</span><span class="ev-metric-label">变差</span></span>
+                <span class="ev-metric"><span class="ev-metric-val" style="color:#888;">{{ compareData.unchanged }}</span><span class="ev-metric-label">持平</span></span>
+            </div>
+            <div class="cmp-row head">
+                <span>输入</span><span style="text-align:center;">基线</span><span style="text-align:center;">对比</span><span style="text-align:center;">变化</span>
+            </div>
+            <div style="max-height:440px;overflow-y:auto;">
+                <div v-for="row in compareData.cases" :key="row.case_id" class="cmp-row">
+                    <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" :title="row.input">{{ row.input }}</span>
+                    <span style="text-align:center;"><span class="score-pill" :class="scoreClass(row.base_score)">{{ (row.base_score*100).toFixed(0) }}</span></span>
+                    <span style="text-align:center;"><span class="score-pill" :class="scoreClass(row.target_score)">{{ (row.target_score*100).toFixed(0) }}</span></span>
+                    <span style="text-align:center;font-weight:700;" :style="{color: row.delta > 0.001 ? '#27ae60' : (row.delta < -0.001 ? '#e74c3c' : '#999')}">
+                        {{ row.delta > 0.001 ? '↑+' : (row.delta < -0.001 ? '↓' : '—') }}{{ row.delta !== 0 ? Math.abs(row.delta*100).toFixed(0) : '' }}
+                    </span>
+                </div>
+            </div>
+        </div>
+        <div v-else class="empty-state"><div class="empty-icon">⚖️</div><div>选择两次运行进行对比</div></div>
     </el-dialog>
 </div>
 
@@ -234,11 +312,14 @@ createApp({
         const showImport = ref(false);
         const showRun = ref(false);
         const showDetail = ref(false);
+        const showCompare = ref(false);
 
         const dsForm = reactive({ name: '', description: '' });
         const caseForm = reactive({ input: '', expected: '' });
         const importText = ref('');
-        const runForm = reactive({ name: '', model_name: '', system_prompt: '', tools: [], judge_model: '', threshold: 0.6 });
+        const runForm = reactive({ name: '', model_name: '', system_prompt: '', tools: [], scorer: 'judge', judge_model: '', threshold: 0.6 });
+        const compareForm = reactive({ base: null, target: null });
+        const compareData = ref(null);
 
         const detailRun = ref(null);
         const detailResults = ref([]);
@@ -246,6 +327,7 @@ createApp({
         let runsTimer = null;
 
         const scoreClass = (s) => s >= 0.8 ? 'score-high' : (s >= 0.5 ? 'score-mid' : 'score-low');
+        const scorerLabel = (s) => ({ judge: 'LLM裁判', exact: '精确匹配', semantic: '语义相似度' }[s] || s || 'LLM裁判');
 
         const api = async (url, opts) => {
             const r = await fetch(url, opts);
@@ -335,7 +417,7 @@ createApp({
         };
 
         const openRunDialog = () => {
-            runForm.name = ''; runForm.model_name=''; runForm.system_prompt=''; runForm.tools=[]; runForm.judge_model=''; runForm.threshold=0.6;
+            runForm.name = ''; runForm.model_name=''; runForm.system_prompt=''; runForm.tools=[]; runForm.scorer='judge'; runForm.judge_model=''; runForm.threshold=0.6;
             showRun.value = true;
         };
 
@@ -368,15 +450,31 @@ createApp({
             } catch (e) { ElMessage.error(e.message); }
         };
 
+        const openCompare = () => {
+            compareData.value = null;
+            compareForm.base = runs.value.length > 1 ? runs.value[1].id : null;  // 默认较早的为基线
+            compareForm.target = runs.value.length > 0 ? runs.value[0].id : null; // 最新的为对比
+            showCompare.value = true;
+        };
+
+        const doCompare = async () => {
+            if (!compareForm.base || !compareForm.target) return ElMessage.warning('请选择两次运行');
+            if (compareForm.base === compareForm.target) return ElMessage.warning('请选择不同的两次运行');
+            try {
+                compareData.value = await api('/api/eval/runs/compare?base=' + compareForm.base + '&target=' + compareForm.target);
+            } catch (e) { ElMessage.error(e.message); }
+        };
+
         onMounted(async () => { await loadDatasets(); await loadTools(); });
 
         return {
             datasets, activeDS, cases, runs, tools,
-            showCreateDS, showAddCase, showImport, showRun, showDetail,
+            showCreateDS, showAddCase, showImport, showRun, showDetail, showCompare,
             dsForm, caseForm, importText, runForm, detailRun, detailResults,
-            scoreClass, selectDataset, loadRuns,
+            compareForm, compareData,
+            scoreClass, scorerLabel, selectDataset, loadRuns,
             createDataset, deleteDataset, addCase, importCases, deleteCase,
-            openRunDialog, startRun, openRunDetail,
+            openRunDialog, startRun, openRunDetail, openCompare, doCompare,
             Plus: ElementPlusIconsVue.Plus, VideoPlay: ElementPlusIconsVue.VideoPlay, Refresh: ElementPlusIconsVue.Refresh,
         };
     }

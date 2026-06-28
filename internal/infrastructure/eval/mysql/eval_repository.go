@@ -155,9 +155,9 @@ func (r *EvalRepository) CreateRun(ctx context.Context, run *eval.Run) error {
 	toolsJSON, _ := json.Marshal(run.Tools)
 	run.CreatedAt = time.Now()
 	res, err := r.db.Exec(ctx,
-		`INSERT INTO eval_runs (dataset_id, name, model_name, system_prompt, tools, judge_model, threshold, status, total_cases, passed_cases, avg_score, error_message, user_id, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		run.DatasetID, run.Name, run.ModelName, run.SystemPrompt, string(toolsJSON), run.JudgeModel, run.Threshold,
+		`INSERT INTO eval_runs (dataset_id, name, model_name, system_prompt, tools, scorer, judge_model, threshold, status, total_cases, passed_cases, avg_score, error_message, user_id, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		run.DatasetID, run.Name, run.ModelName, run.SystemPrompt, string(toolsJSON), string(run.Scorer), run.JudgeModel, run.Threshold,
 		string(run.Status), run.TotalCases, run.PassedCases, run.AvgScore, run.ErrorMessage, run.UserID, run.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("创建评测运行失败: %w", err)
@@ -190,7 +190,7 @@ func (r *EvalRepository) ListRuns(ctx context.Context, datasetID, userID int64) 
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	query := `SELECT id, dataset_id, name, model_name, judge_model, threshold, status, total_cases, passed_cases, avg_score, error_message, user_id, created_at, finished_at
+	query := `SELECT id, dataset_id, name, model_name, judge_model, scorer, threshold, status, total_cases, passed_cases, avg_score, error_message, user_id, created_at, finished_at
 	          FROM eval_runs WHERE user_id = ?`
 	args := []interface{}{userID}
 	if datasetID > 0 {
@@ -224,11 +224,11 @@ func (r *EvalRepository) GetRun(ctx context.Context, id int64) (*eval.Run, error
 	var errMsg sql.NullString
 	var finishedAt sql.NullTime
 	dest := []interface{}{
-		&run.ID, &run.DatasetID, &run.Name, &run.ModelName, &run.SystemPrompt, &toolsJSON, &run.JudgeModel,
+		&run.ID, &run.DatasetID, &run.Name, &run.ModelName, &run.SystemPrompt, &toolsJSON, &run.Scorer, &run.JudgeModel,
 		&run.Threshold, &run.Status, &run.TotalCases, &run.PassedCases, &run.AvgScore, &errMsg, &run.UserID, &run.CreatedAt, &finishedAt,
 	}
 	err := r.db.QueryRow(ctx, dest,
-		`SELECT id, dataset_id, name, model_name, system_prompt, tools, judge_model, threshold, status, total_cases, passed_cases, avg_score, error_message, user_id, created_at, finished_at
+		`SELECT id, dataset_id, name, model_name, system_prompt, tools, scorer, judge_model, threshold, status, total_cases, passed_cases, avg_score, error_message, user_id, created_at, finished_at
 		 FROM eval_runs WHERE id = ?`, id)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -253,7 +253,7 @@ func scanRunBrief(rows *sql.Rows) (*eval.Run, error) {
 	var run eval.Run
 	var errMsg sql.NullString
 	var finishedAt sql.NullTime
-	if err := rows.Scan(&run.ID, &run.DatasetID, &run.Name, &run.ModelName, &run.JudgeModel, &run.Threshold,
+	if err := rows.Scan(&run.ID, &run.DatasetID, &run.Name, &run.ModelName, &run.JudgeModel, &run.Scorer, &run.Threshold,
 		&run.Status, &run.TotalCases, &run.PassedCases, &run.AvgScore, &errMsg, &run.UserID, &run.CreatedAt, &finishedAt); err != nil {
 		return nil, err
 	}

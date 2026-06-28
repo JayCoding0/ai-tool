@@ -110,6 +110,8 @@ func RegisterRoutes(chatHandler *http_handler.ChatHandler, appConfig *config.Con
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
 	})
+	// 运行对比（精确路径，优先于 /api/eval/runs/ 前缀匹配）
+	mux.HandleFunc("/api/eval/runs/compare", chatHandler.HandleCompareRuns)
 	mux.HandleFunc("/api/eval/runs/", chatHandler.HandleGetRun)
 
 	// Workflow 工作流接口

@@ -160,16 +160,19 @@
 - **相关文件**: `domain/model/model.go`（`ResponseFormat`/`GenerateOptions`/`StructuredGenerator`）, `infrastructure/model/openai_generator.go`（`GenerateWithToolsOpts` + `extractReasoningContent`）, `domain/workflow/workflow.go`（NodeConfig 字段）, `application/workflow_engine_nodes.go`（`executeLLMNode` + `buildLLMGenerateOptions`/`extractJSONContent`/`injectJSONInstruction`）, `application/agent_runner.go`（`executeToolsConcurrently` 并发工具执行）, `frontend/workflow.html`（配置 UI）
 - **预估工作量**: ~~1 个月~~ → 已完成
 
-### 25. 🆕 Agent 评估体系（Evaluation）
-- **现状**: 无任何评测/数据集系统（P3 #17 仅一句"数据集测试"），Agent/Prompt/Workflow 改动无法量化好坏
+### 25. ✅ Agent 评估体系（Evaluation）已完成 MVP + 增强
+- **现状**: ~~无任何评测/数据集系统，Agent/Prompt/Workflow 改动无法量化好坏~~
 - **主流做法**: LangSmith / Dify / Coze：测试数据集 → 批量运行 → LLM-as-judge 自动打分 → 版本回归对比
 - **改进方案**:
-  - [ ] 评测数据集管理（输入 + 期望输出，CSV/JSON 导入）
-  - [ ] 批量运行 Agent/Workflow，记录每条结果、耗时、token
-  - [ ] 评分器：精确匹配 / 语义相似度 / LLM-as-judge（可配置评分 Prompt）
-  - [ ] 版本回归对比（两次运行 diff，指标变化趋势）
-  - [ ] 前端评测报告页（通过率、平均分、失败用例下钻）
-- **预估工作量**: 2 个月
+  - [x] 评测数据集管理（数据集 CRUD + 用例单条/JSON 批量导入）
+  - [x] 批量运行 Agent（复用 `agentRunner.runReActLoop` 跑真实 Agent 路径，含工具调用），记录每条结果、耗时、token；异步执行 + 前端轮询进度
+  - [x] 评分器三选一：精确匹配（exact）/ 语义相似度（semantic，复用 `knowledge.Embedder` + 余弦相似度）/ LLM-as-judge（复用 #24 结构化输出严格返回 `{score,reason}`）
+  - [x] 版本回归对比（`CompareRuns` 按 case_id 匹配两次运行，输出平均分变化 + 逐用例 delta + 变好/变差/持平计数）
+  - [x] 前端评测报告页（通过率/平均分/逐条结果卡片：输入/期望/实际输出/通过标记/评分理由/耗时，运行中自动刷新）+ 运行对比页
+  - [ ] Workflow 评测（当前仅支持 Agent，Workflow 批量评测待补）
+  - [ ] CSV 导入 / 报告导出
+- **相关文件**: `domain/eval/`（实体+仓储接口）, `infrastructure/eval/mysql/eval_repository.go`, `application/eval_service.go`（CRUD + 批量运行 + 三种评分器 + CompareRuns）, `interfaces/http/eval_handler.go`, `bootstrap.go`（initEvalService）, `frontend/eval.html`, `database/migrations/004_add_eval_tables.sql` + `005_add_eval_scorer.sql`
+- **预估工作量**: ~~2 个月~~ → MVP + 增强已完成（Workflow 评测/CSV/导出待补）
 
 ### 26. 🆕 应用发布与开放生态（API / Widget / Webhook）
 - **现状**: Agent/Workflow 仅能通过自带 Web UI 使用，无对外发布形态
@@ -454,7 +457,7 @@
 
 2026 Q3 (7-9月)
 ├── ✅ 模型层能力补齐：结构化输出 + 推理模型 + 并行工具调用（P0 #24，已完成）
-├── 🆕🔴 Agent 评估体系（P0 #25，生产可用性前提）
+├── ✅ Agent 评估体系（P0 #25，已完成 MVP + 三种评分器 + 回归对比）
 ├── 🆕🔴 应用发布：API / Widget / Webhook（P0 #26，平台价值出口）
 ├── 🆕🟡 MCP Client：消费外部 MCP 工具（P1 #27）
 ├── 🔴 Memory Phase 1：会话摘要 + Token 窗口管理（P0 #3，3周）

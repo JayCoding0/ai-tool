@@ -39,6 +39,7 @@ type RunEvalRequest struct {
 	ModelName    string   `json:"model_name"`
 	SystemPrompt string   `json:"system_prompt"`
 	Tools        []string `json:"tools"`
+	Scorer       string   `json:"scorer"` // judge | exact | semantic
 	JudgeModel   string   `json:"judge_model"`
 	Threshold    float64  `json:"threshold"`
 }
@@ -213,6 +214,7 @@ func (h *ChatHandler) HandleRunEval(w http.ResponseWriter, r *http.Request) {
 		ModelName:    req.ModelName,
 		SystemPrompt: req.SystemPrompt,
 		Tools:        req.Tools,
+		Scorer:       req.Scorer,
 		JudgeModel:   req.JudgeModel,
 		Threshold:    req.Threshold,
 		UserID:       userID,
@@ -242,6 +244,29 @@ func (h *ChatHandler) HandleListRuns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]interface{}{"runs": list})
+}
+
+// HandleCompareRuns GET /api/eval/runs/compare?base=xx&target=yy 对比两次运行
+func (h *ChatHandler) HandleCompareRuns(w http.ResponseWriter, r *http.Request) {
+	if h.evalSvc == nil {
+		writeJSONError(w, "评估功能不可用（数据库未连接）", http.StatusServiceUnavailable)
+		return
+	}
+	if _, ok := h.requireLogin(w, r); !ok {
+		return
+	}
+	baseID, _ := strconv.ParseInt(r.URL.Query().Get("base"), 10, 64)
+	targetID, _ := strconv.ParseInt(r.URL.Query().Get("target"), 10, 64)
+	if baseID == 0 || targetID == 0 {
+		writeJSONError(w, "需提供 base 和 target 运行 ID", http.StatusBadRequest)
+		return
+	}
+	cmp, err := h.evalSvc.CompareRuns(r.Context(), baseID, targetID)
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, cmp)
 }
 
 // HandleGetRun GET /api/eval/runs/{id} 获取运行详情（含每条结果）
