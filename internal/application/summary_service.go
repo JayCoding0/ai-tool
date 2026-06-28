@@ -68,6 +68,7 @@ func (s *SummaryService) ShouldGenerateSummary(ctx context.Context, sessID sessi
 // 将"旧摘要 + 被淘汰的消息"合并，调用 LLM 生成新摘要
 // 这样每次摘要不需要重新处理全部历史，只处理增量部分
 func (s *SummaryService) GenerateIncrementalSummary(ctx context.Context, sessID session.SessionID, evictedMessages []session.Message, modelName string) {
+	defer shared.Recover("summary-generate")
 	logger := shared.GetLogger()
 
 	// 获取旧摘要

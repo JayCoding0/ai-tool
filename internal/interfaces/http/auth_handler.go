@@ -2,6 +2,7 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -9,6 +10,35 @@ import (
 	"aiProject/internal/application"
 	"go.uber.org/zap"
 )
+
+// ─── 认证上下文传递 ────────────────────────────────────────────────────────────
+
+// ctxKey 认证上下文键类型（避免与其他包的 context key 冲突）
+type ctxKey string
+
+const userCtxKey ctxKey = "auth_user"
+
+// authUser 存入 context 的当前用户信息
+type authUser struct {
+	UserID   int64
+	Username string
+	Role     string
+}
+
+// WithUser 将认证用户信息注入 context（由认证中间件调用）
+func WithUser(ctx context.Context, userID int64, username, role string) context.Context {
+	return context.WithValue(ctx, userCtxKey, &authUser{
+		UserID:   userID,
+		Username: username,
+		Role:     role,
+	})
+}
+
+// userFromContext 从 context 中读取认证用户信息
+func userFromContext(ctx context.Context) (*authUser, bool) {
+	u, ok := ctx.Value(userCtxKey).(*authUser)
+	return u, ok
+}
 
 // RegisterRequest 注册请求
 type RegisterRequest struct {
@@ -56,7 +86,14 @@ func setAuthCookie(w http.ResponseWriter, token string, maxAge int) {
 }
 
 // getCurrentUser 从请求中获取当前用户信息，返回 userID、username、role
+// 优先读取认证中间件注入的 context；缺失时回退到直接校验 token（兼容未经过中间件的内部调用）
 func (h *ChatHandler) getCurrentUser(r *http.Request) (int64, string, string) {
+	if u, ok := userFromContext(r.Context()); ok {
+		return u.UserID, u.Username, u.Role
+	}
+	if h.authService == nil {
+		return 0, "", "guest"
+	}
 	token := extractToken(r)
 	if token == "" {
 		return 0, "", "guest"
@@ -66,6 +103,11 @@ func (h *ChatHandler) getCurrentUser(r *http.Request) (int64, string, string) {
 		return 0, "", "guest"
 	}
 	return userID, username, role
+}
+
+// GetAuthService 返回认证服务实例（供 bootstrap 构建认证中间件使用）
+func (h *ChatHandler) GetAuthService() *application.AuthService {
+	return h.authService
 }
 
 // HandleRegister 处理注册请求

@@ -48,8 +48,27 @@ func (s *KnowledgeService) CreateKnowledgeBase(ctx context.Context, userID int64
 	return kb, nil
 }
 
-// GetKnowledgeBase 获取知识库详情
-func (s *KnowledgeService) GetKnowledgeBase(ctx context.Context, id int64) (*knowledge.KnowledgeBase, error) {
+// checkKBOwner 校验知识库归属。kb 不存在返回 ErrForbidden（避免泄露存在性差异）；
+// 归属用户与 userID 不一致也返回 ErrForbidden。
+func (s *KnowledgeService) checkKBOwner(ctx context.Context, kbID, userID int64) error {
+	if userID <= 0 {
+		return ErrForbidden
+	}
+	kb, err := s.repo.GetKnowledgeBase(ctx, kbID)
+	if err != nil {
+		return err
+	}
+	if kb == nil || kb.UserID != userID {
+		return ErrForbidden
+	}
+	return nil
+}
+
+// GetKnowledgeBase 获取知识库详情（校验归属）
+func (s *KnowledgeService) GetKnowledgeBase(ctx context.Context, id, userID int64) (*knowledge.KnowledgeBase, error) {
+	if err := s.checkKBOwner(ctx, id, userID); err != nil {
+		return nil, err
+	}
 	return s.repo.GetKnowledgeBase(ctx, id)
 }
 
@@ -58,16 +77,22 @@ func (s *KnowledgeService) ListKnowledgeBases(ctx context.Context, userID int64)
 	return s.repo.ListKnowledgeBases(ctx, userID)
 }
 
-// DeleteKnowledgeBase 删除知识库
-func (s *KnowledgeService) DeleteKnowledgeBase(ctx context.Context, id int64) error {
+// DeleteKnowledgeBase 删除知识库（校验归属）
+func (s *KnowledgeService) DeleteKnowledgeBase(ctx context.Context, id, userID int64) error {
+	if err := s.checkKBOwner(ctx, id, userID); err != nil {
+		return err
+	}
 	return s.repo.DeleteKnowledgeBase(ctx, id)
 }
 
 // ─── 文档管理 ──────────────────────────────────────────────────────────────────
 
-// AddDocument 添加文档到知识库（解析 → 分块 → 向量化 → 存储）
+// AddDocument 添加文档到知识库（解析 → 分块 → 向量化 → 存储，校验归属）
 // 异步处理，立即返回文档 ID，处理状态通过 GetDocument 查询
-func (s *KnowledgeService) AddDocument(ctx context.Context, kbID int64, name, contentType, content string) (*knowledge.Document, error) {
+func (s *KnowledgeService) AddDocument(ctx context.Context, kbID, userID int64, name, contentType, content string) (*knowledge.Document, error) {
+	if err := s.checkKBOwner(ctx, kbID, userID); err != nil {
+		return nil, err
+	}
 	if content == "" {
 		return nil, fmt.Errorf("文档内容不能为空")
 	}
@@ -179,15 +204,25 @@ func (s *KnowledgeService) GetDocument(ctx context.Context, id int64) (*knowledg
 	return s.repo.GetDocument(ctx, id)
 }
 
-// ListDocuments 列出知识库下的文档
-func (s *KnowledgeService) ListDocuments(ctx context.Context, kbID int64) ([]*knowledge.Document, error) {
+// ListDocuments 列出知识库下的文档（校验归属）
+func (s *KnowledgeService) ListDocuments(ctx context.Context, kbID, userID int64) ([]*knowledge.Document, error) {
+	if err := s.checkKBOwner(ctx, kbID, userID); err != nil {
+		return nil, err
+	}
 	return s.repo.ListDocuments(ctx, kbID)
 }
 
-// DeleteDocument 删除文档及其分块
-func (s *KnowledgeService) DeleteDocument(ctx context.Context, docID int64) error {
+// DeleteDocument 删除文档及其分块（校验归属）
+func (s *KnowledgeService) DeleteDocument(ctx context.Context, docID, userID int64) error {
 	doc, err := s.repo.GetDocument(ctx, docID)
 	if err != nil {
+		return err
+	}
+	if doc == nil {
+		return ErrForbidden
+	}
+	// 通过文档所属知识库校验归属
+	if err := s.checkKBOwner(ctx, doc.KnowledgeBaseID, userID); err != nil {
 		return err
 	}
 	// 先删分块，再删文档
@@ -204,8 +239,11 @@ func (s *KnowledgeService) DeleteDocument(ctx context.Context, docID int64) erro
 
 // ─── 语义检索 ──────────────────────────────────────────────────────────────────
 
-// Search 语义检索，返回最相关的 topK 个分块
-func (s *KnowledgeService) Search(ctx context.Context, kbID int64, query string, topK int) ([]knowledge.ScoredChunk, error) {
+// Search 语义检索，返回最相关的 topK 个分块（校验归属）
+func (s *KnowledgeService) Search(ctx context.Context, kbID, userID int64, query string, topK int) ([]knowledge.ScoredChunk, error) {
+	if err := s.checkKBOwner(ctx, kbID, userID); err != nil {
+		return nil, err
+	}
 	if query == "" {
 		return nil, nil
 	}

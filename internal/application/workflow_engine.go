@@ -129,6 +129,11 @@ func (e *WorkflowEngine) Execute(ctx context.Context, workflowID int64, inputs m
 		return nil, fmt.Errorf("加载工作流失败: %w", err)
 	}
 
+	// 1.1 归属校验，防止越权执行他人工作流
+	if userID <= 0 || wf.UserID != userID {
+		return nil, ErrForbidden
+	}
+
 	// 2. 校验
 	if err := wf.Validate(); err != nil {
 		return nil, fmt.Errorf("工作流校验失败: %w", err)

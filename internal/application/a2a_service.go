@@ -86,6 +86,7 @@ func (s *A2AService) SubscribeTask(taskID string) (<-chan a2a.TaskStreamEvent, f
 
 // executeTask 异步执行任务核心逻辑
 func (s *A2AService) executeTask(ctx context.Context, task *a2a.Task) {
+	defer shared.Recover("a2a-execute-task")
 	logger := shared.GetLogger()
 	taskID := task.ID
 

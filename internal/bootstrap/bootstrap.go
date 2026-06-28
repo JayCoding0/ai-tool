@@ -19,6 +19,7 @@ import (
 	mysql_promptvars "aiProject/internal/infrastructure/promptvars/mysql"
 	infra_session "aiProject/internal/infrastructure/session"
 	mysql_session "aiProject/internal/infrastructure/session/mysql"
+	infra_token "aiProject/internal/infrastructure/token"
 	infra_tools "aiProject/internal/infrastructure/tools"
 	mysql_user "aiProject/internal/infrastructure/user/mysql"
 	mysql_workflow "aiProject/internal/infrastructure/workflow/mysql"
@@ -130,7 +131,8 @@ func InitComponents(appConfig *config.Config) (*http_handler.ChatHandler, *appli
 	userRepo := mysql_user.NewUserRepository()
 	modelGen := newModelGenerator(appConfig)
 	chatService := application.NewChatServiceWithFactory(sessionRepo, modelGen, appConfig.Model.Name, modelFactory)
-	authService := application.NewAuthService(userRepo)
+	// 使用数据库持久化 Token 存储（重启不丢失登录态，支持多实例）
+	authService := application.NewAuthServiceWithTokenStore(userRepo, infra_token.NewDBTokenStore())
 	// 从 skills/*/scripts/ 目录加载并注册工具（传入百度 AK，避免硬编码）
 	infra_tools.LoadToolsFromSkillsDir("skills", appConfig.Tools.BaiduAK)
 

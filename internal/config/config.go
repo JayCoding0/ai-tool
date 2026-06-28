@@ -35,6 +35,9 @@ type SecurityConfig struct {
 	AllowedOrigins []string `yaml:"allowed_origins"`
 	// RateLimit 限流配置
 	RateLimit RateLimitConfig `yaml:"rate_limit"`
+	// TrustProxyHeaders 是否信任反向代理头（X-Forwarded-For/X-Real-IP）
+	// 仅当服务部署在可信反代之后时才设为 true，否则限流可被伪造头绕过
+	TrustProxyHeaders bool `yaml:"trust_proxy_headers"`
 }
 
 // RateLimitConfig 限流配置
@@ -171,7 +174,7 @@ func DefaultConfig() *Config {
 				Host:            "localhost",
 				Port:            3306,
 				Username:        "root",
-				Password:        "123456",
+				Password:        "", // 敏感信息不硬编码，通过环境变量 MYSQL_PASSWORD 或配置文件提供
 				Database:        "ai_chat_db",
 				MaxIdleConns:    10,
 				MaxOpenConns:    100,
@@ -218,9 +221,34 @@ func LoadConfig() *Config {
 		}
 		// 将 custom 块中非零值覆盖到默认配置
 		mergeConfig(cfg, wrapper.Custom)
+		applyEnvOverrides(cfg)
 		return cfg
 	}
+	applyEnvOverrides(cfg)
 	return cfg
+}
+
+// applyEnvOverrides 用环境变量覆盖敏感配置（遵循 secrets env-only 原则）
+// 优先级：环境变量 > 配置文件 > 默认值
+func applyEnvOverrides(cfg *Config) {
+	if v := os.Getenv("OPENAI_API_KEY"); v != "" {
+		cfg.Model.OpenAIAPIKey = v
+	}
+	if v := os.Getenv("OPENAI_BASE_URL"); v != "" {
+		cfg.Model.OpenAIBaseURL = v
+	}
+	if v := os.Getenv("MYSQL_PASSWORD"); v != "" {
+		cfg.Database.MySQL.Password = v
+	}
+	if v := os.Getenv("MYSQL_USERNAME"); v != "" {
+		cfg.Database.MySQL.Username = v
+	}
+	if v := os.Getenv("MYSQL_HOST"); v != "" {
+		cfg.Database.MySQL.Host = v
+	}
+	if v := os.Getenv("BAIDU_AK"); v != "" {
+		cfg.Tools.BaiduAK = v
+	}
 }
 
 // mergeConfig 将 src 中非零值字段覆盖到 dst
@@ -287,6 +315,7 @@ func mergeConfig(dst, src *Config) {
 		dst.Security.RateLimit.Burst = src.Security.RateLimit.Burst
 	}
 	dst.Security.RateLimit.Enabled = src.Security.RateLimit.Enabled
+	dst.Security.TrustProxyHeaders = src.Security.TrustProxyHeaders
 	// Database.MySQL
 	if src.Database.MySQL.Host != "" {
 		dst.Database.MySQL.Host = src.Database.MySQL.Host

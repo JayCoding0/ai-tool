@@ -79,12 +79,27 @@ func NewWorkflowHandler(
 	}
 }
 
+// requireUser 获取当前登录用户 ID，未登录时写入 401 并返回 (0,false)
+func (h *WorkflowHandler) requireUser(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	userID := h.getUserID(r)
+	if userID <= 0 {
+		writeJSONError(w, "请先登录", http.StatusUnauthorized)
+		return 0, false
+	}
+	return userID, true
+}
+
 // ─── CRUD 接口 ──────────────────────────────────────────────────────────────
 
 // HandleCreateWorkflow 创建工作流 POST /api/workflows
 func (h *WorkflowHandler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSONError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	userID, ok := h.requireUser(w, r)
+	if !ok {
 		return
 	}
 
@@ -98,8 +113,6 @@ func (h *WorkflowHandler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Re
 		writeJSONError(w, "工作流名称不能为空", http.StatusBadRequest)
 		return
 	}
-
-	userID := h.getUserID(r)
 
 	wf := &workflow.Workflow{
 		Name:        req.Name,
@@ -129,7 +142,10 @@ func (h *WorkflowHandler) HandleListWorkflows(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	userID := h.getUserID(r)
+	userID, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
 	status := workflow.Status(r.URL.Query().Get("status"))
 
 	workflows, err := h.workflowSvc.ListWorkflows(r.Context(), userID, status)
@@ -160,16 +176,21 @@ func (h *WorkflowHandler) HandleGetWorkflow(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	userID, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
 	id, err := h.parseWorkflowID(r.URL.Path, "/api/workflows/")
 	if err != nil {
 		writeJSONError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	wf, err := h.workflowSvc.GetWorkflow(r.Context(), id)
+	wf, err := h.workflowSvc.GetWorkflow(r.Context(), id, userID)
 	if err != nil {
 		h.logger.Error("获取工作流失败", zap.Int64("id", id), zap.Error(err))
-		writeJSONError(w, err.Error(), http.StatusNotFound)
+		writeServiceError(w, err, err.Error())
 		return
 	}
 
@@ -181,6 +202,11 @@ func (h *WorkflowHandler) HandleGetWorkflow(w http.ResponseWriter, r *http.Reque
 func (h *WorkflowHandler) HandleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
 		writeJSONError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	userID, ok := h.requireUser(w, r)
+	if !ok {
 		return
 	}
 
@@ -206,9 +232,9 @@ func (h *WorkflowHandler) HandleUpdateWorkflow(w http.ResponseWriter, r *http.Re
 		Status:      workflow.Status(req.Status),
 	}
 
-	if err := h.workflowSvc.UpdateWorkflow(r.Context(), wf); err != nil {
+	if err := h.workflowSvc.UpdateWorkflow(r.Context(), wf, userID); err != nil {
 		h.logger.Error("更新工作流失败", zap.Int64("id", id), zap.Error(err))
-		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		writeServiceError(w, err, err.Error())
 		return
 	}
 
@@ -223,15 +249,20 @@ func (h *WorkflowHandler) HandleDeleteWorkflow(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	userID, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
 	id, err := h.parseWorkflowID(r.URL.Path, "/api/workflows/")
 	if err != nil {
 		writeJSONError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	if err := h.workflowSvc.DeleteWorkflow(r.Context(), id); err != nil {
+	if err := h.workflowSvc.DeleteWorkflow(r.Context(), id, userID); err != nil {
 		h.logger.Error("删除工作流失败", zap.Int64("id", id), zap.Error(err))
-		writeJSONError(w, err.Error(), http.StatusInternalServerError)
+		writeServiceError(w, err, err.Error())
 		return
 	}
 
@@ -246,6 +277,11 @@ func (h *WorkflowHandler) HandlePublishWorkflow(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	userID, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
 	// 解析路径：/api/workflows/{id}/publish
 	path := strings.TrimSuffix(r.URL.Path, "/publish")
 	id, err := h.parseWorkflowID(path, "/api/workflows/")
@@ -254,9 +290,9 @@ func (h *WorkflowHandler) HandlePublishWorkflow(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	if err := h.workflowSvc.PublishWorkflow(r.Context(), id); err != nil {
+	if err := h.workflowSvc.PublishWorkflow(r.Context(), id, userID); err != nil {
 		h.logger.Error("发布工作流失败", zap.Int64("id", id), zap.Error(err))
-		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		writeServiceError(w, err, err.Error())
 		return
 	}
 
@@ -273,6 +309,11 @@ func (h *WorkflowHandler) HandleExecuteWorkflow(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	userID, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
 	// 解析路径：/api/workflows/{id}/execute
 	path := strings.TrimSuffix(r.URL.Path, "/execute")
 	id, err := h.parseWorkflowID(path, "/api/workflows/")
@@ -286,8 +327,6 @@ func (h *WorkflowHandler) HandleExecuteWorkflow(w http.ResponseWriter, r *http.R
 		// 允许空 body
 		req = ExecuteWorkflowRequest{}
 	}
-
-	userID := h.getUserID(r)
 
 	// 设置 SSE 响应头
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -327,6 +366,11 @@ func (h *WorkflowHandler) HandleGetWorkflowRuns(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	userID, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
 	// 解析路径：/api/workflows/{id}/runs
 	path := strings.TrimSuffix(r.URL.Path, "/runs")
 	id, err := h.parseWorkflowID(path, "/api/workflows/")
@@ -342,10 +386,10 @@ func (h *WorkflowHandler) HandleGetWorkflowRuns(w http.ResponseWriter, r *http.R
 		}
 	}
 
-	runs, err := h.workflowSvc.GetWorkflowRuns(r.Context(), id, limit)
+	runs, err := h.workflowSvc.GetWorkflowRuns(r.Context(), id, userID, limit)
 	if err != nil {
 		h.logger.Error("获取执行记录失败", zap.Int64("workflow_id", id), zap.Error(err))
-		writeJSONError(w, "获取执行记录失败", http.StatusInternalServerError)
+		writeServiceError(w, err, "获取执行记录失败")
 		return
 	}
 	if runs == nil {
@@ -365,16 +409,21 @@ func (h *WorkflowHandler) HandleGetWorkflowRun(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	userID, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
 	runID := strings.TrimPrefix(r.URL.Path, "/api/workflow-runs/")
 	if runID == "" {
 		writeJSONError(w, "run_id 不能为空", http.StatusBadRequest)
 		return
 	}
 
-	run, err := h.workflowSvc.GetWorkflowRun(r.Context(), runID)
+	run, err := h.workflowSvc.GetWorkflowRun(r.Context(), runID, userID)
 	if err != nil {
 		h.logger.Error("获取执行详情失败", zap.String("run_id", runID), zap.Error(err))
-		writeJSONError(w, err.Error(), http.StatusNotFound)
+		writeServiceError(w, err, err.Error())
 		return
 	}
 
@@ -391,6 +440,11 @@ func (h *WorkflowHandler) HandleExportWorkflow(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	userID, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
 	// 解析路径：/api/workflows/{id}/export
 	path := strings.TrimSuffix(r.URL.Path, "/export")
 	id, err := h.parseWorkflowID(path, "/api/workflows/")
@@ -399,10 +453,10 @@ func (h *WorkflowHandler) HandleExportWorkflow(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	exportData, err := h.workflowSvc.ExportWorkflow(r.Context(), id)
+	exportData, err := h.workflowSvc.ExportWorkflow(r.Context(), id, userID)
 	if err != nil {
 		h.logger.Error("导出工作流失败", zap.Int64("id", id), zap.Error(err))
-		writeJSONError(w, err.Error(), http.StatusInternalServerError)
+		writeServiceError(w, err, err.Error())
 		return
 	}
 
@@ -422,13 +476,16 @@ func (h *WorkflowHandler) HandleImportWorkflow(w http.ResponseWriter, r *http.Re
 	// 限制请求体大小（10MB）
 	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
 
+	userID, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
 	data, err := io.ReadAll(r.Body)
 	if err != nil {
 		writeJSONError(w, "读取请求体失败: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-
-	userID := h.getUserID(r)
 
 	wf, err := h.workflowSvc.ImportWorkflow(r.Context(), data, userID)
 	if err != nil {

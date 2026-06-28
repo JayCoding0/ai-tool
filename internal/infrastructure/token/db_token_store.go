@@ -26,10 +26,10 @@ func NewDBTokenStore() *DBTokenStore {
 // Set 保存Token到数据库
 func (s *DBTokenStore) Set(ctx context.Context, token string, info *application.TokenInfo) error {
 	_, err := s.db.Exec(ctx,
-		`INSERT INTO auth_tokens (token, user_id, username, expires_at)
-		 VALUES (?, ?, ?, ?)
-		 ON DUPLICATE KEY UPDATE user_id=VALUES(user_id), username=VALUES(username), expires_at=VALUES(expires_at)`,
-		token, info.UserID, info.Username, info.ExpiresAt,
+		`INSERT INTO auth_tokens (token, user_id, username, role, expires_at)
+		 VALUES (?, ?, ?, ?, ?)
+		 ON DUPLICATE KEY UPDATE user_id=VALUES(user_id), username=VALUES(username), role=VALUES(role), expires_at=VALUES(expires_at)`,
+		token, info.UserID, info.Username, info.Role, info.ExpiresAt,
 	)
 	return err
 }
@@ -37,9 +37,9 @@ func (s *DBTokenStore) Set(ctx context.Context, token string, info *application.
 // Get 从数据库获取Token信息
 func (s *DBTokenStore) Get(ctx context.Context, token string) (*application.TokenInfo, bool) {
 	var info application.TokenInfo
-	dest := []interface{}{&info.UserID, &info.Username, &info.ExpiresAt}
+	dest := []interface{}{&info.UserID, &info.Username, &info.Role, &info.ExpiresAt}
 	err := s.db.QueryRow(ctx, dest,
-		`SELECT user_id, username, expires_at FROM auth_tokens WHERE token = ? AND expires_at > NOW()`,
+		`SELECT user_id, username, COALESCE(role,'user'), expires_at FROM auth_tokens WHERE token = ? AND expires_at > NOW()`,
 		token,
 	)
 	if err != nil {

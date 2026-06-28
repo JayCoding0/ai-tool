@@ -4,6 +4,7 @@ package http
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -68,6 +69,29 @@ func writeJSONError(w http.ResponseWriter, message string, code int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	json.NewEncoder(w).Encode(map[string]string{"error": message}) //nolint:errcheck
+}
+
+// writeServiceError 根据应用层错误类型映射为合适的 HTTP 状态码
+// ErrForbidden → 403，ErrUnauthorized → 401，其余 → 500
+func writeServiceError(w http.ResponseWriter, err error, fallbackMsg string) {
+	switch {
+	case errors.Is(err, application.ErrForbidden):
+		writeJSONError(w, "无权访问该资源", http.StatusForbidden)
+	case errors.Is(err, application.ErrUnauthorized):
+		writeJSONError(w, "请先登录", http.StatusUnauthorized)
+	default:
+		writeJSONError(w, fallbackMsg, http.StatusInternalServerError)
+	}
+}
+
+// requireLogin 校验当前请求已登录，返回 userID；未登录时写入 401 并返回 (0,false)
+func (h *ChatHandler) requireLogin(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	userID, _, _ := h.getCurrentUser(r)
+	if userID <= 0 {
+		writeJSONError(w, "请先登录", http.StatusUnauthorized)
+		return 0, false
+	}
+	return userID, true
 }
 
 // truncate 截取字符串前 maxLen 个字符，用于日志预览
@@ -329,10 +353,12 @@ func (h *ChatHandler) HandleGetHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	messages, err := h.chatService.GetSessionHistory(r.Context(), session.SessionID(req.SessionID))
+	userID, _, _ := h.getCurrentUser(r)
+
+	messages, err := h.chatService.GetSessionHistory(r.Context(), session.SessionID(req.SessionID), userID)
 	if err != nil {
 		h.logger.Error("获取历史记录失败", zap.String("session_id", req.SessionID), zap.Error(err))
-		writeJSONError(w, "Failed to get history", http.StatusInternalServerError)
+		writeServiceError(w, err, "Failed to get history")
 		return
 	}
 
@@ -352,13 +378,7 @@ func (h *ChatHandler) HandleListSessions(w http.ResponseWriter, r *http.Request)
 
 	userID, _, _ := h.getCurrentUser(r)
 
-	var sessions []session.SessionInfo
-	var err error
-	if userID > 0 {
-		sessions, err = h.chatService.ListSessionsByUser(r.Context(), userID)
-	} else {
-		sessions, err = h.chatService.ListSessions(r.Context())
-	}
+	sessions, err := h.chatService.ListSessionsByUser(r.Context(), userID)
 	if err != nil {
 		h.logger.Error("获取会话列表失败", zap.Error(err))
 		writeJSONError(w, "Failed to list sessions", http.StatusInternalServerError)
@@ -386,9 +406,11 @@ func (h *ChatHandler) HandleDeleteSession(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if err := h.chatService.DeleteSession(r.Context(), session.SessionID(req.SessionID)); err != nil {
+	userID, _, _ := h.getCurrentUser(r)
+
+	if err := h.chatService.DeleteSession(r.Context(), session.SessionID(req.SessionID), userID); err != nil {
 		h.logger.Error("删除会话失败", zap.String("session_id", req.SessionID), zap.Error(err))
-		writeJSONError(w, "Failed to delete session", http.StatusInternalServerError)
+		writeServiceError(w, err, "Failed to delete session")
 		return
 	}
 
@@ -420,9 +442,11 @@ func (h *ChatHandler) HandleRenameSession(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if err := h.chatService.RenameSession(r.Context(), session.SessionID(req.SessionID), req.Title); err != nil {
+	userID, _, _ := h.getCurrentUser(r)
+
+	if err := h.chatService.RenameSession(r.Context(), session.SessionID(req.SessionID), userID, req.Title); err != nil {
 		h.logger.Error("重命名会话失败", zap.String("session_id", req.SessionID), zap.Error(err))
-		writeJSONError(w, "Failed to rename session", http.StatusInternalServerError)
+		writeServiceError(w, err, "Failed to rename session")
 		return
 	}
 
@@ -447,9 +471,11 @@ func (h *ChatHandler) HandleUpdateSystemPrompt(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	if err := h.chatService.UpdateSessionSystemPrompt(r.Context(), session.SessionID(req.SessionID), req.SystemPrompt); err != nil {
+	userID, _, _ := h.getCurrentUser(r)
+
+	if err := h.chatService.UpdateSessionSystemPrompt(r.Context(), session.SessionID(req.SessionID), userID, req.SystemPrompt); err != nil {
 		h.logger.Error("更新 System Prompt 失败", zap.String("session_id", req.SessionID), zap.Error(err))
-		writeJSONError(w, "Failed to update system prompt", http.StatusInternalServerError)
+		writeServiceError(w, err, "Failed to update system prompt")
 		return
 	}
 
@@ -470,10 +496,12 @@ func (h *ChatHandler) HandleGetSystemPrompt(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	prompt, err := h.chatService.GetSessionSystemPrompt(r.Context(), session.SessionID(sessID))
+	userID, _, _ := h.getCurrentUser(r)
+
+	prompt, err := h.chatService.GetSessionSystemPrompt(r.Context(), session.SessionID(sessID), userID)
 	if err != nil {
 		h.logger.Error("获取 System Prompt 失败", zap.String("session_id", sessID), zap.Error(err))
-		writeJSONError(w, "Failed to get system prompt", http.StatusInternalServerError)
+		writeServiceError(w, err, "Failed to get system prompt")
 		return
 	}
 

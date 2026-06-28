@@ -116,6 +116,11 @@ func (r *MemoryRepository) DeleteSession(ctx context.Context, sessID session.Ses
 	return r.Delete(sessID)
 }
 
+// GetSessionOwner 内存实现无用户归属概念，统一返回 0（视为匿名会话）
+func (r *MemoryRepository) GetSessionOwner(ctx context.Context, sessID session.SessionID) (int64, error) {
+	return 0, nil
+}
+
 // GetSessionTotalTokens 内存实现返回0
 func (r *MemoryRepository) GetSessionTotalTokens(ctx context.Context, sessID session.SessionID) (int, error) {
 	return 0, nil

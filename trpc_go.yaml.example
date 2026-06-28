@@ -30,7 +30,7 @@ client:
   timeout: 1000
   service:
     - name: trpc.mysql.ai_chat.db
-      # 替换为你的 MySQL 连接信息
+      # 替换为你的 MySQL 连接信息；密码建议通过环境变量 MYSQL_PASSWORD 注入，避免明文
       target: dsn://YOUR_DB_USER:YOUR_DB_PASSWORD@tcp(localhost:3306)/ai_chat_db?charset=utf8mb4&parseTime=true&loc=Local&timeout=5s
 
 # 应用自定义配置
@@ -49,7 +49,7 @@ custom:
     timeout: 5000
     max_context_length: 4096
     openai_base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    # 替换为你的 API Key
+    # 推荐通过环境变量 OPENAI_API_KEY 提供（优先级高于此处），避免明文写入配置文件
     openai_api_key: "YOUR_OPENAI_API_KEY"
     available_models:
       # ☁️ 云端模型（阿里云 DashScope）
@@ -57,6 +57,22 @@ custom:
         label: "通义千问 Plus"
         type: "cloud"
       # 🖥️ 本地模型由 Ollama 实时拉取，无需在此配置
+
+  # 安全配置
+  security:
+    # CORS 允许的来源（精确匹配；生产环境请勿使用 "*"）
+    allowed_origins:
+      - "http://localhost:8080"
+      - "http://127.0.0.1:8080"
+    # IP 限流
+    rate_limit:
+      enabled: true
+      requests_per_second: 10
+      burst: 30
+    # 是否信任反向代理头（X-Forwarded-For/X-Real-IP）。
+    # 仅当服务部署在可信反代（如 Nginx）之后时才设为 true，
+    # 直接对外暴露时必须为 false，否则限流可被伪造头绕过。
+    trust_proxy_headers: false
 
   # MCP配置
   mcp:

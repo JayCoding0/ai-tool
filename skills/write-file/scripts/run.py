@@ -10,12 +10,10 @@ import json
 import os
 
 
-# 允许写入的文件扩展名白名单（防止写入可执行文件）
+# 允许写入的文件扩展名白名单（仅数据/文本类，禁止可执行脚本以防与命令执行组合形成 RCE）
 ALLOWED_EXTENSIONS = {
     ".txt", ".md", ".json", ".yaml", ".yml", ".csv", ".log",
-    ".html", ".xml", ".toml", ".ini", ".conf", ".sql",
-    ".py", ".js", ".ts", ".go", ".java", ".sh", ".bash",
-    ".css", ".scss", ".less", ".rst", ".tex",
+    ".xml", ".toml", ".ini", ".conf", ".rst", ".tex", ".html",
 }
 
 # 单次写入最大字节数（1MB）

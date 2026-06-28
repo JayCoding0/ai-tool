@@ -213,6 +213,10 @@ func (s *AuthService) Register(ctx context.Context, req RegisterRequest) (*Regis
 	}, nil
 }
 
+// dummyBcryptHash 一个合法的 bcrypt 哈希，用于在用户不存在时执行等价耗时的比较，
+// 消除"用户存在/不存在"的响应时间差异（防用户枚举）。
+const dummyBcryptHash = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
+
 // Login 用户登录
 func (s *AuthService) Login(ctx context.Context, req LoginRequest) (*LoginResponse, error) {
 	if req.Username == "" || req.Password == "" {
@@ -224,6 +228,8 @@ func (s *AuthService) Login(ctx context.Context, req LoginRequest) (*LoginRespon
 		return nil, fmt.Errorf("查询用户失败: %w", err)
 	}
 	if u == nil {
+		// 用户不存在时也执行一次 bcrypt 比较，保持恒定时间
+		_ = bcrypt.CompareHashAndPassword([]byte(dummyBcryptHash), []byte(req.Password))
 		return nil, errors.New("用户名或密码错误")
 	}
 

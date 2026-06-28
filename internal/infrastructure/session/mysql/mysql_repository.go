@@ -193,6 +193,22 @@ func (r *MySQLRepository) DeleteSession(ctx context.Context, sessID session.Sess
 	return err
 }
 
+// GetSessionOwner 获取会话归属的用户 ID（用于越权校验）
+// 会话不存在时返回 (0, nil)，由调用方决定如何处理
+func (r *MySQLRepository) GetSessionOwner(ctx context.Context, sessID session.SessionID) (int64, error) {
+	var userID int64
+	dest := []interface{}{&userID}
+	err := r.db.QueryRow(ctx, dest,
+		"SELECT user_id FROM chat_sessions WHERE id = ?", string(sessID))
+	if err != nil {
+		if err.Error() == "sql: no rows in result set" {
+			return 0, nil
+		}
+		return 0, err
+	}
+	return userID, nil
+}
+
 // CleanGuestSessions 清理游客会话（user_id = 0 的记录）
 func (r *MySQLRepository) CleanGuestSessions(ctx context.Context) (int64, error) {
 	result, err := r.db.Exec(ctx, "DELETE FROM chat_sessions WHERE user_id = 0")

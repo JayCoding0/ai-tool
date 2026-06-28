@@ -230,6 +230,17 @@ func (h *ChatHandler) HandleUpdateAgentTools(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	// 修改全局 Agent 工具配置属于高危操作，仅允许管理员执行
+	userID, _, role := h.getCurrentUser(r)
+	if userID <= 0 {
+		writeJSONError(w, "请先登录", http.StatusUnauthorized)
+		return
+	}
+	if role != "admin" {
+		writeJSONError(w, "仅管理员可修改 Agent 工具配置", http.StatusForbidden)
+		return
+	}
+
 	// 从路径中提取 agent name：/api/agents/{name}/tools
 	agentName := extractPathSegment(r.URL.Path, "/api/agents/", "/tools")
 	if agentName == "" {

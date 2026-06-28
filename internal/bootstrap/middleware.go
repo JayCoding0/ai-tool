@@ -1,16 +1,24 @@
 package bootstrap
 
 import (
+	"net"
 	"net/http"
 	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
 
+	"aiProject/internal/application"
+	http_handler "aiProject/internal/interfaces/http"
 	"aiProject/internal/shared"
 	"go.uber.org/zap"
 	"golang.org/x/time/rate"
 )
+
+// trustProxyHeaders 是否信任 X-Forwarded-For / X-Real-IP 头。
+// 仅当服务部署在可信反向代理之后时才应置为 true，否则客户端可伪造该头绕过限流。
+// 由 RegisterRoutes 根据配置设置。
+var trustProxyHeaders bool
 
 // recoveryMiddleware panic 恢复中间件，防止单个请求 panic 导致服务崩溃
 func recoveryMiddleware(next http.Handler) http.Handler {
@@ -190,22 +198,59 @@ func rateLimitMiddleware(rl *ipRateLimiter) func(http.Handler) http.Handler {
 	}
 }
 
-// realIP 提取客户端真实 IP，支持 X-Forwarded-For 和 X-Real-IP 头
+// realIP 提取客户端真实 IP。
+// 仅在 trustProxyHeaders 为 true（位于可信反代之后）时才信任 X-Forwarded-For / X-Real-IP，
+// 否则一律使用 RemoteAddr，防止客户端伪造头绕过限流。
 func realIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// X-Forwarded-For 可能包含多个 IP，取第一个（客户端真实 IP）
-		parts := strings.SplitN(xff, ",", 2)
-		return strings.TrimSpace(parts[0])
+	if trustProxyHeaders {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			// X-Forwarded-For 可能包含多个 IP，取第一个（客户端真实 IP）
+			parts := strings.SplitN(xff, ",", 2)
+			return strings.TrimSpace(parts[0])
+		}
+		if xri := r.Header.Get("X-Real-IP"); xri != "" {
+			return strings.TrimSpace(xri)
+		}
 	}
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return xri
+	// 使用 net.SplitHostPort 正确处理 IPv4/IPv6 地址
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
 	}
-	// 去掉端口号
-	ip := r.RemoteAddr
-	if idx := strings.LastIndex(ip, ":"); idx != -1 {
-		ip = ip[:idx]
+	return host
+}
+
+// ─── 认证中间件 ────────────────────────────────────────────────────────────────
+
+// extractAuthToken 从请求中提取认证 token（优先 Authorization Bearer，其次 Cookie）
+func extractAuthToken(r *http.Request) string {
+	if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
+		return strings.TrimPrefix(auth, "Bearer ")
 	}
-	return ip
+	if c, err := r.Cookie("auth_token"); err == nil {
+		return c.Value
+	}
+	return ""
+}
+
+// authMiddleware 可选认证中间件：
+//   - 携带有效 token 时，解析用户信息并注入 request context（供下游识别登录用户）
+//   - 未携带 token 或 token 无效时，作为游客（userID=0）继续，不拒绝请求
+//
+// 访问控制策略：公共功能（聊天、模型/工具列表等）允许游客使用；
+// 私有资源（知识库、记忆、工作流等）由各 handler 通过 requireLogin 强制登录；
+// 跨用户越权由 service 层的资源归属校验兜底。
+func authMiddleware(authService *application.AuthService) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if token := extractAuthToken(r); token != "" {
+				if userID, username, role, err := authService.ValidateToken(token); err == nil && userID > 0 {
+					r = r.WithContext(http_handler.WithUser(r.Context(), userID, username, role))
+				}
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 // chain 将多个中间件链式组合（从左到右依次包裹）

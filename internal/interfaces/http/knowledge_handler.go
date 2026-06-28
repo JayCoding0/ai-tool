@@ -30,7 +30,10 @@ func (h *ChatHandler) HandleListKnowledgeBases(w http.ResponseWriter, r *http.Re
 	if !h.knowledgeServiceRequired(w) {
 		return
 	}
-	userID, _, _ := h.getCurrentUser(r)
+	userID, ok := h.requireLogin(w, r)
+	if !ok {
+		return
+	}
 	list, err := h.knowledgeSvc.ListKnowledgeBases(r.Context(), userID)
 	if err != nil {
 		writeJSONError(w, "获取知识库列表失败: "+err.Error(), http.StatusInternalServerError)
@@ -52,7 +55,10 @@ func (h *ChatHandler) HandleCreateKnowledgeBase(w http.ResponseWriter, r *http.R
 	if !h.knowledgeServiceRequired(w) {
 		return
 	}
-	userID, _, _ := h.getCurrentUser(r)
+	userID, ok := h.requireLogin(w, r)
+	if !ok {
+		return
+	}
 	var req struct {
 		Name        string `json:"name"`
 		Description string `json:"description"`
@@ -80,14 +86,18 @@ func (h *ChatHandler) HandleDeleteKnowledgeBase(w http.ResponseWriter, r *http.R
 	if !h.knowledgeServiceRequired(w) {
 		return
 	}
+	userID, ok := h.requireLogin(w, r)
+	if !ok {
+		return
+	}
 	idStr := r.URL.Query().Get("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil || id <= 0 {
 		writeJSONError(w, "无效的知识库 ID", http.StatusBadRequest)
 		return
 	}
-	if err := h.knowledgeSvc.DeleteKnowledgeBase(r.Context(), id); err != nil {
-		writeJSONError(w, "删除知识库失败: "+err.Error(), http.StatusInternalServerError)
+	if err := h.knowledgeSvc.DeleteKnowledgeBase(r.Context(), id, userID); err != nil {
+		writeServiceError(w, err, "删除知识库失败")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -103,15 +113,19 @@ func (h *ChatHandler) HandleListDocuments(w http.ResponseWriter, r *http.Request
 	if !h.knowledgeServiceRequired(w) {
 		return
 	}
+	userID, ok := h.requireLogin(w, r)
+	if !ok {
+		return
+	}
 	kbIDStr := r.URL.Query().Get("kb_id")
 	kbID, err := strconv.ParseInt(kbIDStr, 10, 64)
 	if err != nil || kbID <= 0 {
 		writeJSONError(w, "无效的知识库 ID", http.StatusBadRequest)
 		return
 	}
-	docs, err := h.knowledgeSvc.ListDocuments(r.Context(), kbID)
+	docs, err := h.knowledgeSvc.ListDocuments(r.Context(), kbID, userID)
 	if err != nil {
-		writeJSONError(w, "获取文档列表失败: "+err.Error(), http.StatusInternalServerError)
+		writeServiceError(w, err, "获取文档列表失败")
 		return
 	}
 	if docs == nil {
@@ -131,6 +145,11 @@ func (h *ChatHandler) HandleUploadDocument(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	userID, ok := h.requireLogin(w, r)
+	if !ok {
+		return
+	}
+
 	kbID, docName, docContent, docType, err := parseDocumentUpload(r)
 	if err != nil {
 		writeJSONError(w, err.Error(), http.StatusBadRequest)
@@ -146,9 +165,9 @@ func (h *ChatHandler) HandleUploadDocument(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	doc, err := h.knowledgeSvc.AddDocument(r.Context(), kbID, docName, docType, docContent)
+	doc, err := h.knowledgeSvc.AddDocument(r.Context(), kbID, userID, docName, docType, docContent)
 	if err != nil {
-		writeJSONError(w, "添加文档失败: "+err.Error(), http.StatusInternalServerError)
+		writeServiceError(w, err, "添加文档失败")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -210,6 +229,11 @@ func (h *ChatHandler) HandleUploadDirectory(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	userID, ok := h.requireLogin(w, r)
+	if !ok {
+		return
+	}
+
 	if err := r.ParseMultipartForm(128 << 20); err != nil { // 最大 128MB
 		writeJSONError(w, "解析表单失败: "+err.Error(), http.StatusBadRequest)
 		return
@@ -219,6 +243,12 @@ func (h *ChatHandler) HandleUploadDirectory(w http.ResponseWriter, r *http.Reque
 	kbID, err := strconv.ParseInt(kbIDStr, 10, 64)
 	if err != nil || kbID <= 0 {
 		writeJSONError(w, "无效的知识库 ID", http.StatusBadRequest)
+		return
+	}
+
+	// 先校验知识库归属，避免向他人知识库写入
+	if _, err := h.knowledgeSvc.GetKnowledgeBase(r.Context(), kbID, userID); err != nil {
+		writeServiceError(w, err, "校验知识库失败")
 		return
 	}
 
@@ -283,7 +313,7 @@ func (h *ChatHandler) HandleUploadDirectory(w http.ResponseWriter, r *http.Reque
 		}
 
 		// 添加文档
-		_, addErr := h.knowledgeSvc.AddDocument(r.Context(), kbID, fileName, detectContentType(fileName), content)
+		_, addErr := h.knowledgeSvc.AddDocument(r.Context(), kbID, userID, fileName, detectContentType(fileName), content)
 		if addErr != nil {
 			results = append(results, uploadResult{Name: fileName, Status: "error", Message: addErr.Error()})
 			continue
@@ -313,14 +343,18 @@ func (h *ChatHandler) HandleDeleteDocument(w http.ResponseWriter, r *http.Reques
 	if !h.knowledgeServiceRequired(w) {
 		return
 	}
+	userID, ok := h.requireLogin(w, r)
+	if !ok {
+		return
+	}
 	idStr := r.URL.Query().Get("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil || id <= 0 {
 		writeJSONError(w, "无效的文档 ID", http.StatusBadRequest)
 		return
 	}
-	if err := h.knowledgeSvc.DeleteDocument(r.Context(), id); err != nil {
-		writeJSONError(w, "删除文档失败: "+err.Error(), http.StatusInternalServerError)
+	if err := h.knowledgeSvc.DeleteDocument(r.Context(), id, userID); err != nil {
+		writeServiceError(w, err, "删除文档失败")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -336,6 +370,10 @@ func (h *ChatHandler) HandleKnowledgeSearch(w http.ResponseWriter, r *http.Reque
 	if !h.knowledgeServiceRequired(w) {
 		return
 	}
+	userID, ok := h.requireLogin(w, r)
+	if !ok {
+		return
+	}
 	var req struct {
 		KbID  int64  `json:"kb_id"`
 		Query string `json:"query"`
@@ -348,9 +386,9 @@ func (h *ChatHandler) HandleKnowledgeSearch(w http.ResponseWriter, r *http.Reque
 	if req.TopK <= 0 {
 		req.TopK = 5
 	}
-	chunks, err := h.knowledgeSvc.Search(r.Context(), req.KbID, req.Query, req.TopK)
+	chunks, err := h.knowledgeSvc.Search(r.Context(), req.KbID, userID, req.Query, req.TopK)
 	if err != nil {
-		writeJSONError(w, "检索失败: "+err.Error(), http.StatusInternalServerError)
+		writeServiceError(w, err, "检索失败")
 		return
 	}
 	type resultItem struct {

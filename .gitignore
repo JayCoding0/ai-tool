@@ -33,3 +33,4 @@ vendor/
 
 # PID 文件
 *.pid
+/docs/code-review-全项目-2026-06-27.md

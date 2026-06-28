@@ -38,6 +38,9 @@ type Repository interface {
 	// ListSessionsByUser 列出指定用户的会话
 	ListSessionsByUser(ctx context.Context, userID int64) ([]SessionInfo, error)
 	DeleteSession(ctx context.Context, sessID SessionID) error
+	// GetSessionOwner 获取会话归属的用户 ID（用于越权校验）。
+	// 返回 0 表示会话不存在或为匿名/内存会话。
+	GetSessionOwner(ctx context.Context, sessID SessionID) (int64, error)
 	// GetSessionTotalTokens 获取指定 session 的累计 token 数
 	GetSessionTotalTokens(ctx context.Context, sessID SessionID) (int, error)
 	// GetModelTokenStats 获取各模型 token 消耗统计（userID=0 时统计所有用户）

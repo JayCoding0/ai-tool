@@ -105,7 +105,7 @@ func registerGetHistoryTool(server *mcp.Server, chatService *application.ChatSer
 			return mcp.NewTextResult("错误：session_id 参数不能为空"), nil
 		}
 
-		messages, err := chatService.GetSessionHistory(ctx, session.SessionID(sessionID))
+		messages, err := chatService.GetSessionHistory(ctx, session.SessionID(sessionID), 0)
 		if err != nil {
 			return nil, fmt.Errorf("获取历史记录失败: %w", err)
 		}
@@ -165,7 +165,7 @@ func registerDeleteSessionTool(server *mcp.Server, chatService *application.Chat
 			return mcp.NewTextResult("错误：session_id 参数不能为空"), nil
 		}
 
-		if err := chatService.DeleteSession(ctx, session.SessionID(sessionID)); err != nil {
+		if err := chatService.DeleteSession(ctx, session.SessionID(sessionID), 0); err != nil {
 			return nil, fmt.Errorf("删除会话失败: %w", err)
 		}
 

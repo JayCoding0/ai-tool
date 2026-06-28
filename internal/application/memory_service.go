@@ -113,6 +113,7 @@ const extractionPrompt = `请从以下对话中提取用户的关键信息、偏
 // ExtractMemories 从对话中提取候选记忆（Mem0 Extraction Phase）
 // 异步调用，在每轮对话结束后触发
 func (s *MemoryService) ExtractMemories(ctx context.Context, userID int64, sessionID string, messages []session.Message, modelName string) {
+	defer shared.Recover("memory-extract")
 	logger := shared.GetLogger()
 
 	if len(messages) < 2 {

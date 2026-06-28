@@ -392,7 +392,8 @@ func (e *WorkflowEngine) executeHTTPNode(ctx context.Context, node workflow.Node
 		zap.String("url", url),
 	)
 
-	resp, err := http.DefaultClient.Do(req)
+	// 使用带 SSRF 防护的 HTTP 客户端，阻断指向内网/保留地址的请求
+	resp, err := shared.SafeHTTPClient(timeout).Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP 请求失败: %w", err)
 	}

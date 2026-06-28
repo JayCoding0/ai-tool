@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS auth_tokens (
     token      VARCHAR(64) NOT NULL PRIMARY KEY COMMENT 'Token值',
     user_id    BIGINT NOT NULL COMMENT '用户ID',
     username   VARCHAR(50) NOT NULL COMMENT '用户名',
+    role       VARCHAR(20) NOT NULL DEFAULT 'user' COMMENT '用户角色: admin/user',
     expires_at TIMESTAMP NOT NULL COMMENT '过期时间',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     INDEX idx_user_id (user_id),

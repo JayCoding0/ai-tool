@@ -214,6 +214,7 @@ func (s *ChatService) ProcessMessageStream(ctx context.Context, req ChatRequest)
 	outCh := make(chan StreamChatResponse, 64)
 	go func() {
 		defer close(outCh)
+		defer shared.Recover("chat-stream")
 
 		var fullContent strings.Builder
 		var usage model.TokenUsage
@@ -285,6 +286,7 @@ func (s *ChatService) ProcessMessageStream(ctx context.Context, req ChatRequest)
 
 // generateSessionTitle 异步调用 AI 生成简短会话标题并更新数据库
 func (s *ChatService) generateSessionTitle(ctx context.Context, sessID session.SessionID, userMessage, modelName string) {
+	defer shared.Recover("generate-session-title")
 	logger := shared.GetLogger()
 
 	titlePrompt := "请根据以下用户消息，生成一个简短的对话标题（不超过15个汉字或30个字符，不要加引号、不要加标点符号结尾）：\n" + userMessage
@@ -313,8 +315,27 @@ func (s *ChatService) generateSessionTitle(ctx context.Context, sessID session.S
 	logger.Info("会话标题已生成", zap.String("session_id", string(sessID)), zap.String("title", title))
 }
 
-// GetSessionHistory 获取会话历史记录
-func (s *ChatService) GetSessionHistory(ctx context.Context, sessionID session.SessionID) ([]session.Message, error) {
+// checkSessionOwner 校验会话归属。owner==0 视为匿名/内存会话或不存在，放行；
+// owner 与 userID 不一致则返回 ErrForbidden。
+func (s *ChatService) checkSessionOwner(ctx context.Context, sessionID session.SessionID, userID int64) error {
+	owner, err := s.sessionRepo.GetSessionOwner(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	if owner == 0 {
+		return nil
+	}
+	if owner != userID {
+		return ErrForbidden
+	}
+	return nil
+}
+
+// GetSessionHistory 获取会话历史记录（校验归属）
+func (s *ChatService) GetSessionHistory(ctx context.Context, sessionID session.SessionID, userID int64) ([]session.Message, error) {
+	if err := s.checkSessionOwner(ctx, sessionID, userID); err != nil {
+		return nil, err
+	}
 	return s.sessionRepo.GetSessionHistory(ctx, sessionID)
 }
 
@@ -328,23 +349,35 @@ func (s *ChatService) ListSessionsByUser(ctx context.Context, userID int64) ([]s
 	return s.sessionRepo.ListSessionsByUser(ctx, userID)
 }
 
-// DeleteSession 删除会话
-func (s *ChatService) DeleteSession(ctx context.Context, sessionID session.SessionID) error {
+// DeleteSession 删除会话（校验归属）
+func (s *ChatService) DeleteSession(ctx context.Context, sessionID session.SessionID, userID int64) error {
+	if err := s.checkSessionOwner(ctx, sessionID, userID); err != nil {
+		return err
+	}
 	return s.sessionRepo.DeleteSession(ctx, sessionID)
 }
 
-// RenameSession 重命名会话
-func (s *ChatService) RenameSession(ctx context.Context, sessionID session.SessionID, title string) error {
+// RenameSession 重命名会话（校验归属）
+func (s *ChatService) RenameSession(ctx context.Context, sessionID session.SessionID, userID int64, title string) error {
+	if err := s.checkSessionOwner(ctx, sessionID, userID); err != nil {
+		return err
+	}
 	return s.sessionRepo.UpdateSessionTitle(ctx, sessionID, title)
 }
 
-// UpdateSessionSystemPrompt 更新会话的 System Prompt
-func (s *ChatService) UpdateSessionSystemPrompt(ctx context.Context, sessionID session.SessionID, systemPrompt string) error {
+// UpdateSessionSystemPrompt 更新会话的 System Prompt（校验归属）
+func (s *ChatService) UpdateSessionSystemPrompt(ctx context.Context, sessionID session.SessionID, userID int64, systemPrompt string) error {
+	if err := s.checkSessionOwner(ctx, sessionID, userID); err != nil {
+		return err
+	}
 	return s.sessionRepo.UpdateSessionSystemPrompt(ctx, sessionID, systemPrompt)
 }
 
-// GetSessionSystemPrompt 获取会话的 System Prompt
-func (s *ChatService) GetSessionSystemPrompt(ctx context.Context, sessionID session.SessionID) (string, error) {
+// GetSessionSystemPrompt 获取会话的 System Prompt（校验归属）
+func (s *ChatService) GetSessionSystemPrompt(ctx context.Context, sessionID session.SessionID, userID int64) (string, error) {
+	if err := s.checkSessionOwner(ctx, sessionID, userID); err != nil {
+		return "", err
+	}
 	return s.sessionRepo.GetSessionSystemPrompt(ctx, sessionID)
 }
 
@@ -435,7 +468,7 @@ func (s *ChatService) ProcessMessageWithTools(ctx context.Context, req ChatReque
 	// RAG：若会话绑定了知识库，先检索相关内容注入 System Prompt
 	var ragContext string
 	if req.KnowledgeBaseID > 0 && s.knowledgeSvc != nil {
-		if chunks, searchErr := s.knowledgeSvc.Search(ctx, req.KnowledgeBaseID, req.Message, 5); searchErr == nil {
+		if chunks, searchErr := s.knowledgeSvc.Search(ctx, req.KnowledgeBaseID, req.UserID, req.Message, 5); searchErr == nil {
 			ragContext = BuildRAGContext(chunks)
 		} else {
 			shared.GetLogger().Warn("RAG 检索失败", zap.Error(searchErr))
@@ -470,6 +503,7 @@ func (s *ChatService) ProcessMessageWithTools(ctx context.Context, req ChatReque
 	outCh := make(chan StreamChatResponse, 64)
 	go func() {
 		defer close(outCh)
+		defer shared.Recover("chat-tools-stream")
 
 		runner := newAgentRunner(modelGen, modelName, sess.ID(), outCh)
 		finalContent, totalUsage, runErr := runner.runReActLoop(ctx, messages, toolDefs)

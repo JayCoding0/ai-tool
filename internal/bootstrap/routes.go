@@ -141,7 +141,12 @@ func RegisterRoutes(chatHandler *http_handler.ChatHandler, appConfig *config.Con
 	// 前端静态文件
 	mux.Handle("/", http.FileServer(http.Dir("./frontend")))
 
-	// 构建中间件链：recover → logging → rate_limit → cors
+	// 是否信任反向代理头（X-Forwarded-For 等），影响限流取 IP 的方式
+	if appConfig != nil {
+		trustProxyHeaders = appConfig.Security.TrustProxyHeaders
+	}
+
+	// 构建中间件链：recover → logging → rate_limit → cors → auth
 	middlewares := []func(http.Handler) http.Handler{
 		recoveryMiddleware,
 		loggingMiddleware,
@@ -166,6 +171,14 @@ func RegisterRoutes(chatHandler *http_handler.ChatHandler, appConfig *config.Con
 		allowedOrigins = appConfig.Security.AllowedOrigins
 	}
 	middlewares = append(middlewares, corsMiddleware(allowedOrigins))
+
+	// 认证中间件：强制受保护接口校验登录态（authService 不可用时跳过，仅内存降级模式）
+	if authService := chatHandler.GetAuthService(); authService != nil {
+		middlewares = append(middlewares, authMiddleware(authService))
+		shared.GetLogger().Info("认证中间件已启用")
+	} else {
+		shared.GetLogger().Warn("认证服务不可用（数据库未连接），认证中间件未启用，接口处于无鉴权降级状态")
+	}
 
 	http.Handle("/", chain(mux, middlewares...))
 }
