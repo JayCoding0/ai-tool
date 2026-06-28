@@ -307,12 +307,13 @@
 - **预估工作量**: 1 个月
 
 ### 13. 对话导出
-- **现状**: 不支持导出
+- **现状**: 支持 Markdown / JSON 导出（侧边栏一键下载）
 - **改进方案**:
-  - [ ] 导出为 Markdown 格式
-  - [ ] 导出为 JSON 格式（含完整元数据）
+  - [x] 导出为 Markdown 格式（含角色/模型/时间，UTF-8 BOM 兼容）
+  - [x] 导出为 JSON 格式（含完整元数据）
   - [ ] 导出为 PDF（服务端渲染）
   - [ ] 支持批量导出
+- **相关文件**: `interfaces/http/export_handler.go`, `bootstrap/routes.go`, `frontend/js/session.js`, `frontend/js/template.js`
 - **预估工作量**: 0.5 个月
 
 ### 14. Agent 配置版本管理

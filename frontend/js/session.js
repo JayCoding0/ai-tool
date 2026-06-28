@@ -113,10 +113,17 @@ function useSessions() {
         }
     }
 
+    // 导出会话为 Markdown
+    function exportSession(s) {
+        if (!s || !s.id) return;
+        // 同源 GET 携带 Cookie 认证，浏览器直接下载
+        window.open('/api/sessions/export?session_id=' + encodeURIComponent(s.id) + '&format=md', '_blank');
+    }
+
     return {
         sessionId, currentSessionTitle, sidebarSessions,
         historyVisible, historyLoading, historySessions, historyDetail, detailLoading,
         loadSidebarSessions, openHistoryDrawer, loadSessionDetail, openSessionDetail,
-        renameSession, deleteSession,
+        renameSession, deleteSession, exportSession,
     };
 }

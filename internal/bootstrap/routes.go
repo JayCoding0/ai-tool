@@ -25,6 +25,8 @@ func RegisterRoutes(chatHandler *http_handler.ChatHandler, appConfig *config.Con
 	mux.HandleFunc("/api/sessions", chatHandler.HandleListSessions)
 	mux.HandleFunc("/api/sessions/delete", chatHandler.HandleDeleteSession)
 	mux.HandleFunc("/api/sessions/rename", chatHandler.HandleRenameSession)
+	// 对话导出（Markdown / JSON）
+	mux.HandleFunc("/api/sessions/export", chatHandler.HandleExportSession)
 	// System Prompt 接口
 	mux.HandleFunc("/api/sessions/system-prompt", chatHandler.HandleUpdateSystemPrompt)
 	mux.HandleFunc("/api/sessions/system-prompt/get", chatHandler.HandleGetSystemPrompt)

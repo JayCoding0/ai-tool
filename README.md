@@ -327,7 +327,7 @@ aiProject/
 - [X]  长期记忆 / Memory 系统（会话摘要 + 跨会话向量记忆 + Mem0 式提取更新 + 记忆管理面板）
 - [X]  Redis 缓存层（Embedding 缓存 + LLM 语义缓存 + 命中率监控页）
 - [X]  运维就绪（健康检查探针 `/healthz` `/readyz` + HTTP 优雅退出）
-- [ ]  对话导出（Markdown / PDF）
+- [ ]  对话导出（Markdown / PDF）→ 已支持 Markdown / JSON 导出，PDF 待补
 - [ ]  插件市场（Skill 在线安装）
 - [ ]  多模态支持（图片理解 / 生成）
 - [ ]  WebSocket 替代 SSE
