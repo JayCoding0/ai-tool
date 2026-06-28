@@ -3,6 +3,7 @@
 package http
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -297,4 +298,65 @@ func (h *ChatHandler) HandleGetRun(w http.ResponseWriter, r *http.Request) {
 func writeJSON(w http.ResponseWriter, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(v) //nolint:errcheck
+}
+
+// HandleExportRun GET /api/eval/runs/{id}/export 导出运行报告为 CSV
+func (h *ChatHandler) HandleExportRun(w http.ResponseWriter, r *http.Request) {
+	if h.evalSvc == nil {
+		writeJSONError(w, "评估功能不可用（数据库未连接）", http.StatusServiceUnavailable)
+		return
+	}
+	if _, ok := h.requireLogin(w, r); !ok {
+		return
+	}
+	// 从路径 /api/eval/runs/{id}/export 解析 ID
+	idStr := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/eval/runs/"), "/export")
+	runID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeJSONError(w, "无效的运行 ID", http.StatusBadRequest)
+		return
+	}
+	run, results, err := h.evalSvc.GetRunDetail(r.Context(), runID)
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", "attachment; filename=\"eval_run_"+idStr+".csv\"")
+	// 写入 UTF-8 BOM，确保 Excel 正确识别中文
+	w.Write([]byte{0xEF, 0xBB, 0xBF}) //nolint:errcheck
+
+	cw := csv.NewWriter(w)
+	defer cw.Flush()
+
+	// 报告头部元信息
+	_ = cw.Write([]string{"评测运行报告"})
+	_ = cw.Write([]string{"运行名称", run.Name})
+	_ = cw.Write([]string{"被测模型", run.ModelName})
+	_ = cw.Write([]string{"评分方式", string(run.Scorer)})
+	_ = cw.Write([]string{"通过阈值", strconv.FormatFloat(run.Threshold, 'f', 2, 64)})
+	_ = cw.Write([]string{"通过率", strconv.Itoa(run.PassedCases) + "/" + strconv.Itoa(run.TotalCases)})
+	_ = cw.Write([]string{"平均分", strconv.FormatFloat(run.AvgScore, 'f', 4, 64)})
+	_ = cw.Write([]string{})
+
+	// 逐条结果
+	_ = cw.Write([]string{"序号", "输入", "期望", "实际输出", "得分", "是否通过", "评分理由", "耗时(ms)", "tokens"})
+	for i, res := range results {
+		passed := "否"
+		if res.Passed {
+			passed = "是"
+		}
+		_ = cw.Write([]string{
+			strconv.Itoa(i + 1),
+			res.Input,
+			res.Expected,
+			res.Actual,
+			strconv.FormatFloat(res.Score, 'f', 4, 64),
+			passed,
+			res.Reason,
+			strconv.FormatInt(res.LatencyMs, 10),
+			strconv.Itoa(res.Tokens),
+		})
+	}
 }

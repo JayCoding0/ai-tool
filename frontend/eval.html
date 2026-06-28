@@ -228,6 +228,7 @@
                 <span class="ev-metric"><span class="ev-metric-val">{{ detailRun.total_cases ? ((detailRun.passed_cases/detailRun.total_cases)*100).toFixed(0) : 0 }}%</span><span class="ev-metric-label">通过率</span></span>
                 <span class="ev-metric"><span class="ev-metric-val">{{ detailRun.passed_cases }}/{{ detailRun.total_cases }}</span><span class="ev-metric-label">通过/总数</span></span>
                 <el-tag v-if="detailRun.status==='running'" type="warning" style="margin-left:8px;">运行中（自动刷新）</el-tag>
+                <el-button size="small" plain style="float:right;" @click="exportRun(detailRun.id)" :disabled="detailResults.length===0">⬇️ 导出 CSV</el-button>
             </div>
             <!-- 配置与通过条件说明 -->
             <div style="background:#f8f8fc;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:#666;line-height:1.7;">
@@ -456,6 +457,11 @@ createApp({
             } catch (e) { ElMessage.error(e.message); }
         };
 
+        const exportRun = (id) => {
+            // 直接触发浏览器下载 CSV（带认证 Cookie 同源请求）
+            window.open('/api/eval/runs/' + id + '/export', '_blank');
+        };
+
         const openCompare = () => {
             compareData.value = null;
             compareForm.base = runs.value.length > 1 ? runs.value[1].id : null;  // 默认较早的为基线
@@ -480,7 +486,7 @@ createApp({
             compareForm, compareData,
             scoreClass, scorerLabel, selectDataset, loadRuns,
             createDataset, deleteDataset, addCase, importCases, deleteCase,
-            openRunDialog, startRun, openRunDetail, openCompare, doCompare,
+            openRunDialog, startRun, openRunDetail, openCompare, doCompare, exportRun,
             Plus: ElementPlusIconsVue.Plus, VideoPlay: ElementPlusIconsVue.VideoPlay, Refresh: ElementPlusIconsVue.Refresh,
         };
     }

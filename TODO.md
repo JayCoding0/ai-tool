@@ -170,7 +170,7 @@
   - [x] 版本回归对比（`CompareRuns` 按 case_id 匹配两次运行，输出平均分变化 + 逐用例 delta + 变好/变差/持平计数）
   - [x] 前端评测报告页（通过率/平均分/逐条结果卡片：输入/期望/实际输出/通过标记/评分理由/耗时，运行中自动刷新）+ 运行对比页
   - [ ] Workflow 评测（当前仅支持 Agent，Workflow 批量评测待补）
-  - [ ] CSV 导入 / 报告导出
+  - [x] 报告导出：运行报告导出为 CSV（含元信息 + 逐条结果，UTF-8 BOM 兼容 Excel，前端一键下载）；用例批量导入已支持 JSON 格式
 - **相关文件**: `domain/eval/`（实体+仓储接口）, `infrastructure/eval/mysql/eval_repository.go`, `application/eval_service.go`（CRUD + 批量运行 + 三种评分器 + CompareRuns）, `interfaces/http/eval_handler.go`, `bootstrap.go`（initEvalService）, `frontend/eval.html`, `database/migrations/004_add_eval_tables.sql` + `005_add_eval_scorer.sql`
 - **预估工作量**: ~~2 个月~~ → MVP + 增强已完成（Workflow 评测/CSV/导出待补）
 
