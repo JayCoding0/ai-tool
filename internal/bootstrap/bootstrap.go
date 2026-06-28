@@ -12,6 +12,7 @@ import (
 	domain_model "aiProject/internal/domain/model"
 	mysql_a2a "aiProject/internal/infrastructure/a2a/mysql"
 	"aiProject/internal/infrastructure/database"
+	mysql_eval "aiProject/internal/infrastructure/eval/mysql"
 	infra_knowledge "aiProject/internal/infrastructure/knowledge"
 	mysql_knowledge "aiProject/internal/infrastructure/knowledge/mysql"
 	mysql_memory "aiProject/internal/infrastructure/memory/mysql"
@@ -162,6 +163,9 @@ func InitComponents(appConfig *config.Config) (*http_handler.ChatHandler, *appli
 	// 初始化 Workflow 工作流服务（需要数据库已连接）
 	initWorkflowService(appConfig, handler, registry)
 
+	// 初始化 Agent 评估体系服务（需要数据库已连接）
+	initEvalService(appConfig, handler)
+
 	return handler, frontendChatService
 }
 
@@ -265,6 +269,18 @@ func initWorkflowService(appConfig *config.Config, handler *http_handler.ChatHan
 	handler.SetWorkflowService(workflowSvc, workflowEngine)
 
 	shared.GetLogger().Info("Workflow 工作流服务已启用")
+}
+
+// initEvalService 初始化 Agent 评估体系服务
+func initEvalService(appConfig *config.Config, handler *http_handler.ChatHandler) {
+	if database.GetDB() == nil {
+		shared.GetLogger().Info("评估服务未启用（数据库未连接）")
+		return
+	}
+	evalRepo := mysql_eval.NewEvalRepository()
+	evalSvc := application.NewEvalService(evalRepo, newModelFactory(appConfig), appConfig.Model.Name)
+	handler.SetEvalService(evalSvc)
+	shared.GetLogger().Info("Agent 评估体系服务已启用")
 }
 
 // ─── A2A & MCP 初始化 ─────────────────────────────────────────────────────────

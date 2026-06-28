@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent 评估 - 智能Agent平台</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .ev-page { max-width: 1200px; margin: 0 auto; padding: 24px 16px; }
+        .ev-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+        .ev-header h1 { font-size: 22px; font-weight: 700; color: #1a1a2e; margin: 0; }
+        .ev-layout { display: grid; grid-template-columns: 300px 1fr; gap: 16px; }
+        .ev-card { background: #fff; border-radius: 12px; border: 1px solid #e8e8f0; padding: 16px; margin-bottom: 16px; }
+        .ev-ds-item { padding: 10px 12px; border-radius: 8px; cursor: pointer; margin-bottom: 6px; border: 1px solid transparent; transition: all .15s; }
+        .ev-ds-item:hover { background: #f5f5fa; }
+        .ev-ds-item.active { background: #f0f0ff; border-color: #c7c7f5; }
+        .ev-ds-name { font-size: 14px; font-weight: 600; color: #1a1a2e; }
+        .ev-ds-meta { font-size: 12px; color: #999; margin-top: 2px; }
+        .ev-section-title { font-size: 15px; font-weight: 700; color: #1a1a2e; margin: 0 0 12px; display:flex; align-items:center; justify-content:space-between; }
+        .ev-metric { display: inline-flex; flex-direction: column; align-items: center; background: #f8f8fc; border-radius: 10px; padding: 10px 18px; margin-right: 12px; }
+        .ev-metric-val { font-size: 22px; font-weight: 800; color: #667eea; }
+        .ev-metric-label { font-size: 12px; color: #888; margin-top: 2px; }
+        .ev-run-row { display:flex; align-items:center; justify-content:space-between; padding: 10px 12px; border-radius: 8px; background:#f8f8fc; margin-bottom: 8px; cursor:pointer; }
+        .ev-run-row:hover { background:#f0f0ff; }
+        .ev-run-name { font-weight: 600; font-size: 14px; color:#333; }
+        .ev-run-sub { font-size: 12px; color:#999; margin-top:2px; }
+        .nav-bar { background: #fff; border-bottom: 1px solid #e8e8f0; padding: 12px 24px; display: flex; align-items: center; gap: 16px; }
+        .nav-logo { font-size: 18px; font-weight: 700; color: #667eea; text-decoration: none; }
+        .nav-link { font-size: 14px; color: #666; text-decoration: none; padding: 6px 12px; border-radius: 6px; }
+        .nav-link:hover, .nav-link.active { background: #f0f0ff; color: #667eea; }
+        .empty-state { text-align: center; padding: 50px 20px; color: #bbb; }
+        .empty-state .empty-icon { font-size: 44px; margin-bottom: 10px; }
+        .score-pill { font-weight:700; padding:2px 10px; border-radius:12px; font-size:12px; }
+        .score-high { background:#e6f7ee; color:#27ae60; }
+        .score-mid { background:#fff7e6; color:#e67e22; }
+        .score-low { background:#fde8e8; color:#e74c3c; }
+    </style>
+</head>
+<body>
+<div id="ev-app">
+    <div class="nav-bar">
+        <a href="/" class="nav-logo">🤖 智能Agent平台</a>
+        <a href="/" class="nav-link">💬 对话</a>
+        <a href="/knowledge.html" class="nav-link">📚 知识库</a>
+        <a href="/workflow.html" class="nav-link">🔀 工作流</a>
+        <a href="/eval.html" class="nav-link active">📊 评估</a>
+    </div>
+
+    <div class="ev-page">
+        <div class="ev-header">
+            <h1>📊 Agent 评估体系</h1>
+            <el-button type="primary" :icon="Plus" @click="showCreateDS = true">新建数据集</el-button>
+        </div>
+
+        <div class="ev-layout">
+            <!-- 左侧：数据集列表 -->
+            <div>
+                <div class="ev-card">
+                    <div class="ev-section-title">数据集</div>
+                    <div v-if="datasets.length === 0" class="empty-state" style="padding:24px;">
+                        <div class="empty-icon">🗂️</div>
+                        <div>暂无数据集</div>
+                    </div>
+                    <div v-for="ds in datasets" :key="ds.id"
+                         class="ev-ds-item" :class="{active: activeDS && activeDS.id === ds.id}"
+                         @click="selectDataset(ds)">
+                        <div class="ev-ds-name">{{ ds.name }}</div>
+                        <div class="ev-ds-meta">{{ ds.case_count }} 条用例 · #{{ ds.id }}</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧：用例 + 运行 -->
+            <div>
+                <div v-if="!activeDS" class="ev-card empty-state">
+                    <div class="empty-icon">👈</div>
+                    <div>请选择或新建一个数据集</div>
+                </div>
+
+                <template v-else>
+                    <!-- 用例管理 -->
+                    <div class="ev-card">
+                        <div class="ev-section-title">
+                            <span>📝 用例（{{ cases.length }}）</span>
+                            <span>
+                                <el-button size="small" @click="showImport = true">批量导入</el-button>
+                                <el-button size="small" type="primary" @click="showAddCase = true">添加用例</el-button>
+                                <el-button size="small" type="success" :icon="VideoPlay" @click="openRunDialog" :disabled="cases.length===0">运行评测</el-button>
+                                <el-button size="small" type="danger" plain @click="deleteDataset(activeDS)">删除数据集</el-button>
+                            </span>
+                        </div>
+                        <el-table :data="cases" size="small" max-height="260" empty-text="暂无用例">
+                            <el-table-column type="index" width="46" />
+                            <el-table-column prop="input" label="输入" show-overflow-tooltip />
+                            <el-table-column prop="expected" label="期望输出" show-overflow-tooltip />
+                            <el-table-column label="操作" width="70">
+                                <template #default="{ row }">
+                                    <el-button size="small" link type="danger" @click="deleteCase(row)">删除</el-button>
+                                </template>
+                            </el-table-column>
+                        </el-table>
+                    </div>
+
+                    <!-- 运行记录 -->
+                    <div class="ev-card">
+                        <div class="ev-section-title">
+                            <span>🏃 评测运行</span>
+                            <el-button size="small" text :icon="Refresh" @click="loadRuns">刷新</el-button>
+                        </div>
+                        <div v-if="runs.length === 0" class="empty-state" style="padding:24px;">
+                            <div class="empty-icon">📈</div>
+                            <div>还没有评测运行，点击"运行评测"开始</div>
+                        </div>
+                        <div v-for="run in runs" :key="run.id" class="ev-run-row" @click="openRunDetail(run)">
+                            <div>
+                                <div class="ev-run-name">{{ run.name }}
+                                    <el-tag v-if="run.status==='running'" size="small" type="warning">运行中</el-tag>
+                                    <el-tag v-else-if="run.status==='completed'" size="small" type="success">已完成</el-tag>
+                                    <el-tag v-else size="small" type="danger">失败</el-tag>
+                                </div>
+                                <div class="ev-run-sub">模型 {{ run.model_name }} · 裁判 {{ run.judge_model }} · {{ run.passed_cases }}/{{ run.total_cases }} 通过</div>
+                            </div>
+                            <div style="text-align:right;">
+                                <span class="score-pill" :class="scoreClass(run.avg_score)">{{ (run.avg_score*100).toFixed(0) }} 分</span>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </div>
+
+    <!-- 新建数据集 -->
+    <el-dialog v-model="showCreateDS" title="新建数据集" width="460px">
+        <el-form label-width="80px">
+            <el-form-item label="名称"><el-input v-model="dsForm.name" placeholder="如：客服问答测试集" /></el-form-item>
+            <el-form-item label="描述"><el-input v-model="dsForm.description" type="textarea" :rows="2" /></el-form-item>
+        </el-form>
+        <template #footer>
+            <el-button @click="showCreateDS = false">取消</el-button>
+            <el-button type="primary" @click="createDataset">创建</el-button>
+        </template>
+    </el-dialog>
+
+    <!-- 添加用例 -->
+    <el-dialog v-model="showAddCase" title="添加用例" width="520px">
+        <el-form label-width="80px">
+            <el-form-item label="输入"><el-input v-model="caseForm.input" type="textarea" :rows="3" placeholder="用户问题" /></el-form-item>
+            <el-form-item label="期望输出"><el-input v-model="caseForm.expected" type="textarea" :rows="3" placeholder="标准答案（可留空）" /></el-form-item>
+        </el-form>
+        <template #footer>
+            <el-button @click="showAddCase = false">取消</el-button>
+            <el-button type="primary" @click="addCase">添加</el-button>
+        </template>
+    </el-dialog>
+
+    <!-- 批量导入 -->
+    <el-dialog v-model="showImport" title="批量导入用例（JSON）" width="560px">
+        <div style="font-size:12px;color:#888;margin-bottom:8px;">格式：[{"input":"问题","expected":"答案"}, ...]</div>
+        <el-input v-model="importText" type="textarea" :rows="10" placeholder='[{"input":"退货政策几天？","expected":"7天无理由退货"}]' />
+        <template #footer>
+            <el-button @click="showImport = false">取消</el-button>
+            <el-button type="primary" @click="importCases">导入</el-button>
+        </template>
+    </el-dialog>
+
+    <!-- 运行配置 -->
+    <el-dialog v-model="showRun" title="配置并运行评测" width="600px">
+        <el-form label-width="100px">
+            <el-form-item label="运行名称"><el-input v-model="runForm.name" placeholder="如：v1-基线" /></el-form-item>
+            <el-form-item label="被测模型"><el-input v-model="runForm.model_name" placeholder="留空使用默认模型" /></el-form-item>
+            <el-form-item label="System Prompt"><el-input v-model="runForm.system_prompt" type="textarea" :rows="3" placeholder="被测 Agent 的系统提示词" /></el-form-item>
+            <el-form-item label="启用工具">
+                <el-select v-model="runForm.tools" multiple filterable style="width:100%;" placeholder="选择被测 Agent 可用工具（可不选）">
+                    <el-option v-for="t in tools" :key="t.name" :label="(t.display_name||t.name)" :value="t.name" />
+                </el-select>
+            </el-form-item>
+            <el-form-item label="裁判模型"><el-input v-model="runForm.judge_model" placeholder="留空使用默认模型" /></el-form-item>
+            <el-form-item label="通过阈值">
+                <el-slider v-model="runForm.threshold" :min="0" :max="1" :step="0.05" show-input style="width:100%;" />
+            </el-form-item>
+        </el-form>
+        <template #footer>
+            <el-button @click="showRun = false">取消</el-button>
+            <el-button type="primary" @click="startRun">开始评测</el-button>
+        </template>
+    </el-dialog>
+
+    <!-- 运行详情 -->
+    <el-dialog v-model="showDetail" :title="detailRun ? ('评测报告 - ' + detailRun.name) : '评测报告'" width="900px" top="5vh">
+        <div v-if="detailRun" style="margin-bottom:16px;">
+            <span class="ev-metric"><span class="ev-metric-val">{{ (detailRun.avg_score*100).toFixed(0) }}</span><span class="ev-metric-label">平均分</span></span>
+            <span class="ev-metric"><span class="ev-metric-val">{{ detailRun.total_cases ? ((detailRun.passed_cases/detailRun.total_cases)*100).toFixed(0) : 0 }}%</span><span class="ev-metric-label">通过率</span></span>
+            <span class="ev-metric"><span class="ev-metric-val">{{ detailRun.passed_cases }}/{{ detailRun.total_cases }}</span><span class="ev-metric-label">通过/总数</span></span>
+            <el-tag v-if="detailRun.status==='running'" type="warning" style="margin-left:8px;">运行中（自动刷新）</el-tag>
+        </div>
+        <el-table :data="detailResults" size="small" max-height="520" empty-text="暂无结果">
+            <el-table-column type="index" width="46" />
+            <el-table-column prop="input" label="输入" width="160" show-overflow-tooltip />
+            <el-table-column prop="expected" label="期望" width="150" show-overflow-tooltip />
+            <el-table-column prop="actual" label="实际输出" show-overflow-tooltip />
+            <el-table-column label="得分" width="80">
+                <template #default="{ row }">
+                    <span class="score-pill" :class="scoreClass(row.score)">{{ (row.score*100).toFixed(0) }}</span>
+                </template>
+            </el-table-column>
+            <el-table-column prop="reason" label="评分理由" width="200" show-overflow-tooltip />
+            <el-table-column label="耗时" width="80">
+                <template #default="{ row }">{{ row.latency_ms }}ms</template>
+            </el-table-column>
+        </el-table>
+    </el-dialog>
+</div>
+
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script src="https://unpkg.com/@element-plus/icons-vue"></script>
+<script src="https://unpkg.com/element-plus/dist/index.full.js"></script>
+<script>
+const { createApp, ref, reactive, onMounted } = Vue;
+const { ElMessage, ElMessageBox } = ElementPlus;
+
+createApp({
+    setup() {
+        const datasets = ref([]);
+        const activeDS = ref(null);
+        const cases = ref([]);
+        const runs = ref([]);
+        const tools = ref([]);
+
+        const showCreateDS = ref(false);
+        const showAddCase = ref(false);
+        const showImport = ref(false);
+        const showRun = ref(false);
+        const showDetail = ref(false);
+
+        const dsForm = reactive({ name: '', description: '' });
+        const caseForm = reactive({ input: '', expected: '' });
+        const importText = ref('');
+        const runForm = reactive({ name: '', model_name: '', system_prompt: '', tools: [], judge_model: '', threshold: 0.6 });
+
+        const detailRun = ref(null);
+        const detailResults = ref([]);
+        let detailTimer = null;
+        let runsTimer = null;
+
+        const scoreClass = (s) => s >= 0.8 ? 'score-high' : (s >= 0.5 ? 'score-mid' : 'score-low');
+
+        const api = async (url, opts) => {
+            const r = await fetch(url, opts);
+            if (r.status === 401) { window.location.href = '/login.html'; throw new Error('未登录'); }
+            const data = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(data.error || '请求失败');
+            return data;
+        };
+
+        const loadDatasets = async () => {
+            try { datasets.value = (await api('/api/eval/datasets')).datasets || []; }
+            catch (e) { ElMessage.error(e.message); }
+        };
+
+        const loadTools = async () => {
+            try { tools.value = (await api('/api/tools')).tools || []; } catch (e) {}
+        };
+
+        const selectDataset = async (ds) => {
+            activeDS.value = ds;
+            await loadCases();
+            await loadRuns();
+        };
+
+        const loadCases = async () => {
+            if (!activeDS.value) return;
+            try { cases.value = (await api('/api/eval/cases?dataset_id=' + activeDS.value.id)).cases || []; }
+            catch (e) { ElMessage.error(e.message); }
+        };
+
+        const loadRuns = async () => {
+            if (!activeDS.value) return;
+            try {
+                runs.value = (await api('/api/eval/runs?dataset_id=' + activeDS.value.id)).runs || [];
+                // 若有运行中的，定时刷新
+                if (runs.value.some(r => r.status === 'running')) {
+                    if (!runsTimer) runsTimer = setInterval(loadRuns, 3000);
+                } else if (runsTimer) { clearInterval(runsTimer); runsTimer = null; }
+            } catch (e) { ElMessage.error(e.message); }
+        };
+
+        const createDataset = async () => {
+            if (!dsForm.name.trim()) return ElMessage.warning('请输入名称');
+            try {
+                await api('/api/eval/datasets', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(dsForm) });
+                ElMessage.success('已创建'); showCreateDS.value = false; dsForm.name=''; dsForm.description='';
+                await loadDatasets();
+            } catch (e) { ElMessage.error(e.message); }
+        };
+
+        const deleteDataset = async (ds) => {
+            try {
+                await ElMessageBox.confirm(`确定删除数据集「${ds.name}」及其用例、运行记录？`, '确认', { type:'warning' });
+                await api('/api/eval/datasets/delete', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id: ds.id}) });
+                ElMessage.success('已删除'); activeDS.value = null; cases.value=[]; runs.value=[];
+                await loadDatasets();
+            } catch (e) { if (e !== 'cancel') ElMessage.error(e.message); }
+        };
+
+        const addCase = async () => {
+            if (!caseForm.input.trim()) return ElMessage.warning('请输入用例输入');
+            try {
+                await api('/api/eval/cases', { method:'POST', headers:{'Content-Type':'application/json'},
+                    body: JSON.stringify({ dataset_id: activeDS.value.id, input: caseForm.input, expected: caseForm.expected }) });
+                ElMessage.success('已添加'); showAddCase.value=false; caseForm.input=''; caseForm.expected='';
+                await loadCases(); await loadDatasets();
+            } catch (e) { ElMessage.error(e.message); }
+        };
+
+        const importCases = async () => {
+            let arr;
+            try { arr = JSON.parse(importText.value); } catch (e) { return ElMessage.error('JSON 解析失败'); }
+            if (!Array.isArray(arr)) return ElMessage.error('需为 JSON 数组');
+            try {
+                const res = await api('/api/eval/cases', { method:'POST', headers:{'Content-Type':'application/json'},
+                    body: JSON.stringify({ dataset_id: activeDS.value.id, cases: arr }) });
+                ElMessage.success('已导入 ' + (res.imported||0) + ' 条'); showImport.value=false; importText.value='';
+                await loadCases(); await loadDatasets();
+            } catch (e) { ElMessage.error(e.message); }
+        };
+
+        const deleteCase = async (row) => {
+            try {
+                await api('/api/eval/cases/delete', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id: row.id}) });
+                await loadCases(); await loadDatasets();
+            } catch (e) { ElMessage.error(e.message); }
+        };
+
+        const openRunDialog = () => {
+            runForm.name = ''; runForm.model_name=''; runForm.system_prompt=''; runForm.tools=[]; runForm.judge_model=''; runForm.threshold=0.6;
+            showRun.value = true;
+        };
+
+        const startRun = async () => {
+            try {
+                await api('/api/eval/runs', { method:'POST', headers:{'Content-Type':'application/json'},
+                    body: JSON.stringify({ dataset_id: activeDS.value.id, ...runForm }) });
+                ElMessage.success('评测已启动，正在后台运行'); showRun.value=false;
+                await loadRuns();
+            } catch (e) { ElMessage.error(e.message); }
+        };
+
+        const openRunDetail = async (run) => {
+            showDetail.value = true;
+            await loadRunDetail(run.id);
+            if (detailTimer) clearInterval(detailTimer);
+            // 运行中则自动刷新详情
+            detailTimer = setInterval(async () => {
+                if (!showDetail.value) { clearInterval(detailTimer); detailTimer=null; return; }
+                await loadRunDetail(run.id);
+                if (detailRun.value && detailRun.value.status !== 'running') { clearInterval(detailTimer); detailTimer=null; }
+            }, 3000);
+        };
+
+        const loadRunDetail = async (id) => {
+            try {
+                const data = await api('/api/eval/runs/' + id);
+                detailRun.value = data.run;
+                detailResults.value = data.results || [];
+            } catch (e) { ElMessage.error(e.message); }
+        };
+
+        onMounted(async () => { await loadDatasets(); await loadTools(); });
+
+        return {
+            datasets, activeDS, cases, runs, tools,
+            showCreateDS, showAddCase, showImport, showRun, showDetail,
+            dsForm, caseForm, importText, runForm, detailRun, detailResults,
+            scoreClass, selectDataset, loadRuns,
+            createDataset, deleteDataset, addCase, importCases, deleteCase,
+            openRunDialog, startRun, openRunDetail,
+            Plus: ElementPlusIconsVue.Plus, VideoPlay: ElementPlusIconsVue.VideoPlay, Refresh: ElementPlusIconsVue.Refresh,
+        };
+    }
+}).use(ElementPlus).mount('#ev-app');
+</script>
+</body>
+</html>

@@ -76,6 +76,42 @@ func RegisterRoutes(chatHandler *http_handler.ChatHandler, appConfig *config.Con
 	mux.HandleFunc("/api/memory/delete", chatHandler.HandleDeleteMemory)
 	mux.HandleFunc("/api/memory/search", chatHandler.HandleSearchMemories)
 
+	// Agent 评估体系接口
+	mux.HandleFunc("/api/eval/datasets", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			chatHandler.HandleListDatasets(w, r)
+		case http.MethodPost:
+			chatHandler.HandleCreateDataset(w, r)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/api/eval/datasets/delete", chatHandler.HandleDeleteDataset)
+	mux.HandleFunc("/api/eval/cases", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			chatHandler.HandleListCases(w, r)
+		case http.MethodPost:
+			chatHandler.HandleAddCase(w, r)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/api/eval/cases/delete", chatHandler.HandleDeleteCase)
+	// 运行列表/启动 与 运行详情（/api/eval/runs/{id}）通过路径区分
+	mux.HandleFunc("/api/eval/runs", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			chatHandler.HandleListRuns(w, r)
+		case http.MethodPost:
+			chatHandler.HandleRunEval(w, r)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/api/eval/runs/", chatHandler.HandleGetRun)
+
 	// Workflow 工作流接口
 	if chatHandler.GetWorkflowHandler() != nil {
 		wfHandler := chatHandler.GetWorkflowHandler()
