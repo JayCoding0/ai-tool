@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>记忆管理 - 智能Agent平台</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .mm-page { max-width: 1000px; margin: 0 auto; padding: 24px 16px; }
+        .mm-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+        .mm-header h1 { font-size: 22px; font-weight: 700; color: #18181b; margin: 0; }
+        .mm-card { background: #fff; border-radius: 12px; border: 1px solid #e8e8f0; padding: 18px; margin-bottom: 16px; }
+        .mm-toolbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:16px; }
+        .mm-item { border:1px solid #ececf5; border-radius:10px; padding:12px 14px; margin-bottom:10px; transition: box-shadow .15s; }
+        .mm-item:hover { box-shadow: 0 2px 10px rgba(99,102,241,.08); }
+        .mm-item-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+        .mm-content { font-size:14px; color:#222; line-height:1.6; word-break:break-word; }
+        .mm-meta { font-size:12px; color:#999; margin-top:8px; display:flex; gap:14px; flex-wrap:wrap; }
+        .mm-type { font-size:11px; padding:2px 9px; border-radius:10px; font-weight:600; }
+        .type-fact { background:#eef0ff; color:#6366f1; }
+        .type-preference { background:#e6f7ee; color:#27ae60; }
+        .type-episode { background:#fff7e6; color:#e67e22; }
+        .type-summary { background:#f0e6ff; color:#8b5cf6; }
+        .imp-bar { display:inline-block; width:70px; height:8px; border-radius:4px; background:#eef0f5; overflow:hidden; vertical-align:middle; }
+        .imp-fill { height:100%; background:linear-gradient(90deg,#6366f1,#d946ef); }
+        .nav-bar { background: rgba(255,255,255,0.78); backdrop-filter: saturate(180%) blur(16px); -webkit-backdrop-filter: saturate(180%) blur(16px); border-bottom: 1px solid #ebebf0; padding: 13px 24px; display: flex; align-items: center; gap: 14px; position: sticky; top: 0; z-index: 50; box-shadow: 0 1px 2px rgba(24,24,40,0.04); }
+        .nav-logo { font-size: 18px; font-weight: 800; text-decoration: none; letter-spacing: -0.3px; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #d946ef 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; margin-right: 6px; }
+        .nav-link { font-size: 14px; color: #52525b; text-decoration: none; padding: 7px 14px; border-radius: 10px; transition: all .2s; font-weight: 500; }
+        .nav-link:hover { background: #eef0ff; color: #6366f1; }
+        .nav-link.active { background: #eef0ff; color: #6366f1; }
+        .empty-state { text-align: center; padding: 50px 20px; color: #bbb; }
+        .empty-state .empty-icon { font-size: 44px; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+<div id="mm-app">
+    <div class="nav-bar">
+        <a href="/" class="nav-logo">🤖 智能Agent平台</a>
+        <a href="/" class="nav-link">💬 对话</a>
+        <a href="/knowledge.html" class="nav-link">📚 知识库</a>
+        <a href="/workflow.html" class="nav-link">🔀 工作流</a>
+        <a href="/eval.html" class="nav-link">📊 评估</a>
+        <a href="/memory.html" class="nav-link active">🧠 记忆</a>
+        <a href="/cache.html" class="nav-link">⚡ 缓存</a>
+    </div>
+
+    <div class="mm-page">
+        <div class="mm-header">
+            <h1>🧠 用户记忆管理</h1>
+            <el-button type="primary" :icon="Plus" @click="openCreate">添加记忆</el-button>
+        </div>
+
+        <div class="mm-card">
+            <div class="mm-toolbar">
+                <el-select v-model="typeFilter" placeholder="全部类型" clearable size="default" style="width:160px;" @change="reload">
+                    <el-option label="全部类型" value="" />
+                    <el-option label="事实 fact" value="fact" />
+                    <el-option label="偏好 preference" value="preference" />
+                    <el-option label="情景 episode" value="episode" />
+                    <el-option label="摘要 summary" value="summary" />
+                </el-select>
+                <el-input v-model="searchQuery" placeholder="语义搜索记忆…" style="width:280px;" clearable @keyup.enter="doSearch">
+                    <template #append><el-button :icon="Search" @click="doSearch" /></template>
+                </el-input>
+                <el-button text :icon="Refresh" @click="reload">刷新</el-button>
+                <span style="color:#999;font-size:13px;margin-left:auto;">共 {{ total }} 条记忆</span>
+            </div>
+
+            <div v-if="searchResult" class="mm-card" style="background:#f8f8fc;">
+                <div style="font-weight:600;margin-bottom:6px;">🔍 语义搜索结果（Top-K 相关）</div>
+                <div class="mm-content" style="white-space:pre-wrap;">{{ searchResult || '（无相关记忆）' }}</div>
+                <el-button text size="small" @click="searchResult=''" style="margin-top:6px;">清除</el-button>
+            </div>
+
+            <div v-if="memories.length === 0" class="empty-state">
+                <div class="empty-icon">🗂️</div>
+                <div>暂无记忆。与 AI 多轮对话后会自动提取记忆，也可手动添加。</div>
+            </div>
+
+            <div v-for="m in memories" :key="m.id" class="mm-item">
+                <div class="mm-item-top">
+                    <span class="mm-type" :class="'type-' + m.memory_type">{{ typeLabel(m.memory_type) }}</span>
+                    <span>
+                        <el-button text size="small" @click="openEdit(m)">编辑</el-button>
+                        <el-button text size="small" type="danger" @click="remove(m)">删除</el-button>
+                    </span>
+                </div>
+                <div class="mm-content">{{ m.content }}</div>
+                <div class="mm-meta">
+                    <span>重要性
+                        <span class="imp-bar"><span class="imp-fill" :style="{width:(m.importance*100)+'%'}"></span></span>
+                        {{ (m.importance*100).toFixed(0) }}
+                    </span>
+                    <span>命中 {{ m.access_count }} 次</span>
+                    <span v-if="m.source_session_id">来源会话 <code>{{ shortSid(m.source_session_id) }}</code></span>
+                    <span>创建 {{ m.created_at }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 新建/编辑记忆 -->
+    <el-dialog v-model="showDialog" :title="editing ? '编辑记忆' : '添加记忆'" width="520px">
+        <el-form label-width="80px">
+            <el-form-item label="内容">
+                <el-input v-model="form.content" type="textarea" :rows="3" placeholder="记忆内容，如：用户是 Go 后端开发者" />
+            </el-form-item>
+            <el-form-item label="类型" v-if="!editing">
+                <el-select v-model="form.memory_type" style="width:100%;">
+                    <el-option label="事实 fact" value="fact" />
+                    <el-option label="偏好 preference" value="preference" />
+                    <el-option label="情景 episode" value="episode" />
+                    <el-option label="摘要 summary" value="summary" />
+                </el-select>
+            </el-form-item>
+            <el-form-item label="重要性" v-if="!editing">
+                <el-slider v-model="form.importance" :min="0" :max="1" :step="0.1" show-input style="width:100%;" />
+            </el-form-item>
+        </el-form>
+        <template #footer>
+            <el-button @click="showDialog=false">取消</el-button>
+            <el-button type="primary" @click="save">保存</el-button>
+        </template>
+    </el-dialog>
+</div>
+
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script src="https://unpkg.com/@element-plus/icons-vue"></script>
+<script src="https://unpkg.com/element-plus/dist/index.full.js"></script>
+<script>
+const { createApp, ref, reactive, onMounted } = Vue;
+const { ElMessage, ElMessageBox } = ElementPlus;
+const { Plus, Search, Refresh } = ElementPlusIconsVue;
+
+createApp({
+    setup() {
+        const memories = ref([]);
+        const total = ref(0);
+        const typeFilter = ref('');
+        const searchQuery = ref('');
+        const searchResult = ref('');
+        const showDialog = ref(false);
+        const editing = ref(null);
+        const form = reactive({ content: '', memory_type: 'fact', importance: 0.5 });
+
+        const TYPE_LABELS = { fact: '事实', preference: '偏好', episode: '情景', summary: '摘要' };
+        const typeLabel = (t) => TYPE_LABELS[t] || t;
+        const shortSid = (s) => s && s.length > 8 ? s.slice(0, 8) : s;
+
+        const api = async (url, opts) => {
+            const r = await fetch(url, opts);
+            if (r.status === 401) { window.location.href = '/login.html'; throw new Error('未登录'); }
+            const data = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(data.error || '请求失败');
+            return data;
+        };
+
+        const reload = async () => {
+            try {
+                const q = typeFilter.value ? ('?type=' + encodeURIComponent(typeFilter.value)) : '';
+                const data = await api('/api/memory' + q);
+                memories.value = data.memories || [];
+                total.value = data.total || 0;
+            } catch (e) { if (e.message !== '未登录') ElMessage.error(e.message); }
+        };
+
+        const doSearch = async () => {
+            if (!searchQuery.value.trim()) { searchResult.value = ''; return; }
+            try {
+                const data = await api('/api/memory/search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query: searchQuery.value, top_k: 5 }),
+                });
+                searchResult.value = data.result || '（无相关记忆）';
+            } catch (e) { ElMessage.error(e.message); }
+        };
+
+        const openCreate = () => { editing.value = null; form.content = ''; form.memory_type = 'fact'; form.importance = 0.5; showDialog.value = true; };
+        const openEdit = (m) => { editing.value = m; form.content = m.content; showDialog.value = true; };
+
+        const save = async () => {
+            if (!form.content.trim()) { ElMessage.warning('内容不能为空'); return; }
+            try {
+                if (editing.value) {
+                    await api('/api/memory/update?id=' + editing.value.id, {
+                        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ content: form.content }),
+                    });
+                    ElMessage.success('已更新');
+                } else {
+                    await api('/api/memory', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ content: form.content, memory_type: form.memory_type, importance: form.importance }),
+                    });
+                    ElMessage.success('已添加');
+                }
+                showDialog.value = false;
+                reload();
+            } catch (e) { ElMessage.error(e.message); }
+        };
+
+        const remove = async (m) => {
+            try { await ElMessageBox.confirm('确定删除这条记忆？', '确认', { type: 'warning' }); } catch { return; }
+            try {
+                await api('/api/memory/delete?id=' + m.id, { method: 'DELETE' });
+                ElMessage.success('已删除');
+                reload();
+            } catch (e) { ElMessage.error(e.message); }
+        };
+
+        onMounted(reload);
+
+        return { memories, total, typeFilter, searchQuery, searchResult, showDialog, editing, form,
+                 typeLabel, shortSid, reload, doSearch, openCreate, openEdit, save, remove,
+                 Plus, Search, Refresh };
+    }
+}).use(ElementPlus).mount('#mm-app');
+</script>
+</body>
+</html>

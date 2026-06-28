@@ -82,9 +82,9 @@
   - [ ] **画像自动提取**：每 N 轮对话后，LLM 从累积记忆中提炼/更新用户画像（Prompt: "根据以下用户记忆，生成/更新结构化用户画像 JSON"）
   - [ ] **画像注入 System Prompt**：在 `renderPromptTemplate()` 中增加 `{{user_profile}}` 内置变量，自动注入用户画像
   - [x] **记忆重要性评估**：引入独立 LLM 评分机制（Phase 1.5），对每条候选记忆评估重要性（0-1），参考用户已有记忆去重，仅存储 importance > 0.3 的记忆，避免记忆库膨胀
-  - [ ] **记忆容量管理**：每用户设置记忆上限（如 500 条），超限时按 importance × recency 加权排序，淘汰最低分记忆
-  - [ ] **记忆来源追溯**：每条记忆关联 `source_session_id`，支持追溯记忆来源对话
-  - [ ] **前端记忆面板**：用户可查看/编辑/删除自己的记忆列表和用户画像，支持手动添加记忆
+  - [x] **记忆容量管理**：每用户记忆上限（`MaxMemoriesPerUser=500`），超限时由 `enforceMemoryLimit` 调用 `DeleteLowestImportance` 淘汰最低分记忆（提取/手动创建后自动触发）
+  - [x] **记忆来源追溯**：每条记忆关联 `source_session_id`，API 与前端记忆面板均展示来源会话
+  - [x] **前端记忆面板**：`frontend/memory.html` 支持查看/类型筛选/语义搜索/手动添加/编辑/删除记忆，展示重要性、命中次数、来源会话（复用现有 `/api/memory` 接口）
   - **相关文件**: `domain/memory/user_profile.go`, `application/memory_service.go`（画像提取逻辑）, `application/prompt_template.go`（`{{user_profile}}` 变量）
 
 - **数据库设计**:
