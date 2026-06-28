@@ -1,12 +1,8 @@
-span
+# 🤖 AI Agent 平台
 
----
+> 对标 Dify / Coze（扣子）/ FastGPT 的企业级 AI Agent 平台 —— 多 Agent 编排 · 可视化 Workflow · RAG 知识库 · A2A / MCP 双协议
 
-## 🌟 Feature Highlights
-
-<table>
-<tr>
-<td width="50%">
+基于 **Go (TRPC-GO)** + **Vue 3** 构建，采用 DDD 分层架构，提供多模型切换、ReAct 工具调用、可视化 DAG 工作流、RAG 知识库与长期记忆等完整 Agent 基础能力。
 
 ---
 
