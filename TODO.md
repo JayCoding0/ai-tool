@@ -427,12 +427,14 @@
     - `js/workflow.js` — 所有 Vue.js 逻辑
 
 ### 23. 测试覆盖率提升
-- **现状**: 缺少单元测试和集成测试
+- **现状**: 逐步补齐单元测试（缓存子系统已覆盖，`go test -race ./...` 全绿）
 - **改进方案**:
+  - [x] 缓存子系统单元测试：命中率统计收集器（含并发）、NoopCache、Redis 集成测试（不可用时跳过）、Embedding 缓存装饰器（命中/批量部分命中/模型隔离）、语义缓存服务（scope 哈希/命中/阈值/隔离/FIFO 淘汰）
   - [ ] 核心服务层单元测试（chat_service, agent_runner, knowledge_service）
   - [ ] 模板引擎单元测试（prompt_template）
   - [ ] HTTP 接口集成测试
   - [ ] RAG 端到端测试（上传 → 分块 → 检索 → 回答）
+- **相关文件**: `infrastructure/cache/{stats,noop_cache,redis_cache}_test.go`, `infrastructure/knowledge/cached_embedder_test.go`, `application/semantic_cache_service_test.go`
 
 ### 32. 🆕 前端工程化 + 水平扩展能力
 - **现状**: 前端 Vue 3 CDN 零构建（适合 Demo，缺组件化 / TS / 构建优化）；SSE + 部分内存态仓储（`infrastructure/session/memory_repository.go`）多实例部署时存在状态一致性风险
