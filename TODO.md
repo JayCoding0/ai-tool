@@ -1,7 +1,7 @@
 # 📋 AI Agent 平台 - TODO List
 
 > 对标 Dify、Coze（扣子）、FastGPT、LangChain/LangGraph、AutoGen、CrewAI 等主流平台
-> 最后更新：2026-04-09
+> 最后更新：2026-06-28
 
 ---
 
@@ -149,6 +149,38 @@
   - [ ] 支持文件上传解析（PDF/Word/Excel → 文本提取）
 - **预估工作量**: 2 个月
 
+### 24. ✅ 模型层能力补齐（结构化输出 + 推理模型 + 并行工具调用）已完成
+- **现状**: ~~无 `response_format` / `json_schema` 支持（代码 0 处引用）~~；~~`model.StreamChunk.Thinking` 仅用于多 Agent 思考过程展示，无 reasoning 模型原生支持~~；~~ReAct 为串行工具调用循环~~
+- **主流做法**: OpenAI Structured Output（JSON Schema 强约束）、`reasoning_effort` 参数、parallel tool calls；Dify/Coze 的 JSON mode
+- **改进方案**:
+  - [x] `model.GenerateOptions` 增加 `ResponseFormat`（text / json_object / json_schema）+ 可选 `StructuredGenerator` 接口，`openai_generator` 实现 `GenerateWithToolsOpts` 透传 `response_format`/温度
+  - [x] Workflow LLM 节点支持 JSON Schema 约束输出（NodeConfig 新增 `response_format`/`json_schema`/`schema_strict`），返回内容做 JSON 合法性校验 + markdown 围栏剥离；不支持原生 response_format 的生成器自动降级为 Prompt 注入 JSON 指令；前端编辑器新增输出格式配置 UI
+  - [x] 推理模型支持：`GenerateOptions` 增加 `ReasoningEffort`（low/medium/high）并透传 OpenAI `reasoning_effort`；流式 `GenerateStreamWithMessages` 从 delta 的 `reasoning_content` 扩展字段（DashScope/DeepSeek-R1）分离思考过程到 `Thinking`（聊天界面自动展示）；Workflow LLM 节点新增 `reasoning_effort` 配置 + 前端 UI
+  - [x] 并行工具调用：ReAct 循环 `executeToolsConcurrently` 对单轮多 `tool_calls` 用 goroutine + `sync.WaitGroup` 并发执行，按索引聚合结果保序，再按序推送 `tool_result` 事件（OpenAI `parallel_tool_calls` 默认开启，无需额外透传）
+- **相关文件**: `domain/model/model.go`（`ResponseFormat`/`GenerateOptions`/`StructuredGenerator`）, `infrastructure/model/openai_generator.go`（`GenerateWithToolsOpts` + `extractReasoningContent`）, `domain/workflow/workflow.go`（NodeConfig 字段）, `application/workflow_engine_nodes.go`（`executeLLMNode` + `buildLLMGenerateOptions`/`extractJSONContent`/`injectJSONInstruction`）, `application/agent_runner.go`（`executeToolsConcurrently` 并发工具执行）, `frontend/workflow.html`（配置 UI）
+- **预估工作量**: ~~1 个月~~ → 已完成
+
+### 25. 🆕 Agent 评估体系（Evaluation）
+- **现状**: 无任何评测/数据集系统（P3 #17 仅一句"数据集测试"），Agent/Prompt/Workflow 改动无法量化好坏
+- **主流做法**: LangSmith / Dify / Coze：测试数据集 → 批量运行 → LLM-as-judge 自动打分 → 版本回归对比
+- **改进方案**:
+  - [ ] 评测数据集管理（输入 + 期望输出，CSV/JSON 导入）
+  - [ ] 批量运行 Agent/Workflow，记录每条结果、耗时、token
+  - [ ] 评分器：精确匹配 / 语义相似度 / LLM-as-judge（可配置评分 Prompt）
+  - [ ] 版本回归对比（两次运行 diff，指标变化趋势）
+  - [ ] 前端评测报告页（通过率、平均分、失败用例下钻）
+- **预估工作量**: 2 个月
+
+### 26. 🆕 应用发布与开放生态（API / Widget / Webhook）
+- **现状**: Agent/Workflow 仅能通过自带 Web UI 使用，无对外发布形态
+- **主流做法**: Dify 一键发布为 API / 嵌入式聊天 Widget / 独立 Web App；Coze Bot Store 模板市场
+- **改进方案**:
+  - [ ] 发布为标准对话 API（独立 App API Key + 用量隔离 + 限流）
+  - [ ] 嵌入式 Web Widget（一行 `<script>` 嵌入任意网站，iframe / 浮窗）
+  - [ ] Webhook / 触发器（外部事件触发 Agent/Workflow 执行）
+  - [ ] 应用模板市场（Agent/Workflow 模板一键复制创建）
+- **预估工作量**: 2 个月
+
 ---
 
 ## 🟡 P1 - 重要改进（提升用户体验和可用性）
@@ -215,6 +247,36 @@
   - [ ] 用量配额和计费统计
 - **预估工作量**: 1.5 个月
 
+### 27. 🆕 MCP Client（消费外部 MCP 工具）
+- **现状**: 已实现 MCP Server（对外暴露自身工具），但无 MCP Client，无法接入第三方 MCP 服务器的工具
+- **主流做法**: Claude Desktop / Cursor / Cline 作为 MCP Client 接入海量第三方 MCP Server
+- **改进方案**:
+  - [ ] 实现 MCP Client（stdio / SSE / streamable-http 传输）
+  - [ ] 配置化接入外部 MCP Server，自动发现并注册其 tools 到工具注册表
+  - [ ] 外部 MCP 工具纳入 ReAct 循环与 Workflow 工具节点
+  - [ ] 前端 MCP Server 管理页（添加/启停/查看工具列表）
+- **预估工作量**: 1 个月
+
+### 28. 🆕 语义缓存 / Prompt 缓存
+- **现状**: 无任何缓存层，相同/相似问题重复调用 LLM，成本与延迟无优化空间
+- **主流做法**: GPTCache（语义缓存）、OpenAI/Anthropic Prompt Caching
+- **改进方案**:
+  - [ ] 精确缓存：相同 messages 命中缓存直接返回
+  - [ ] 语义缓存：问题向量化，相似度超阈值复用历史回答（阈值可配置）
+  - [ ] 缓存失效策略（TTL / 知识库更新时失效）
+  - [ ] 缓存命中率统计与开关（按 Agent 配置）
+- **预估工作量**: 0.5 个月
+
+### 29. 🆕 成本与配额治理
+- **现状**: 仅有事后 Token 统计，无预算/配额/告警机制
+- **主流做法**: Dify/Coze 工作空间级配额、超额告警、按部门计费
+- **改进方案**:
+  - [ ] 用户 / 工作空间级 Token & 费用配额上限
+  - [ ] 配额限流（超额拒绝或降级）
+  - [ ] 用量预警（接近阈值时告警通知）
+  - [ ] 成本报表（按用户 / 模型 / Agent 维度，支持导出）
+- **预估工作量**: 1 个月
+
 ---
 
 ## 🟢 P2 - 锦上添花（提升平台完整度）
@@ -263,6 +325,24 @@
   - [ ] 实时状态同步（工具执行进度、Agent 切换通知）
   - [ ] 心跳保活和断线重连
 - **预估工作量**: 1 个月
+
+### 30. 🆕 RAG 下一代能力（GraphRAG + 数据源连接器）
+- **现状**: 仅支持文档手动上传 + 固定分块 + 向量检索（与 P1 #6 互补，本项聚焦数据接入与知识图谱）
+- **主流做法**: 微软 GraphRAG 知识图谱检索；Dify 数据源连接器自动同步
+- **改进方案**:
+  - [ ] GraphRAG：实体/关系抽取构建知识图谱，图谱增强检索
+  - [ ] 数据源连接器：Notion / 网页 / 数据库 / 对象存储自动同步
+  - [ ] 增量更新与定时同步（数据源变更自动重新索引）
+  - [ ] 多模态知识解析（表格、图表、扫描件）
+- **预估工作量**: 2.5 个月
+
+### 31. 🆕 国际化（i18n）
+- **现状**: 仅中文界面，无多语言支持
+- **改进方案**:
+  - [ ] 前端 i18n 框架接入，文案抽取为语言包
+  - [ ] 中 / 英文切换，记忆用户偏好
+  - [ ] 后端错误信息 / 系统提示多语言
+- **预估工作量**: 0.5 个月
 
 ---
 
@@ -347,6 +427,15 @@
   - [ ] HTTP 接口集成测试
   - [ ] RAG 端到端测试（上传 → 分块 → 检索 → 回答）
 
+### 32. 🆕 前端工程化 + 水平扩展能力
+- **现状**: 前端 Vue 3 CDN 零构建（适合 Demo，缺组件化 / TS / 构建优化）；SSE + 部分内存态仓储（`infrastructure/session/memory_repository.go`）多实例部署时存在状态一致性风险
+- **改进方案**:
+  - [ ] 前端引入构建工具（Vite）+ TypeScript + 组件化拆分 + 按需加载
+  - [ ] 会话 / 任务状态外置（Redis），支持多实例水平扩展
+  - [ ] 引入任务队列（异步执行长任务，见 P3 #17）
+  - [ ] 提供 K8s Helm Chart / 健康检查 / 优雅退出
+- **预估工作量**: 1.5 个月
+
 ---
 
 ## 📊 实施路线图
@@ -364,6 +453,10 @@
 └── 🟡 错误恢复/重试（P1 #8）
 
 2026 Q3 (7-9月)
+├── ✅ 模型层能力补齐：结构化输出 + 推理模型 + 并行工具调用（P0 #24，已完成）
+├── 🆕🔴 Agent 评估体系（P0 #25，生产可用性前提）
+├── 🆕🔴 应用发布：API / Widget / Webhook（P0 #26，平台价值出口）
+├── 🆕🟡 MCP Client：消费外部 MCP 工具（P1 #27）
 ├── 🔴 Memory Phase 1：会话摘要 + Token 窗口管理（P0 #3，3周）
 ├── 🔴 Memory Phase 2：向量记忆 + Mem0 式提取更新（P0 #3，4周）
 ├── 🔴 Memory Phase 3：用户画像 + 智能记忆策略（P0 #3，3周）
@@ -373,12 +466,17 @@
 └── 🟢 对话导出（P2 #13）
 
 2026 Q4 (10-12月)
+├── 🆕🟡 语义缓存 / Prompt 缓存（P1 #28）
+├── 🆕🟡 成本与配额治理（P1 #29）
+├── 🆕🟢 国际化 i18n（P2 #31）
 ├── 🟡 API Key / Provider 管理（P1 #10）
 ├── 🟢 安全护栏（P2 #12）
 ├── 🟢 WebSocket（P2 #15）
 └── 🔵 认证系统增强（P3 #18）
 
 2027 Q1 (1-3月)
+├── 🆕🟢 RAG 下一代：GraphRAG + 数据源连接器（P2 #30）
+├── 🆕⚪ 前端工程化 + 水平扩展（P4 #32）
 ├── 🟢 插件/工具市场（P2 #11）
 ├── 🟢 Agent 配置版本管理（P2 #14）
 ├── 🔵 多租户/工作空间（P3 #16）

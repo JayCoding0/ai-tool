@@ -52,6 +52,12 @@ type NodeConfig struct {
 	UserPrompt   string  `json:"user_prompt,omitempty"`   // 用户 Prompt 模板（支持 ${node_id.output} 引用上游输出）
 	Temperature  float64 `json:"temperature,omitempty"`   // 温度参数
 
+	// LLM 节点结构化输出配置（#24）
+	ResponseFormat string `json:"response_format,omitempty"` // 输出格式："" | "text" | "json_object" | "json_schema"
+	JSONSchema     string `json:"json_schema,omitempty"`     // json_schema 模式下的 JSON Schema（原始 JSON 字符串）
+	SchemaStrict   bool   `json:"schema_strict,omitempty"`   // json_schema 模式下是否严格遵循 schema
+	ReasoningEffort string `json:"reasoning_effort,omitempty"` // 推理模型思考强度："" | "low" | "medium" | "high"
+
 	// Tool 节点配置
 	ToolName string            `json:"tool_name,omitempty"` // 工具名称
 	ToolArgs map[string]string `json:"tool_args,omitempty"` // 工具参数模板（支持 ${node_id.output} 引用上游输出）

@@ -403,6 +403,31 @@
                                 <label>模型名称 <span style="font-size:11px;color:#999;">（留空使用默认模型）</span></label>
                                 <el-input v-model="selectedNode.config.model_name" size="small" placeholder="默认模型" />
                             </div>
+                            <div class="panel-field">
+                                <label>输出格式 <span style="font-size:11px;color:#999;">（结构化输出，保证下游可解析）</span></label>
+                                <el-select v-model="selectedNode.config.response_format" size="small" style="width:100%;" placeholder="文本（默认）" clearable>
+                                    <el-option label="文本（默认）" value="text" />
+                                    <el-option label="JSON 对象（保证合法 JSON）" value="json_object" />
+                                    <el-option label="JSON Schema（严格结构约束）" value="json_schema" />
+                                </el-select>
+                            </div>
+                            <template v-if="selectedNode.config.response_format === 'json_schema'">
+                                <div class="panel-field">
+                                    <label>JSON Schema <span style="font-size:11px;color:#999;">（JSON Schema 对象）</span></label>
+                                    <el-input v-model="selectedNode.config.json_schema" type="textarea" :rows="6" size="small" placeholder='{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}' />
+                                </div>
+                                <div class="panel-field">
+                                    <el-checkbox v-model="selectedNode.config.schema_strict" size="small">严格模式（strict，模型完全遵循 schema）</el-checkbox>
+                                </div>
+                            </template>
+                            <div class="panel-field">
+                                <label>推理强度 <span style="font-size:11px;color:#999;">（仅推理模型 o1/o3/R1 生效）</span></label>
+                                <el-select v-model="selectedNode.config.reasoning_effort" size="small" style="width:100%;" placeholder="默认（不指定）" clearable>
+                                    <el-option label="低（low，更快）" value="low" />
+                                    <el-option label="中（medium）" value="medium" />
+                                    <el-option label="高（high，更深入）" value="high" />
+                                </el-select>
+                            </div>
                         </div>
                     </template>
 

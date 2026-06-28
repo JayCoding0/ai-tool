@@ -217,27 +217,137 @@ func (e *WorkflowEngine) executeLLMNode(ctx context.Context, node workflow.Node,
 		{Role: domain_model.RoleUser, Content: userPrompt},
 	}
 
+	// 解析结构化输出配置（#24）
+	opts := buildLLMGenerateOptions(node.Config)
+
 	logger.Info("[Workflow] LLM 节点调用",
 		zap.String("node_id", node.ID),
 		zap.String("model", modelName),
 		zap.String("system_prompt_preview", msgPreview(systemPrompt, 80)),
 		zap.String("user_prompt_preview", msgPreview(userPrompt, 80)),
+		zap.String("response_format", string(responseFormatType(opts))),
 	)
 
-	result, err := modelGen.GenerateWithTools(ctx, messages, nil)
+	var result domain_model.GenerateWithToolsResult
+	var err error
+	// 需要高级选项（结构化输出 / 推理强度）且生成器支持时，走 opts 路径
+	needsOpts := opts.ResponseFormat != nil || opts.ReasoningEffort != ""
+	if sg, ok := modelGen.(domain_model.StructuredGenerator); ok && needsOpts {
+		// 生成器原生支持高级选项（OpenAI 兼容接口）
+		result, err = sg.GenerateWithToolsOpts(ctx, messages, nil, opts)
+	} else {
+		// 降级：生成器不支持结构化输出时，在 Prompt 中注入 JSON 指令
+		if opts.ResponseFormat != nil {
+			messages = injectJSONInstruction(messages, opts.ResponseFormat)
+		}
+		result, err = modelGen.GenerateWithTools(ctx, messages, nil)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("LLM 调用失败: %w", err)
 	}
 
 	execCtx.AddTokens(result.Usage.TotalTokens)
 
+	content := result.Content
+	// 结构化输出校验：要求 JSON 时，确保返回内容是合法 JSON（去除可能的 markdown 代码块包裹）
+	if opts.ResponseFormat != nil && opts.ResponseFormat.Type != domain_model.ResponseFormatText {
+		cleaned := extractJSONContent(content)
+		var probe interface{}
+		if jsonErr := json.Unmarshal([]byte(cleaned), &probe); jsonErr != nil {
+			return nil, fmt.Errorf("LLM 节点 %q 要求结构化输出，但模型返回内容不是合法 JSON: %v", node.Name, jsonErr)
+		}
+		content = cleaned
+	}
+
 	logger.Info("[Workflow] LLM 节点完成",
 		zap.String("node_id", node.ID),
-		zap.Int("content_len", len(result.Content)),
+		zap.Int("content_len", len(content)),
 		zap.Int("tokens", result.Usage.TotalTokens),
 	)
 
-	return result.Content, nil
+	return content, nil
+}
+
+// buildLLMGenerateOptions 从 LLM 节点配置构建生成选项（结构化输出 + 温度）
+func buildLLMGenerateOptions(cfg workflow.NodeConfig) domain_model.GenerateOptions {
+	opts := domain_model.GenerateOptions{}
+
+	if cfg.Temperature > 0 {
+		t := cfg.Temperature
+		opts.Temperature = &t
+	}
+
+	// 推理模型思考强度
+	switch strings.TrimSpace(cfg.ReasoningEffort) {
+	case "low", "medium", "high":
+		opts.ReasoningEffort = strings.TrimSpace(cfg.ReasoningEffort)
+	}
+
+	switch domain_model.ResponseFormatType(strings.TrimSpace(cfg.ResponseFormat)) {
+	case domain_model.ResponseFormatJSONObject:
+		opts.ResponseFormat = &domain_model.ResponseFormat{Type: domain_model.ResponseFormatJSONObject}
+	case domain_model.ResponseFormatJSONSchema:
+		rf := &domain_model.ResponseFormat{
+			Type:       domain_model.ResponseFormatJSONSchema,
+			SchemaName: "workflow_node_output",
+			Strict:     cfg.SchemaStrict,
+		}
+		if s := strings.TrimSpace(cfg.JSONSchema); s != "" {
+			var schema map[string]interface{}
+			if err := json.Unmarshal([]byte(s), &schema); err == nil {
+				rf.Schema = schema
+			}
+		}
+		// 若 schema 解析失败或为空，降级为 json_object（仍保证合法 JSON）
+		if rf.Schema == nil {
+			opts.ResponseFormat = &domain_model.ResponseFormat{Type: domain_model.ResponseFormatJSONObject}
+		} else {
+			opts.ResponseFormat = rf
+		}
+	}
+
+	return opts
+}
+
+// responseFormatType 返回选项中的输出格式类型（用于日志），未设置时返回 text
+func responseFormatType(opts domain_model.GenerateOptions) domain_model.ResponseFormatType {
+	if opts.ResponseFormat == nil {
+		return domain_model.ResponseFormatText
+	}
+	return opts.ResponseFormat.Type
+}
+
+// injectJSONInstruction 为不支持原生 response_format 的生成器，在消息中注入 JSON 输出指令（降级方案）
+func injectJSONInstruction(messages []domain_model.Message, rf *domain_model.ResponseFormat) []domain_model.Message {
+	instruction := "\n\n[输出要求] 请只输出合法的 JSON，不要包含任何额外的解释文字，也不要使用 markdown 代码块包裹。"
+	if rf.Type == domain_model.ResponseFormatJSONSchema && rf.Schema != nil {
+		if schemaBytes, err := json.Marshal(rf.Schema); err == nil {
+			instruction += "\n输出必须严格符合以下 JSON Schema：\n" + string(schemaBytes)
+		}
+	}
+	// 追加到 System 消息；若没有 System 消息则插入一条
+	for i := range messages {
+		if messages[i].Role == domain_model.RoleSystem {
+			messages[i].Content += instruction
+			return messages
+		}
+	}
+	return append([]domain_model.Message{{Role: domain_model.RoleSystem, Content: strings.TrimSpace(instruction)}}, messages...)
+}
+
+// extractJSONContent 从模型返回中提取 JSON 内容，去除可能的 ```json ... ``` markdown 代码块包裹
+func extractJSONContent(content string) string {
+	s := strings.TrimSpace(content)
+	if strings.HasPrefix(s, "```") {
+		// 去掉首行围栏（```json 或 ```）
+		if idx := strings.IndexByte(s, '\n'); idx != -1 {
+			s = s[idx+1:]
+		}
+		// 去掉结尾围栏
+		s = strings.TrimSuffix(strings.TrimSpace(s), "```")
+		s = strings.TrimSpace(s)
+	}
+	return s
 }
 
 // executeToolNode 执行工具调用节点

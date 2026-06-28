@@ -91,6 +91,42 @@ type GenerateWithToolsResult struct {
 	Usage     TokenUsage
 }
 
+// ─── 结构化输出（#24）─────────────────────────────────────────────────────────
+
+// ResponseFormatType 模型输出格式类型
+type ResponseFormatType string
+
+const (
+	// ResponseFormatText 默认纯文本输出
+	ResponseFormatText ResponseFormatType = "text"
+	// ResponseFormatJSONObject JSON mode，保证输出为合法 JSON（不约束具体结构）
+	ResponseFormatJSONObject ResponseFormatType = "json_object"
+	// ResponseFormatJSONSchema 严格的 JSON Schema 约束输出（推荐，节点间结构化传参可靠）
+	ResponseFormatJSONSchema ResponseFormatType = "json_schema"
+)
+
+// ResponseFormat 结构化输出格式定义
+type ResponseFormat struct {
+	Type       ResponseFormatType     `json:"type"`                  // 输出格式类型
+	SchemaName string                 `json:"schema_name,omitempty"` // json_schema 模式下的 schema 名称（a-z/A-Z/0-9/_/-）
+	Schema     map[string]interface{} `json:"schema,omitempty"`      // json_schema 模式下的 JSON Schema 对象
+	Strict     bool                   `json:"strict,omitempty"`      // 是否严格遵循 schema（json_schema 模式）
+}
+
+// GenerateOptions 生成选项（结构化输出、采样温度等高级参数）
+type GenerateOptions struct {
+	ResponseFormat  *ResponseFormat // 为 nil 时使用默认文本输出
+	Temperature     *float64        // 为 nil 时使用模型默认温度
+	ReasoningEffort string          // 推理模型思考强度："" | "low" | "medium" | "high"，为空不透传
+}
+
+// StructuredGenerator 支持结构化输出选项的生成器（可选能力接口）
+// 实现了此接口的 Generator 支持 response_format（JSON mode / JSON Schema）、温度等高级选项；
+// 未实现的生成器（如部分本地模型）可由调用方降级为「在 Prompt 中注入 JSON 指令」的方式。
+type StructuredGenerator interface {
+	GenerateWithToolsOpts(ctx context.Context, messages []Message, tools []ToolDefinition, opts GenerateOptions) (GenerateWithToolsResult, error)
+}
+
 // Generator 模型生成器接口
 type Generator interface {
 	// Generate 生成模型响应（非流式）

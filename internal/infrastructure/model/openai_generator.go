@@ -8,6 +8,7 @@ import (
 	"aiProject/internal/domain/model"
 	openai "github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
+	"github.com/openai/openai-go/shared"
 )
 
 // OpenAIGenerator OpenAI兼容接口的模型生成器（支持阿里云DashScope等）
@@ -152,9 +153,13 @@ func (g *OpenAIGenerator) GenerateStreamWithMessages(ctx context.Context, messag
 		for stream.Next() {
 			event := stream.Current()
 			if len(event.Choices) > 0 {
-				delta := event.Choices[0].Delta.Content
-				if delta != "" {
-					ch <- model.StreamChunk{Content: delta}
+				delta := event.Choices[0].Delta
+				// 推理模型：分离 reasoning_content（DashScope/DeepSeek-R1 等的扩展字段）作为思考过程
+				if reasoning := extractReasoningContent(delta); reasoning != "" {
+					ch <- model.StreamChunk{Thinking: reasoning}
+				}
+				if delta.Content != "" {
+					ch <- model.StreamChunk{Content: delta.Content}
 				}
 			}
 			if event.Usage.TotalTokens > 0 {
@@ -180,6 +185,12 @@ func (g *OpenAIGenerator) GenerateStreamWithMessages(ctx context.Context, messag
 
 // GenerateWithTools 支持 Function Calling 的生成（非流式）
 func (g *OpenAIGenerator) GenerateWithTools(ctx context.Context, messages []model.Message, tools []model.ToolDefinition) (model.GenerateWithToolsResult, error) {
+	return g.GenerateWithToolsOpts(ctx, messages, tools, model.GenerateOptions{})
+}
+
+// GenerateWithToolsOpts 支持 Function Calling + 结构化输出选项的生成（非流式）
+// 实现 model.StructuredGenerator 接口：支持 response_format（JSON mode / JSON Schema）与温度等高级选项。
+func (g *OpenAIGenerator) GenerateWithToolsOpts(ctx context.Context, messages []model.Message, tools []model.ToolDefinition, opts model.GenerateOptions) (model.GenerateWithToolsResult, error) {
 	// 转换消息格式
 	var openaiMessages []openai.ChatCompletionMessageParamUnion
 	for _, msg := range messages {
@@ -248,6 +259,43 @@ func (g *OpenAIGenerator) GenerateWithTools(ctx context.Context, messages []mode
 		params.Tools = openaiTools
 	}
 
+	// 应用温度参数
+	if opts.Temperature != nil {
+		params.Temperature = openai.Float(*opts.Temperature)
+	}
+
+	// 应用推理模型思考强度（reasoning models，如 o1/o3/DeepSeek-R1）
+	if opts.ReasoningEffort != "" {
+		params.ReasoningEffort = shared.ReasoningEffort(opts.ReasoningEffort)
+	}
+
+	// 应用结构化输出格式（#24）
+	if rf := opts.ResponseFormat; rf != nil {
+		switch rf.Type {
+		case model.ResponseFormatJSONObject:
+			params.ResponseFormat = openai.ChatCompletionNewParamsResponseFormatUnion{
+				OfJSONObject: &shared.ResponseFormatJSONObjectParam{},
+			}
+		case model.ResponseFormatJSONSchema:
+			name := rf.SchemaName
+			if name == "" {
+				name = "structured_output"
+			}
+			schemaParam := shared.ResponseFormatJSONSchemaJSONSchemaParam{
+				Name:   name,
+				Strict: openai.Bool(rf.Strict),
+			}
+			if rf.Schema != nil {
+				schemaParam.Schema = rf.Schema
+			}
+			params.ResponseFormat = openai.ChatCompletionNewParamsResponseFormatUnion{
+				OfJSONSchema: &shared.ResponseFormatJSONSchemaParam{
+					JSONSchema: schemaParam,
+				},
+			}
+		}
+	}
+
 	resp, err := g.client.Chat.Completions.New(ctx, params)
 	if err != nil {
 		return model.GenerateWithToolsResult{}, fmt.Errorf("OpenAI工具调用请求失败: %v", err)
@@ -276,4 +324,23 @@ func (g *OpenAIGenerator) GenerateWithTools(ctx context.Context, messages []mode
 	}
 
 	return result, nil
+}
+
+// extractReasoningContent 从流式 delta 中提取推理模型的 reasoning_content 思考过程。
+// reasoning_content 是 DashScope / DeepSeek-R1 等推理模型的非标准扩展字段，
+// 不在 openai-go 的标准 delta 结构中，需通过 ExtraFields 的原始 JSON 取出并解码。
+func extractReasoningContent(delta openai.ChatCompletionChunkChoiceDelta) string {
+	field, ok := delta.JSON.ExtraFields["reasoning_content"]
+	if !ok || !field.Valid() {
+		return ""
+	}
+	raw := field.Raw()
+	if raw == "" || raw == "null" {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal([]byte(raw), &s); err != nil {
+		return ""
+	}
+	return s
 }
