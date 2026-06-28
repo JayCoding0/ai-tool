@@ -6,30 +6,34 @@
     <title>Agent 评估 - 智能Agent平台</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
     <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
     <link rel="stylesheet" href="style.css">
     <style>
         .ev-page { max-width: 1200px; margin: 0 auto; padding: 24px 16px; }
         .ev-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
-        .ev-header h1 { font-size: 22px; font-weight: 700; color: #1a1a2e; margin: 0; }
+        .ev-header h1 { font-size: 22px; font-weight: 700; color: #18181b; margin: 0; }
         .ev-layout { display: grid; grid-template-columns: 300px 1fr; gap: 16px; }
         .ev-card { background: #fff; border-radius: 12px; border: 1px solid #e8e8f0; padding: 16px; margin-bottom: 16px; }
         .ev-ds-item { padding: 10px 12px; border-radius: 8px; cursor: pointer; margin-bottom: 6px; border: 1px solid transparent; transition: all .15s; }
         .ev-ds-item:hover { background: #f5f5fa; }
-        .ev-ds-item.active { background: #f0f0ff; border-color: #c7c7f5; }
-        .ev-ds-name { font-size: 14px; font-weight: 600; color: #1a1a2e; }
+        .ev-ds-item.active { background: #eef0ff; border-color: #c7c7f5; }
+        .ev-ds-name { font-size: 14px; font-weight: 600; color: #18181b; }
         .ev-ds-meta { font-size: 12px; color: #999; margin-top: 2px; }
-        .ev-section-title { font-size: 15px; font-weight: 700; color: #1a1a2e; margin: 0 0 12px; display:flex; align-items:center; justify-content:space-between; }
+        .ev-section-title { font-size: 15px; font-weight: 700; color: #18181b; margin: 0 0 12px; display:flex; align-items:center; justify-content:space-between; }
         .ev-metric { display: inline-flex; flex-direction: column; align-items: center; background: #f8f8fc; border-radius: 10px; padding: 10px 18px; margin-right: 12px; }
-        .ev-metric-val { font-size: 22px; font-weight: 800; color: #667eea; }
+        .ev-metric-val { font-size: 22px; font-weight: 800; color: #6366f1; }
         .ev-metric-label { font-size: 12px; color: #888; margin-top: 2px; }
         .ev-run-row { display:flex; align-items:center; justify-content:space-between; padding: 10px 12px; border-radius: 8px; background:#f8f8fc; margin-bottom: 8px; cursor:pointer; }
-        .ev-run-row:hover { background:#f0f0ff; }
+        .ev-run-row:hover { background:#eef0ff; }
         .ev-run-name { font-weight: 600; font-size: 14px; color:#333; }
         .ev-run-sub { font-size: 12px; color:#999; margin-top:2px; }
-        .nav-bar { background: #fff; border-bottom: 1px solid #e8e8f0; padding: 12px 24px; display: flex; align-items: center; gap: 16px; }
-        .nav-logo { font-size: 18px; font-weight: 700; color: #667eea; text-decoration: none; }
-        .nav-link { font-size: 14px; color: #666; text-decoration: none; padding: 6px 12px; border-radius: 6px; }
-        .nav-link:hover, .nav-link.active { background: #f0f0ff; color: #667eea; }
+        .nav-bar { background: rgba(255,255,255,0.78); backdrop-filter: saturate(180%) blur(16px); -webkit-backdrop-filter: saturate(180%) blur(16px); border-bottom: 1px solid #ebebf0; padding: 13px 24px; display: flex; align-items: center; gap: 14px; position: sticky; top: 0; z-index: 50; box-shadow: 0 1px 2px rgba(24,24,40,0.04); }
+        .nav-logo { font-size: 18px; font-weight: 800; text-decoration: none; letter-spacing: -0.3px; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #d946ef 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; margin-right: 6px; }
+        .nav-link { font-size: 14px; color: #52525b; text-decoration: none; padding: 7px 14px; border-radius: 10px; transition: all .2s cubic-bezier(0.22,1,0.36,1); font-weight: 500; }
+        .nav-link:hover { background: #eef0ff; color: #6366f1; transform: translateY(-1px); }
+        .nav-link.active { background: #eef0ff; color: #6366f1; }
         .empty-state { text-align: center; padding: 50px 20px; color: #bbb; }
         .empty-state .empty-icon { font-size: 44px; margin-bottom: 10px; }
         .score-pill { font-weight:700; padding:2px 10px; border-radius:12px; font-size:12px; }

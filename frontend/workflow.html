@@ -6,6 +6,9 @@
     <title>工作流编排 - 智能Agent平台</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔀</text></svg>">
     <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="workflow-style.css">
     <!-- dagre 自动布局库 -->
@@ -188,7 +191,7 @@
                             <polygon points="0 0, 8 3, 0 6" fill="#c0c0d0" />
                         </marker>
                         <marker id="arrowhead-active" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
-                            <polygon points="0 0, 8 3, 0 6" fill="#667eea" />
+                            <polygon points="0 0, 8 3, 0 6" fill="#6366f1" />
                         </marker>
                         <!-- 节点渐变色 -->
                         <linearGradient id="grad-start" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -255,7 +258,7 @@
                         <path :d="getEdgePath(edge)"
                               class="edge-path"
                               :class="{'edge-selected': selectedEdgeId === edge.id, 'edge-animated': edgeAnimations[edge.id]}"
-                              :style="selectedEdgeId === edge.id ? 'stroke:#667eea;stroke-width:2.5;marker-end:url(#arrowhead-active)' : ''"
+                              :style="selectedEdgeId === edge.id ? 'stroke:#6366f1;stroke-width:2.5;marker-end:url(#arrowhead-active)' : ''"
                               @click.stop="selectEdge(edge.id)" />
                         <!-- 边标签（条件分支名称） -->
                         <g v-if="edge.label">
@@ -271,7 +274,7 @@
                     </g>
 
                     <!-- 正在拖拽的连线 -->
-                    <path v-if="draggingEdge" :d="draggingEdgePath" class="edge-path" style="stroke:#667eea;stroke-dasharray:5 3;" />
+                    <path v-if="draggingEdge" :d="draggingEdgePath" class="edge-path" style="stroke:#6366f1;stroke-dasharray:5 3;" />
 
                     <!-- 节点 -->
                     <g v-for="node in editorNodes" :key="node.id"

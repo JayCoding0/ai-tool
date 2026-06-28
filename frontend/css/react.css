@@ -1,0 +1,200 @@
+/* ============================================================
+   react.css —— ReAct 推理链路 / 多 Agent 分组 / 子步骤明细
+   ============================================================ */
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+.tool-spinner {
+    width: 16px; height: 16px;
+    border: 2px solid var(--react-summary-border);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    flex-shrink: 0;
+}
+
+/* 工具调用进度块 */
+.tool-calling-block {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--tool-call-bg);
+    border: 1px solid var(--tool-call-border);
+    border-radius: var(--radius); padding: 11px 15px;
+    margin-bottom: 8px; font-size: 13px; color: var(--tool-call-color);
+    box-shadow: var(--shadow-xs);
+}
+
+/* ReAct 步骤列表 */
+.react-steps { margin-bottom: 12px; }
+.react-summary {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 14px;
+    background: var(--react-summary-bg);
+    border: 1px solid var(--react-summary-border);
+    border-radius: var(--radius);
+    margin-bottom: 9px; cursor: pointer; user-select: none;
+    transition: background var(--transition), box-shadow var(--transition);
+    font-size: 12px;
+}
+.react-summary:hover { background: var(--react-summary-hover); box-shadow: var(--shadow-xs); }
+.react-summary-icon { font-size: 15px; }
+.react-summary-title { flex: 1; font-weight: 700; color: var(--primary); }
+.react-summary-badges { display: flex; gap: 5px; align-items: center; }
+.react-badge { display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: 20px; font-size: 10px; font-weight: 600; }
+.react-badge.loop { background: #ede9fe; color: #7c3aed; }
+.react-badge.tool { background: #d1fae5; color: #065f46; }
+.react-badge.running { background: #fef3c7; color: #92400e; }
+.react-summary-toggle { color: var(--text-muted); font-size: 10px; }
+
+/* 时间线 */
+.react-timeline { position: relative; padding-left: 22px; }
+.react-timeline::before {
+    content: ''; position: absolute;
+    left: 7px; top: 8px; bottom: 8px; width: 2px;
+    background: var(--react-timeline-gradient); border-radius: 2px;
+}
+.react-step-item {
+    position: relative; margin-bottom: 7px;
+    border-radius: var(--radius);
+    border: 1px solid var(--react-step-border);
+    background: var(--react-step-bg);
+    overflow: hidden; animation: fadeInUp 0.3s var(--ease); font-size: 13px;
+}
+.react-step-item::before {
+    content: ''; position: absolute;
+    left: -16px; top: 13px; width: 9px; height: 9px;
+    border-radius: 50%; background: #c7d2fe;
+    border: 2px solid var(--card-bg); box-shadow: 0 0 0 1px #c7d2fe;
+}
+.react-step-item.action::before { background: #6ee7b7; box-shadow: 0 0 0 1px #6ee7b7; }
+.react-step-item.thought { border-color: var(--react-thought-border); background: var(--react-thought-bg); }
+.react-step-item.action { border-color: var(--react-action-border); background: var(--react-action-bg); }
+.react-step-item.action .react-step-header { color: #059669; }
+.react-step-header {
+    display: flex; align-items: center; gap: 7px;
+    padding: 8px 13px; color: var(--primary);
+    user-select: none; transition: background var(--transition);
+}
+.react-step-header:hover { background: rgba(120,120,140,0.05); }
+.react-step-icon { display: flex; align-items: center; flex-shrink: 0; font-size: 13px; }
+.tool-done-icon { color: #16a34a; font-weight: bold; font-size: 14px; }
+.react-step-label { flex: 1; line-height: 1.4; }
+.react-step-args { color: var(--text-secondary); font-size: 11px; margin-left: 6px; background: rgba(120,120,140,0.1); padding: 1px 7px; border-radius: 5px; }
+.react-round-badge { font-size: 10px; font-weight: 700; background: #dbeafe; color: #1d4ed8; padding: 1px 7px; border-radius: 10px; flex-shrink: 0; }
+.react-step-toggle { color: var(--text-muted); font-size: 10px; flex-shrink: 0; }
+.react-step-body { padding: 9px 13px 11px; border-top: 1px solid rgba(120,120,140,0.1); }
+.thought-body { color: var(--text-secondary); font-style: italic; line-height: 1.6; white-space: pre-wrap; }
+.react-detail-block { margin-bottom: 9px; }
+.react-detail-block:last-child { margin-bottom: 0; }
+.react-detail-label { font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-bottom: 5px; }
+.react-detail-pre {
+    background: var(--code-bg); color: var(--code-color);
+    border: 1px solid var(--code-border); border-radius: var(--radius-xs);
+    padding: 9px 11px; font-size: 11px; line-height: 1.5;
+    overflow-x: auto; white-space: pre-wrap; word-break: break-all;
+    max-height: 200px; overflow-y: auto; font-family: var(--font-mono);
+    box-shadow: var(--code-shadow);
+}
+
+/* ===== Agent 分组卡片 ===== */
+.react-agent-group {
+    position: relative; margin-bottom: 9px;
+    border-radius: var(--radius-lg);
+    border: 1.5px solid var(--agent-reply-border);
+    background: var(--react-step-bg);
+    overflow: hidden; animation: fadeInUp 0.3s var(--ease);
+}
+.react-agent-group::before {
+    content: ''; position: absolute;
+    left: -16px; top: 15px; width: 9px; height: 9px;
+    border-radius: 50%; background: var(--accent);
+    border: 2px solid var(--card-bg); box-shadow: 0 0 0 1px var(--accent);
+}
+.react-agent-group-header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 11px 15px;
+    background: var(--agent-header-bg);
+    cursor: pointer; user-select: none;
+    transition: filter var(--transition);
+    border-bottom: 1px solid var(--agent-reply-border);
+}
+.react-agent-group-header:hover { filter: brightness(0.98); }
+.react-agent-group-icon { font-size: 19px; flex-shrink: 0; }
+.react-agent-group-name { font-size: 13px; font-weight: 800; color: var(--accent); flex-shrink: 0; }
+.react-agent-group-count { font-size: 10px; font-weight: 600; color: var(--accent); background: var(--primary-light); padding: 1px 8px; border-radius: 10px; flex-shrink: 0; }
+.react-agent-group-rounds { font-size: 10px; font-weight: 700; color: #1d4ed8; background: #dbeafe; padding: 1px 7px; border-radius: 10px; flex-shrink: 0; }
+.react-agent-group-body { padding: 9px; display: flex; flex-direction: column; gap: 7px; }
+.react-agent-group-body .react-step-item { border-radius: var(--radius-sm); }
+.react-agent-group-body .react-step-item::before { display: none; }
+
+/* Agent 调用链 */
+.agent-call-header { background: var(--agent-header-bg) !important; border-left: 3px solid var(--accent) !important; }
+.agent-name-badge { display: inline-block; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; padding: 1px 9px; border-radius: 10px; margin-left: 4px; letter-spacing: 0.3px; }
+.agent-call-body { background: var(--agent-body-bg); border-top: 1px solid var(--agent-reply-border) !important; }
+.agent-task-text { background: var(--sub-steps-bg); border-radius: var(--radius-sm); padding: 11px 15px; font-size: 12px; color: var(--text-secondary); line-height: 1.7; white-space: pre-wrap; word-break: break-word; border-left: 3px solid var(--accent); }
+.agent-reply-text { background: var(--agent-reply-bg); border: 1px solid var(--agent-reply-border); border-radius: var(--radius-sm); padding: 13px 15px; font-size: 13px; color: var(--text-primary); line-height: 1.8; max-height: 400px; overflow-y: auto; }
+.agent-reply-text p { margin: 0 0 8px; }
+.agent-reply-text p:last-child { margin-bottom: 0; }
+.agent-waiting { font-size: 12px; color: var(--text-muted); padding: 9px 0; display: flex; align-items: center; gap: 2px; }
+.agent-waiting strong { color: var(--accent); font-weight: 600; }
+
+/* 子 Agent 工具明细标题 */
+.sub-agent-detail-label { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--primary); margin-bottom: 9px; padding-bottom: 7px; border-bottom: 1px dashed var(--react-summary-border); }
+.sub-agent-detail-icon { font-size: 14px; }
+.sub-agent-detail-count { margin-left: auto; font-size: 10px; font-weight: 600; color: var(--accent); background: var(--primary-light); padding: 1px 8px; border-radius: 10px; }
+
+/* 子步骤 */
+.sub-steps-list { display: flex; flex-direction: column; gap: 7px; margin-top: 7px; padding: 9px 11px; background: var(--sub-steps-bg); border-radius: var(--radius); border: 1px solid var(--sub-steps-border); position: relative; }
+.sub-steps-list::before { content: ''; position: absolute; left: 22px; top: 16px; bottom: 16px; width: 1.5px; background: var(--react-timeline-gradient); border-radius: 2px; }
+.sub-step-item { position: relative; border-radius: var(--radius-sm); overflow: hidden; background: var(--sub-step-bg); border: 1px solid var(--sub-step-border); margin-left: 20px; transition: border-color var(--transition), box-shadow var(--transition); }
+.sub-step-item:hover { border-color: var(--react-summary-border); box-shadow: var(--card-hover-shadow); }
+.sub-step-item::before { content: ''; position: absolute; left: -14px; top: 12px; width: 7px; height: 7px; border-radius: 50%; background: #c7d2fe; border: 1.5px solid var(--card-bg); box-shadow: 0 0 0 1px #c7d2fe; z-index: 1; }
+.sub-step-item.sub-step-done::before { background: #6ee7b7; box-shadow: 0 0 0 1px #6ee7b7; }
+.sub-step-item.sub-step-calling::before { background: #fbbf24; box-shadow: 0 0 0 1px #fbbf24; animation: nodePulse 1.5s ease-in-out infinite; }
+.sub-step-item.sub-step-thought::before { background: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+@keyframes nodePulse { 0%,100%{box-shadow:0 0 0 1px #fbbf24} 50%{box-shadow:0 0 0 4px rgba(251,191,36,0.3)} }
+.sub-step-header { display: flex; align-items: center; gap: 8px; padding: 9px 13px; font-size: 12px; color: var(--text-secondary); transition: background var(--transition); user-select: none; }
+.sub-step-header:hover { background: var(--sub-step-hover-bg); }
+.sub-step-icon { display: flex; align-items: center; justify-content: center; width: 18px; height: 18px; flex-shrink: 0; }
+.sub-step-label { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; overflow: hidden; }
+.sub-step-toggle { margin-left: auto; color: var(--text-muted); font-size: 10px; flex-shrink: 0; }
+.sub-step-body { padding: 5px 13px 11px; border-top: 1px solid var(--sub-step-border); background: var(--sub-body-bg); }
+.sub-tool-name-badge { display: inline-block; font-weight: 600; font-size: 11px; color: var(--primary); background: var(--primary-light); padding: 1px 8px; border-radius: var(--radius-xs); border: 1px solid var(--react-summary-border); }
+.sub-tool-args-preview { color: var(--text-muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px; }
+.sub-tool-spinner { width: 12px; height: 12px; border: 1.5px solid var(--react-summary-border); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
+.sub-tool-done-icon { color: #10b981; font-size: 12px; font-weight: bold; }
+.sub-step-status { font-size: 10px; font-weight: 600; padding: 1px 8px; border-radius: 10px; flex-shrink: 0; }
+.sub-step-status.calling { color: #d97706; background: #fef3c7; animation: statusPulse 2s ease-in-out infinite; }
+.sub-step-status.done { color: #059669; background: #d1fae5; }
+@keyframes statusPulse { 0%,100%{opacity:1} 50%{opacity:0.6} }
+.sub-thought-header { background: var(--sub-thought-header-bg); }
+.sub-thought-icon { font-size: 13px; }
+.sub-thought-body { background: var(--sub-thought-body-bg); }
+.sub-thought-content { font-size: 12px; color: var(--text-secondary); line-height: 1.7; padding: 4px 0; white-space: pre-wrap; font-style: italic; }
+.sub-detail-section { margin-top: 9px; }
+.sub-detail-section:first-child { margin-top: 4px; }
+.sub-detail-label { font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-bottom: 5px; display: flex; align-items: center; gap: 4px; }
+.sub-detail-label-icon { font-size: 12px; }
+.sub-detail-pre { background: var(--code-bg); color: var(--code-color); border: 1px solid var(--code-border); border-radius: var(--radius-sm); padding: 11px 13px; font-size: 11px; line-height: 1.6; overflow-x: auto; white-space: pre-wrap; word-break: break-all; max-height: 180px; overflow-y: auto; font-family: var(--font-mono); box-shadow: var(--code-shadow); }
+
+/* 子 Agent 回复 */
+.sub-agent-reply-block { margin-top: 11px; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--agent-reply-border); background: var(--agent-reply-bg); }
+.sub-agent-reply-header { display: flex; align-items: center; gap: 6px; padding: 9px 13px; background: var(--sub-reply-header-bg); border-bottom: 1px solid var(--agent-reply-border); font-size: 12px; font-weight: 700; color: var(--accent); }
+.sub-agent-reply-icon { font-size: 14px; }
+.sub-agent-reply-title { flex: 1; }
+.sub-agent-reply-content { padding: 13px 15px; font-size: 13px; color: var(--text-primary); line-height: 1.8; max-height: 400px; overflow-y: auto; }
+.sub-agent-reply-content p { margin: 0 0 8px; }
+.sub-agent-reply-content p:last-child { margin-bottom: 0; }
+.sub-agent-reply-content ul, .sub-agent-reply-content ol { padding-left: 20px; margin: 4px 0 8px; }
+.sub-agent-reply-content li { margin-bottom: 3px; }
+.sub-agent-reply-content code:not(.hljs) { background: var(--primary-light); padding: 1px 5px; border-radius: 4px; font-size: 12px; font-family: var(--font-mono); color: var(--accent); }
+.sub-agent-reply-content strong { font-weight: 600; color: var(--text-primary); }
+
+/* ===== 暗色微调（硬编码徽章色） ===== */
+[data-theme="dark"] .react-badge.loop { background: #251c40; color: #a78bfa; }
+[data-theme="dark"] .react-badge.tool { background: #15241d; color: #6ee7b7; }
+[data-theme="dark"] .react-badge.running { background: #2a2010; color: #fbbf24; }
+[data-theme="dark"] .react-round-badge { background: #1a2545; color: #818cf8; }
+[data-theme="dark"] .react-agent-group-rounds { background: #1a2545; color: #818cf8; }
+[data-theme="dark"] .sub-step-status.calling { color: #fbbf24; background: #2a2010; }
+[data-theme="dark"] .sub-step-status.done { color: #6ee7b7; background: #15241d; }
+[data-theme="dark"] .react-step-item.action .react-step-header { color: #6ee7b7; }
+[data-theme="dark"] .md-body pre code.hljs { background: var(--codeblock-bg); color: #c9d1d9; }

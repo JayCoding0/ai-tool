@@ -188,59 +188,6 @@ function useTools() {
         return importPendingTools.value.some(t => t.name === toolName);
     }
 
-    // 持久化导入记录到 localStorage
-    const IMPORT_STORAGE_KEY = 'agent_imported_tools_v1';
-    function saveImportedTools() {
-        // 格式：{ agentName: [{ name, display_name, description }, ...] }
-        const record = {};
-        for (const agent of agentList.value) {
-            if (agent.is_master) continue;
-            // 找出该 Agent 中"额外导入"的工具（不在原始 default_tools 里的）
-            // 这里直接保存整个 tools 列表，加载时合并
-            if (agent._importedTools && agent._importedTools.length > 0) {
-                record[agent.name] = agent._importedTools;
-            }
-        }
-        try {
-            localStorage.setItem(IMPORT_STORAGE_KEY, JSON.stringify(record));
-        } catch (e) {}
-    }
-
-    // 从 localStorage 恢复导入记录，合并到 agentList
-    function restoreImportedTools() {
-        try {
-            const raw = localStorage.getItem(IMPORT_STORAGE_KEY);
-            if (!raw) return;
-            const record = JSON.parse(raw);
-            for (const agent of agentList.value) {
-                if (agent.is_master) continue;
-                const imported = record[agent.name];
-                if (!imported || imported.length === 0) continue;
-                if (!agent._importedTools) agent._importedTools = [];
-                for (const tool of imported) {
-                    // 合并到 tools 展示列表（去重）
-                    if (!agent.tools) agent.tools = [];
-                    if (!agent.tools.find(t => t.name === tool.name)) {
-                        agent.tools.push(tool);
-                    }
-                    // 合并到 default_tools
-                    if (!agent.default_tools) agent.default_tools = [];
-                    if (!agent.default_tools.includes(tool.name)) {
-                        agent.default_tools.push(tool.name);
-                    }
-                    // 合并到 _importedTools 记录
-                    if (!agent._importedTools.find(t => t.name === tool.name)) {
-                        agent._importedTools.push(tool);
-                    }
-                    // 默认启用
-                    if (!subAgentEnabledTools.value.includes(tool.name)) {
-                        subAgentEnabledTools.value.push(tool.name);
-                    }
-                }
-            }
-        } catch (e) {}
-    }
-
     // 确认导入：将待选工具加入目标 Agent，并持久化到后端
     async function confirmImport() {
         if (!importTargetAgent.value || importPendingTools.value.length === 0) {

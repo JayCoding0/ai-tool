@@ -55,10 +55,10 @@ const APP_TEMPLATE = `
         </div>
 
         <div class="sidebar-footer">
-            <div style="display:flex;gap:6px;margin-bottom:8px;">
-                <a href="/knowledge.html" style="flex:1;display:flex;align-items:center;justify-content:center;gap:4px;padding:6px 0;border-radius:6px;background:#f5f5fa;color:#666;text-decoration:none;font-size:12px;transition:all .2s;" onmouseover="this.style.background='#f0f0ff';this.style.color='#667eea'" onmouseout="this.style.background='#f5f5fa';this.style.color='#666'">📚 知识库</a>
-                <a href="/workflow.html" style="flex:1;display:flex;align-items:center;justify-content:center;gap:4px;padding:6px 0;border-radius:6px;background:#f5f5fa;color:#666;text-decoration:none;font-size:12px;transition:all .2s;" onmouseover="this.style.background='#f0f0ff';this.style.color='#667eea'" onmouseout="this.style.background='#f5f5fa';this.style.color='#666'">🔀 工作流</a>
-                <a href="/eval.html" style="flex:1;display:flex;align-items:center;justify-content:center;gap:4px;padding:6px 0;border-radius:6px;background:#f5f5fa;color:#666;text-decoration:none;font-size:12px;transition:all .2s;" onmouseover="this.style.background='#f0f0ff';this.style.color='#667eea'" onmouseout="this.style.background='#f5f5fa';this.style.color='#666'">📊 评估</a>
+            <div class="footer-nav">
+                <a href="/knowledge.html" class="footer-nav-link">📚 知识库</a>
+                <a href="/workflow.html" class="footer-nav-link">🔀 工作流</a>
+                <a href="/eval.html" class="footer-nav-link">📊 评估</a>
             </div>
             <div class="theme-toggle-row">
                 <span>外观</span>

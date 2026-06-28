@@ -1,0 +1,207 @@
+/* ============================================================
+   设计令牌（Design Tokens）—— 现代化配色 / 阴影 / 圆角 / 动效
+   所有页面共享，亮色为默认，[data-theme="dark"] 为暗色
+   ============================================================ */
+:root {
+    /* ---- 品牌色 ---- */
+    --primary: #6366f1;          /* indigo-500 */
+    --primary-strong: #4f46e5;   /* indigo-600 hover */
+    --primary-light: #eef0ff;
+    --accent: #8b5cf6;           /* violet */
+    --accent-2: #d946ef;         /* fuchsia */
+    --brand-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #d946ef 100%);
+    --brand-gradient-soft: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+
+    /* ---- 中性 / 文字 ---- */
+    --text-primary: #18181b;
+    --text-secondary: #52525b;
+    --text-muted: #9ca3af;
+    --border: #ebebf0;
+    --border-strong: #dcdce4;
+
+    /* ---- 背景 ---- */
+    --bg: #ffffff;
+    --main-bg: #fbfbfd;
+    --sidebar-bg: #f6f6f9;
+    --sidebar-hover: #ededf3;
+    --sidebar-active: #e7e9ff;
+    --msg-bg: #f3f4f8;
+    --card-bg: #ffffff;
+    --card-border: #ebebf0;
+    --input-bg: #f5f5f9;
+    --input-border: #e6e6ee;
+    --input-focus-bg: #ffffff;
+    --placeholder-color: #b4b4c0;
+
+    /* ---- 圆角 ---- */
+    --radius-xs: 6px;
+    --radius-sm: 8px;
+    --radius: 12px;
+    --radius-lg: 16px;
+    --radius-xl: 22px;
+
+    /* ---- 阴影体系（柔和带品牌色调） ---- */
+    --shadow-xs: 0 1px 2px rgba(24,24,40,0.05);
+    --shadow-sm: 0 2px 8px rgba(24,24,40,0.06);
+    --shadow-md: 0 6px 20px rgba(24,24,40,0.08);
+    --shadow-lg: 0 12px 36px rgba(24,24,40,0.10);
+    --shadow-xl: 0 24px 60px rgba(24,24,40,0.14);
+    --shadow-brand: 0 8px 28px rgba(99,102,241,0.28);
+    --card-hover-shadow: 0 8px 24px rgba(99,102,241,0.12);
+
+    /* ---- 玻璃态 ---- */
+    --glass-bg: rgba(255,255,255,0.72);
+    --glass-border: rgba(255,255,255,0.5);
+    --glass-blur: saturate(180%) blur(16px);
+
+    /* ---- 动效 ---- */
+    --ease: cubic-bezier(0.22, 1, 0.36, 1);
+    --transition: 0.22s var(--ease);
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+
+    /* ---- 代码块 ---- */
+    --code-bg: #f6f7fb;
+    --code-color: #24292f;
+    --code-border: #e8e9f2;
+    --code-shadow: inset 0 1px 2px rgba(0,0,0,0.03);
+    --codeblock-header-bg: #f3f4f8;
+    --codeblock-header-border: #e8e9f2;
+    --codeblock-border: #e8e9f2;
+    --codeblock-bg: #f9fafc;
+
+    /* ---- 工具调用 ---- */
+    --tool-call-bg: linear-gradient(135deg, #eff3ff, #f0f0ff);
+    --tool-call-border: #c7d2fe;
+    --tool-call-color: #4f46e5;
+
+    /* ---- ReAct 步骤 ---- */
+    --react-summary-bg: linear-gradient(95deg, #eef1ff 0%, #f3eeff 100%);
+    --react-summary-border: #dfe2fb;
+    --react-summary-hover: linear-gradient(95deg, #e6eaff 0%, #ece3ff 100%);
+    --react-timeline-gradient: linear-gradient(180deg, #c7d2fe 0%, #a7f3d0 100%);
+    --react-step-bg: #fafafe;
+    --react-step-border: #ebebf5;
+    --react-thought-bg: #f6f3ff;
+    --react-thought-border: #e6e0ff;
+    --react-action-bg: #f0fdf7;
+    --react-action-border: #cdf3df;
+
+    /* ---- Agent ---- */
+    --agent-header-bg: linear-gradient(135deg, #efe9ff 0%, #e3ebff 100%);
+    --agent-body-bg: #faf7ff;
+    --agent-reply-bg: #ffffff;
+    --agent-reply-border: #ecdcff;
+
+    /* ---- 子步骤 ---- */
+    --sub-steps-bg: linear-gradient(135deg, #f8faff 0%, #faf8ff 100%);
+    --sub-steps-border: #e6e9fb;
+    --sub-step-bg: #ffffff;
+    --sub-step-border: #eef0f8;
+    --sub-step-hover-bg: #f7f8ff;
+    --sub-body-bg: #fcfcff;
+    --sub-thought-header-bg: linear-gradient(135deg, #faf7ff 0%, #f6f3ff 100%);
+    --sub-thought-body-bg: #faf8ff;
+    --sub-reply-header-bg: linear-gradient(135deg, #faf7ff 0%, #f2f0ff 100%);
+
+    /* ---- 思考块 ---- */
+    --think-bg: #fafafc;
+    --think-border: #f0f0f5;
+
+    /* ---- 弹窗 ---- */
+    --modal-bg: #ffffff;
+    --modal-border: #f0f0f5;
+
+    /* ---- 用户气泡 ---- */
+    --user-bubble-bg: var(--brand-gradient-soft);
+    --user-bubble-shadow: rgba(99,102,241,0.30);
+}
+
+/* ===================== 暗色主题 ===================== */
+[data-theme="dark"] {
+    --primary: #818cf8;
+    --primary-strong: #6d8cf8;
+    --primary-light: #20223f;
+    --accent: #a78bfa;
+    --accent-2: #e879f9;
+    --brand-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #c026d3 100%);
+    --brand-gradient-soft: linear-gradient(135deg, #6d8cf8 0%, #a78bfa 100%);
+
+    --text-primary: #e7e8f2;
+    --text-secondary: #a4a8bd;
+    --text-muted: #6c708a;
+    --border: #2a2c45;
+    --border-strong: #353855;
+
+    --bg: #0e0f1a;
+    --main-bg: #0e0f1a;
+    --sidebar-bg: #15162a;
+    --sidebar-hover: #20223c;
+    --sidebar-active: #272a4c;
+    --msg-bg: #1a1c2e;
+    --card-bg: #16182b;
+    --card-border: #2a2c45;
+    --input-bg: #16182b;
+    --input-border: #2a2c45;
+    --input-focus-bg: #1a1c2e;
+    --placeholder-color: #494d66;
+
+    --shadow-xs: 0 1px 2px rgba(0,0,0,0.4);
+    --shadow-sm: 0 2px 8px rgba(0,0,0,0.45);
+    --shadow-md: 0 6px 20px rgba(0,0,0,0.5);
+    --shadow-lg: 0 12px 36px rgba(0,0,0,0.55);
+    --shadow-xl: 0 24px 60px rgba(0,0,0,0.6);
+    --shadow-brand: 0 8px 28px rgba(99,102,241,0.4);
+    --card-hover-shadow: 0 8px 24px rgba(99,102,241,0.22);
+
+    --glass-bg: rgba(21,22,42,0.72);
+    --glass-border: rgba(255,255,255,0.06);
+
+    --code-bg: #1a1c2e;
+    --code-color: #c9d1d9;
+    --code-border: #2a2c45;
+    --code-shadow: inset 0 1px 3px rgba(0,0,0,0.4);
+    --codeblock-header-bg: #1a1c2e;
+    --codeblock-header-border: #2a2c45;
+    --codeblock-border: #2a2c45;
+    --codeblock-bg: #16182b;
+
+    --tool-call-bg: linear-gradient(135deg, #181f3c, #1c2147);
+    --tool-call-border: #2a3a64;
+    --tool-call-color: #818cf8;
+
+    --react-summary-bg: linear-gradient(95deg, #181d3e 0%, #1e1b40 100%);
+    --react-summary-border: #2c2f5e;
+    --react-summary-hover: linear-gradient(95deg, #1d2350 0%, #241e60 100%);
+    --react-timeline-gradient: linear-gradient(180deg, #3a3d7a 0%, #2a6050 100%);
+    --react-step-bg: #16182b;
+    --react-step-border: #2a2c45;
+    --react-thought-bg: #1c1834;
+    --react-thought-border: #2e2852;
+    --react-action-bg: #15241d;
+    --react-action-border: #284038;
+
+    --agent-header-bg: linear-gradient(135deg, #1d1838 0%, #181f40 100%);
+    --agent-body-bg: #18142e;
+    --agent-reply-bg: #16182b;
+    --agent-reply-border: #342a57;
+
+    --sub-steps-bg: linear-gradient(135deg, #15172e 0%, #181630 100%);
+    --sub-steps-border: #282b52;
+    --sub-step-bg: #16182b;
+    --sub-step-border: #232540;
+    --sub-step-hover-bg: #1e2038;
+    --sub-body-bg: #15172a;
+    --sub-thought-header-bg: linear-gradient(135deg, #1c1834 0%, #181630 100%);
+    --sub-thought-body-bg: #18142e;
+    --sub-reply-header-bg: linear-gradient(135deg, #1c1834 0%, #181838 100%);
+
+    --think-bg: #16182b;
+    --think-border: #2a2c45;
+
+    --modal-bg: #16182b;
+    --modal-border: #2a2c45;
+
+    --user-bubble-bg: var(--brand-gradient-soft);
+    --user-bubble-shadow: rgba(99,102,241,0.4);
+}
