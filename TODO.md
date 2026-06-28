@@ -440,9 +440,11 @@
 - **现状**: 前端 Vue 3 CDN 零构建（适合 Demo，缺组件化 / TS / 构建优化）；SSE + 部分内存态仓储（`infrastructure/session/memory_repository.go`）多实例部署时存在状态一致性风险
 - **改进方案**:
   - [ ] 前端引入构建工具（Vite）+ TypeScript + 组件化拆分 + 按需加载
-  - [ ] 会话 / 任务状态外置（Redis），支持多实例水平扩展
+  - [ ] 会话 / 任务状态外置（Redis），支持多实例水平扩展（缓存基础设施已就绪，见 P1 #28）
   - [ ] 引入任务队列（异步执行长任务，见 P3 #17）
-  - [ ] 提供 K8s Helm Chart / 健康检查 / 优雅退出
+  - [x] 健康检查端点（`/healthz` 存活 + `/readyz` 就绪，探针绕过认证/限流）+ HTTP 服务优雅退出（SIGINT/SIGTERM，等待在途请求最多 15s）+ docker-compose 健康检查切换到 `/healthz`
+  - [ ] 提供 K8s Helm Chart
+- **相关文件**: `internal/bootstrap/health.go`, `internal/bootstrap/server.go`, `docker-compose.yml`
 - **预估工作量**: 1.5 个月
 
 ---

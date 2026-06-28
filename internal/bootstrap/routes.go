@@ -16,6 +16,9 @@ import (
 func RegisterRoutes(chatHandler *http_handler.ChatHandler, appConfig *config.Config, a2aService *application.A2AService) {
 	mux := http.NewServeMux()
 
+	// 健康检查端点（注册在中间件链之外，不受认证/限流影响，供 K8s 探针使用）
+	registerHealthEndpoints()
+
 	// 会话 & 聊天接口
 	mux.HandleFunc("/api/chat/stream", chatHandler.HandleChatStream)
 	mux.HandleFunc("/api/history", chatHandler.HandleGetHistory)
