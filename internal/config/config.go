@@ -19,6 +19,27 @@ type Config struct {
 	Tools    ToolsConfig    `yaml:"tools"`
 	RAG      RAGConfig      `yaml:"rag"`
 	Memory   MemoryConfig   `yaml:"memory"`
+	Cache    CacheConfig    `yaml:"cache"`
+}
+
+// CacheConfig 缓存配置（Redis）
+type CacheConfig struct {
+	// Enabled 是否启用缓存，默认 false
+	Enabled bool `yaml:"enabled"`
+	// RedisAddr Redis 地址，如 localhost:6379
+	RedisAddr string `yaml:"redis_addr"`
+	// RedisDB Redis 数据库编号，默认 0
+	RedisDB int `yaml:"redis_db"`
+	// Password Redis 密码，遵循 secrets env-only 原则，仅通过环境变量 REDIS_PASSWORD 提供，不从配置文件读取
+	Password string `yaml:"-"`
+	// EmbedTTL Embedding 缓存过期时间（秒），<=0 表示永不过期，默认 0
+	EmbedTTL int `yaml:"embed_ttl"`
+	// SemanticEnabled 是否启用 LLM 语义缓存（相似问题复用历史回答），默认 false
+	SemanticEnabled bool `yaml:"semantic_enabled"`
+	// SemanticThreshold 语义相似度命中阈值 [0,1]，默认 0.92
+	SemanticThreshold float64 `yaml:"semantic_threshold"`
+	// SemanticMaxEntries 每个 scope 最多缓存的问答数，默认 50
+	SemanticMaxEntries int `yaml:"semantic_max_entries"`
 }
 
 // ServerConfig 服务器配置
@@ -192,6 +213,15 @@ func DefaultConfig() *Config {
 			Enabled:    true,
 			EmbedModel: "", // 留空时优先复用 RAG 的 embed_model
 		},
+		Cache: CacheConfig{
+			Enabled:            false,
+			RedisAddr:          "localhost:6379",
+			RedisDB:            0,
+			EmbedTTL:           0, // 永不过期（向量化结果确定性强，可长期缓存）
+			SemanticEnabled:    false,
+			SemanticThreshold:  0.92,
+			SemanticMaxEntries: 50,
+		},
 	}
 }
 
@@ -248,6 +278,12 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if v := os.Getenv("BAIDU_AK"); v != "" {
 		cfg.Tools.BaiduAK = v
+	}
+	if v := os.Getenv("REDIS_PASSWORD"); v != "" {
+		cfg.Cache.Password = v
+	}
+	if v := os.Getenv("REDIS_ADDR"); v != "" {
+		cfg.Cache.RedisAddr = v
 	}
 }
 
@@ -355,4 +391,22 @@ func mergeConfig(dst, src *Config) {
 		dst.Memory.EmbedModel = src.Memory.EmbedModel
 	}
 	dst.Memory.Enabled = src.Memory.Enabled
+	// Cache
+	if src.Cache.RedisAddr != "" {
+		dst.Cache.RedisAddr = src.Cache.RedisAddr
+	}
+	if src.Cache.RedisDB != 0 {
+		dst.Cache.RedisDB = src.Cache.RedisDB
+	}
+	if src.Cache.EmbedTTL != 0 {
+		dst.Cache.EmbedTTL = src.Cache.EmbedTTL
+	}
+	if src.Cache.SemanticThreshold != 0 {
+		dst.Cache.SemanticThreshold = src.Cache.SemanticThreshold
+	}
+	if src.Cache.SemanticMaxEntries != 0 {
+		dst.Cache.SemanticMaxEntries = src.Cache.SemanticMaxEntries
+	}
+	dst.Cache.SemanticEnabled = src.Cache.SemanticEnabled
+	dst.Cache.Enabled = src.Cache.Enabled
 }

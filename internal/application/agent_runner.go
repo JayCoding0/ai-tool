@@ -20,6 +20,7 @@ type agentRunner struct {
 	modelName string
 	sessID    session.SessionID
 	outCh     chan<- StreamChatResponse
+	usedTool  bool // 本次循环是否实际发生过工具调用（用于语义缓存判定，纯文本回答才可缓存）
 }
 
 // newAgentRunner 创建 ReAct 执行器
@@ -98,6 +99,7 @@ func (r *agentRunner) runReActLoop(ctx context.Context, messages []model.Message
 		}
 
 		// 有工具调用：推送思考内容（若有）
+		r.usedTool = true
 		if result.Content != "" {
 		logger.Debug("[ReAct] 模型思考过程",
 				zap.Int("round", round),

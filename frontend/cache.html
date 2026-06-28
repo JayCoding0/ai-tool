@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>缓存监控 - 智能Agent平台</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .ca-page { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
+        .ca-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+        .ca-header h1 { font-size: 22px; font-weight: 700; color: #18181b; margin: 0; }
+        .ca-card { background: #fff; border-radius: 12px; border: 1px solid #e8e8f0; padding: 20px; margin-bottom: 16px; }
+        .ca-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 16px; }
+        .ca-stat { background: #fff; border: 1px solid #e8e8f0; border-radius: 12px; padding: 18px 16px; text-align: center; }
+        .ca-stat-val { font-size: 30px; font-weight: 800; color: #6366f1; font-family: 'JetBrains Mono', monospace; line-height: 1.1; }
+        .ca-stat-label { font-size: 13px; color: #888; margin-top: 6px; }
+        .ca-section-title { font-size: 15px; font-weight: 700; color: #18181b; margin: 0 0 16px; display:flex; align-items:center; justify-content:space-between; }
+        .ca-ring-wrap { display:flex; align-items:center; gap: 28px; }
+        .ca-ring { position: relative; width: 160px; height: 160px; flex-shrink: 0; }
+        .ca-ring svg { transform: rotate(-90deg); }
+        .ca-ring-center { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+        .ca-ring-pct { font-size: 30px; font-weight: 800; color: #18181b; font-family: 'JetBrains Mono', monospace; }
+        .ca-ring-sub { font-size: 12px; color: #999; margin-top: 2px; }
+        .ca-legend { flex: 1; }
+        .ca-legend-row { display:flex; align-items:center; justify-content: space-between; padding: 8px 0; border-bottom: 1px dashed #eee; font-size: 14px; }
+        .ca-legend-row:last-child { border-bottom: none; }
+        .ca-dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:8px; }
+        .ca-bar-bg { background:#eef0f5; border-radius:8px; height:22px; overflow:hidden; position:relative; }
+        .ca-bar-fill { background: linear-gradient(90deg, #6366f1, #8b5cf6); height:100%; border-radius:8px; transition: width .4s ease; }
+        .ca-row { display:grid; grid-template-columns: 1.4fr 2fr 80px 80px 90px; align-items:center; gap:12px; padding:12px 8px; border-bottom:1px solid #f0f0f5; font-size:14px; }
+        .ca-row.head { font-weight:700; color:#666; background:#f8f8fc; border-radius:8px; }
+        .ca-cat-name { font-weight:600; color:#333; }
+        .nav-bar { background: rgba(255,255,255,0.78); backdrop-filter: saturate(180%) blur(16px); -webkit-backdrop-filter: saturate(180%) blur(16px); border-bottom: 1px solid #ebebf0; padding: 13px 24px; display: flex; align-items: center; gap: 14px; position: sticky; top: 0; z-index: 50; box-shadow: 0 1px 2px rgba(24,24,40,0.04); }
+        .nav-logo { font-size: 18px; font-weight: 800; text-decoration: none; letter-spacing: -0.3px; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #d946ef 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; margin-right: 6px; }
+        .nav-link { font-size: 14px; color: #52525b; text-decoration: none; padding: 7px 14px; border-radius: 10px; transition: all .2s cubic-bezier(0.22,1,0.36,1); font-weight: 500; }
+        .nav-link:hover { background: #eef0ff; color: #6366f1; transform: translateY(-1px); }
+        .nav-link.active { background: #eef0ff; color: #6366f1; }
+        .empty-state { text-align: center; padding: 50px 20px; color: #bbb; }
+        .empty-state .empty-icon { font-size: 44px; margin-bottom: 10px; }
+        .status-pill { font-weight:700; padding:3px 12px; border-radius:12px; font-size:13px; }
+        .status-on { background:#e6f7ee; color:#27ae60; }
+        .status-off { background:#fde8e8; color:#e74c3c; }
+    </style>
+</head>
+<body>
+<div id="ca-app">
+    <div class="nav-bar">
+        <a href="/" class="nav-logo">🤖 智能Agent平台</a>
+        <a href="/" class="nav-link">💬 对话</a>
+        <a href="/knowledge.html" class="nav-link">📚 知识库</a>
+        <a href="/workflow.html" class="nav-link">🔀 工作流</a>
+        <a href="/eval.html" class="nav-link">📊 评估</a>
+        <a href="/cache.html" class="nav-link active">⚡ 缓存</a>
+    </div>
+
+    <div class="ca-page">
+        <div class="ca-header">
+            <h1>⚡ 缓存命中率监控</h1>
+            <span>
+                <el-switch v-model="autoRefresh" active-text="自动刷新" style="margin-right:14px;" />
+                <el-button size="small" :icon="Refresh" @click="loadStats" :loading="loading">刷新</el-button>
+                <el-button size="small" type="danger" plain @click="clearCache">清空缓存</el-button>
+            </span>
+        </div>
+
+        <!-- 后端不可用提示 -->
+        <div v-if="!stats" class="ca-card empty-state">
+            <div class="empty-icon">🔌</div>
+            <div>{{ errorMsg || '加载中…' }}</div>
+            <div v-if="errorMsg" style="font-size:13px;color:#aaa;margin-top:10px;line-height:1.7;">
+                请在 <code>trpc_go.yaml</code> 的 <code>custom.cache</code> 中设置 <code>enabled: true</code>，<br/>
+                并确保本地 Redis 已启动（<code>brew services start redis</code>）后重启服务。
+            </div>
+        </div>
+
+        <template v-else>
+            <!-- 概览指标 -->
+            <div class="ca-grid">
+                <div class="ca-stat">
+                    <div class="ca-stat-val" :style="{color: stats.available ? '#27ae60' : '#e74c3c'}">
+                        {{ stats.available ? '在线' : '离线' }}
+                    </div>
+                    <div class="ca-stat-label">{{ stats.backend.toUpperCase() }} 后端状态</div>
+                </div>
+                <div class="ca-stat">
+                    <div class="ca-stat-val">{{ stats.entry_count < 0 ? '—' : stats.entry_count }}</div>
+                    <div class="ca-stat-label">缓存条目数</div>
+                </div>
+                <div class="ca-stat">
+                    <div class="ca-stat-val" style="color:#27ae60;">{{ stats.total_hits }}</div>
+                    <div class="ca-stat-label">总命中次数</div>
+                </div>
+                <div class="ca-stat">
+                    <div class="ca-stat-val" style="color:#e67e22;">{{ stats.total_miss }}</div>
+                    <div class="ca-stat-label">总未命中次数</div>
+                </div>
+            </div>
+
+            <!-- 总体命中率环形图 -->
+            <div class="ca-card">
+                <div class="ca-section-title"><span>📈 总体命中率</span></div>
+                <div class="ca-ring-wrap">
+                    <div class="ca-ring">
+                        <svg width="160" height="160" viewBox="0 0 160 160">
+                            <circle cx="80" cy="80" r="70" fill="none" stroke="#eef0f5" stroke-width="16"/>
+                            <circle cx="80" cy="80" r="70" fill="none" stroke="url(#grad)" stroke-width="16"
+                                    stroke-linecap="round"
+                                    :stroke-dasharray="ringCircumference"
+                                    :stroke-dashoffset="ringOffset"/>
+                            <defs>
+                                <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                                    <stop offset="0%" stop-color="#6366f1"/>
+                                    <stop offset="100%" stop-color="#d946ef"/>
+                                </linearGradient>
+                            </defs>
+                        </svg>
+                        <div class="ca-ring-center">
+                            <div class="ca-ring-pct">{{ (stats.hit_rate * 100).toFixed(1) }}%</div>
+                            <div class="ca-ring-sub">命中率</div>
+                        </div>
+                    </div>
+                    <div class="ca-legend">
+                        <div class="ca-legend-row">
+                            <span><span class="ca-dot" style="background:#6366f1;"></span>命中</span>
+                            <b>{{ stats.total_hits }} 次</b>
+                        </div>
+                        <div class="ca-legend-row">
+                            <span><span class="ca-dot" style="background:#e0e2ea;"></span>未命中</span>
+                            <b>{{ stats.total_miss }} 次</b>
+                        </div>
+                        <div class="ca-legend-row">
+                            <span>总查询</span>
+                            <b>{{ stats.total_hits + stats.total_miss }} 次</b>
+                        </div>
+                        <div class="ca-legend-row" style="color:#888;font-size:12px;">
+                            <span>命中率越高，越多请求被缓存直接返回，节省 API 调用与延迟。</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 分类命中率 -->
+            <div class="ca-card">
+                <div class="ca-section-title"><span>🗂️ 分类命中率</span></div>
+                <div v-if="stats.categories.length === 0" class="empty-state" style="padding:30px;">
+                    <div class="empty-icon">📭</div>
+                    <div>暂无缓存调用记录，使用知识库检索 / 记忆功能后将产生统计</div>
+                </div>
+                <template v-else>
+                    <div class="ca-row head">
+                        <span>类别</span><span>命中率</span><span style="text-align:center;">命中</span>
+                        <span style="text-align:center;">未命中</span><span style="text-align:center;">命中率</span>
+                    </div>
+                    <div v-for="c in stats.categories" :key="c.category" class="ca-row">
+                        <span class="ca-cat-name">{{ categoryLabel(c.category) }}</span>
+                        <span>
+                            <div class="ca-bar-bg">
+                                <div class="ca-bar-fill" :style="{width: (c.hit_rate*100).toFixed(1) + '%'}"></div>
+                            </div>
+                        </span>
+                        <span style="text-align:center;color:#27ae60;font-weight:600;">{{ c.hits }}</span>
+                        <span style="text-align:center;color:#e67e22;font-weight:600;">{{ c.misses }}</span>
+                        <span style="text-align:center;font-weight:700;">{{ (c.hit_rate*100).toFixed(1) }}%</span>
+                    </div>
+                </template>
+            </div>
+        </template>
+    </div>
+</div>
+
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script src="https://unpkg.com/@element-plus/icons-vue"></script>
+<script src="https://unpkg.com/element-plus/dist/index.full.js"></script>
+<script>
+const { createApp, ref, computed, onMounted, onUnmounted, watch } = Vue;
+const { ElMessage, ElMessageBox } = ElementPlus;
+const { Refresh } = ElementPlusIconsVue;
+
+createApp({
+    setup() {
+        const stats = ref(null);
+        const errorMsg = ref('');
+        const loading = ref(false);
+        const autoRefresh = ref(true);
+        let timer = null;
+
+        const CATEGORY_LABELS = { embedding: '🔢 向量化（Embedding）', semantic: '🧠 LLM 语义缓存', llm: '🧠 LLM 响应' };
+        const categoryLabel = (c) => CATEGORY_LABELS[c] || c;
+
+        // 环形进度条几何计算（r=70）
+        const ringCircumference = 2 * Math.PI * 70;
+        const ringOffset = computed(() => {
+            const rate = stats.value ? stats.value.hit_rate : 0;
+            return ringCircumference * (1 - rate);
+        });
+
+        const api = async (url, opts) => {
+            const r = await fetch(url, opts);
+            if (r.status === 401) { window.location.href = '/login.html'; throw new Error('未登录'); }
+            const data = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(data.error || '请求失败');
+            return data;
+        };
+
+        const loadStats = async () => {
+            loading.value = true;
+            try {
+                stats.value = await api('/api/cache/stats');
+                errorMsg.value = '';
+            } catch (e) {
+                stats.value = null;
+                errorMsg.value = e.message === '未登录' ? '' : ('缓存功能未启用或不可用：' + e.message);
+            } finally {
+                loading.value = false;
+            }
+        };
+
+        const clearCache = async () => {
+            try {
+                await ElMessageBox.confirm('确定清空所有缓存并重置命中率统计？', '确认操作', { type: 'warning' });
+            } catch { return; }
+            try {
+                await api('/api/cache/clear', { method: 'POST' });
+                ElMessage.success('缓存已清空');
+                loadStats();
+            } catch (e) { ElMessage.error(e.message); }
+        };
+
+        const setupTimer = () => {
+            if (timer) { clearInterval(timer); timer = null; }
+            if (autoRefresh.value) { timer = setInterval(loadStats, 3000); }
+        };
+        watch(autoRefresh, setupTimer);
+
+        onMounted(() => { loadStats(); setupTimer(); });
+        onUnmounted(() => { if (timer) clearInterval(timer); });
+
+        return { stats, errorMsg, loading, autoRefresh, ringCircumference, ringOffset,
+                 categoryLabel, loadStats, clearCache, Refresh };
+    }
+}).use(ElementPlus).mount('#ca-app');
+</script>
+</body>
+</html>

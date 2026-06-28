@@ -86,6 +86,22 @@ custom:
     # Embedding 模型，留空则复用 RAG 的 embed_model
     embed_model: ""
 
+  # 缓存配置（Redis）
+  cache:
+    # 是否启用缓存（启用后 Embedding 向量化结果将缓存到 Redis，降低 API 调用与延迟）
+    enabled: true
+    # 本地 Redis 地址（也可通过环境变量 REDIS_ADDR 覆盖）
+    redis_addr: "localhost:6379"
+    # Redis 数据库编号
+    redis_db: 0
+    # Embedding 缓存过期时间（秒），0 表示永不过期（向量化结果确定性强，可长期缓存）
+    embed_ttl: 0
+    # LLM 语义缓存：相似问题直接复用历史回答（仅首轮纯对话生效，带工具调用的回答不缓存）
+    semantic_enabled: true
+    semantic_threshold: 0.92    # 相似度命中阈值 [0,1]
+    semantic_max_entries: 50    # 每个 scope 最多缓存的问答数
+    # 密码请通过环境变量 REDIS_PASSWORD 提供（遵循 secrets env-only 原则，不写入配置文件）
+
   # 日志配置
   log:
     level: "info"

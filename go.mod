@@ -4,12 +4,15 @@ go 1.25.0
 
 require (
 	git.code.oa.com/trpc-go/trpc-go v0.21.1
+	github.com/dop251/goja v0.0.0-20260311135729-065cd970411c
+	github.com/redis/go-redis/v9 v9.7.3
 	golang.org/x/time v0.15.0
 )
 
 require (
+	github.com/cespare/xxhash/v2 v2.2.0 // indirect
+	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/dlclark/regexp2 v1.11.4 // indirect
-	github.com/dop251/goja v0.0.0-20260311135729-065cd970411c // indirect
 	github.com/go-sourcemap/sourcemap v2.1.3+incompatible // indirect
 	github.com/google/pprof v0.0.0-20240722153945-304e4f0156b8 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect

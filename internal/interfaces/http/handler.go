@@ -10,6 +10,7 @@ import (
 
 	"aiProject/internal/application"
 	"aiProject/internal/config"
+	domain_cache "aiProject/internal/domain/cache"
 	"aiProject/internal/domain/session"
 	"aiProject/internal/shared"
 	"go.uber.org/zap"
@@ -114,6 +115,8 @@ type ChatHandler struct {
 	memorySvc      *application.MemoryService     // 记忆服务（跨会话向量记忆）
 	evalSvc        *application.EvalService       // Agent 评估服务
 	workflowHandler *WorkflowHandler               // Workflow 工作流处理程序
+	cache          domain_cache.Cache             // 缓存后端（用于监控/管理）
+	cacheStats     domain_cache.StatsRecorder     // 缓存命中率统计
 	appConfig      *config.Config
 	logger         *zap.Logger
 }
@@ -151,6 +154,12 @@ func (h *ChatHandler) SetMemoryService(ms *application.MemoryService) {
 // SetEvalService 注入 Agent 评估服务
 func (h *ChatHandler) SetEvalService(es *application.EvalService) {
 	h.evalSvc = es
+}
+
+// SetCacheService 注入缓存后端与命中率统计（用于缓存监控页面）
+func (h *ChatHandler) SetCacheService(c domain_cache.Cache, stats domain_cache.StatsRecorder) {
+	h.cache = c
+	h.cacheStats = stats
 }
 
 // SetWorkflowService 注入 Workflow 工作流服务

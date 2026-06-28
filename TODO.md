@@ -261,14 +261,18 @@
 - **预估工作量**: 1 个月
 
 ### 28. 🆕 语义缓存 / Prompt 缓存
-- **现状**: 无任何缓存层，相同/相似问题重复调用 LLM，成本与延迟无优化空间
+- **现状**: ~~无任何缓存层~~ → 已落地 Redis 缓存基础设施 + Embedding 缓存 + 命中率监控页
 - **主流做法**: GPTCache（语义缓存）、OpenAI/Anthropic Prompt Caching
 - **改进方案**:
-  - [ ] 精确缓存：相同 messages 命中缓存直接返回
+  - [x] **缓存基础设施**：统一 `cache.Cache` 接口（Get/Set/Delete/Size/Clear）+ Redis 实现（命名空间隔离 `aiproject:cache:`，密码走环境变量 `REDIS_PASSWORD`）+ 不可用时自动降级 no-op，不阻断主流程
+  - [x] **Embedding 缓存**：`CachedEmbedder` 装饰器（SHA256(model+text) 为 key），RAG 检索 / 跨会话记忆 / 评估语义评分共享，向量化结果确定性强可长期缓存
+  - [x] **命中率统计**：进程内原子计数器按类别统计命中/未命中，`GET /api/cache/stats` + `POST /api/cache/clear` 接口
+  - [x] **监控页面**：`frontend/cache.html` 总体命中率环形图 + 分类命中率 + 后端状态 + 条目数 + 自动刷新 + 一键清空
+  - [ ] LLM 精确缓存：相同 messages 命中缓存直接返回（流式需模拟吐字，带工具调用不缓存）
   - [ ] 语义缓存：问题向量化，相似度超阈值复用历史回答（阈值可配置）
   - [ ] 缓存失效策略（TTL / 知识库更新时失效）
-  - [ ] 缓存命中率统计与开关（按 Agent 配置）
-- **预估工作量**: 0.5 个月
+- **相关文件**: `domain/cache/cache.go`, `infrastructure/cache/{redis_cache,noop_cache,stats}.go`, `infrastructure/knowledge/cached_embedder.go`, `interfaces/http/cache_handler.go`, `bootstrap.go`（initCache/wrapEmbedderWithCache）, `frontend/cache.html`
+- **预估工作量**: 0.5 个月（基础设施 + Embedding 缓存 + 监控已完成，LLM 语义缓存待补）
 
 ### 29. 🆕 成本与配额治理
 - **现状**: 仅有事后 Token 统计，无预算/配额/告警机制

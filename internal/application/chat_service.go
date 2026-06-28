@@ -74,6 +74,7 @@ type ChatService struct {
 	promptVarsSvc    *PromptVarsService    // Prompt 模板变量服务（可选）
 	summarySvc       *SummaryService       // 会话摘要服务（可选）
 	memorySvc        *MemoryService        // 跨会话向量记忆服务（可选）
+	semanticCacheSvc *SemanticCacheService // LLM 语义缓存服务（可选）
 	maxContextTokens int                   // 模型最大上下文 token 数（从配置获取）
 }
 
@@ -117,6 +118,11 @@ func (s *ChatService) SetMemoryService(ms *MemoryService) {
 	s.memorySvc = ms
 }
 
+// SetSemanticCacheService 注入 LLM 语义缓存服务（启用相似问题答案复用）
+func (s *ChatService) SetSemanticCacheService(scs *SemanticCacheService) {
+	s.semanticCacheSvc = scs
+}
+
 // SetMaxContextTokens 设置模型最大上下文 token 数
 func (s *ChatService) SetMaxContextTokens(maxTokens int) {
 	s.maxContextTokens = maxTokens
@@ -143,6 +149,52 @@ func sendEvent(ctx context.Context, ch chan<- StreamChatResponse, event StreamCh
 	case <-ctx.Done():
 		return false
 	}
+}
+
+// semanticCacheChunkRunes 语义缓存命中时，模拟流式输出的每个分块字符数（保持与正常流式相近的逐字体验）
+const semanticCacheChunkRunes = 8
+
+// replayCachedAnswer 语义缓存命中时，将缓存答案以「模拟流式」方式逐块推送，并持久化为一条 AI 回复。
+// 返回是否正常完成（ctx 未取消）。
+func (s *ChatService) replayCachedAnswer(ctx context.Context, outCh chan<- StreamChatResponse, sess *session.Session, modelName string, userID int64, answer string) {
+	defer close(outCh)
+	defer shared.Recover("semantic-cache-replay")
+
+	// 模拟流式：按固定 rune 数分块推送
+	runes := []rune(answer)
+	for i := 0; i < len(runes); i += semanticCacheChunkRunes {
+		end := i + semanticCacheChunkRunes
+		if end > len(runes) {
+			end = len(runes)
+		}
+		if !sendEvent(ctx, outCh, StreamChatResponse{
+			Type:      "chunk",
+			Content:   string(runes[i:end]),
+			SessionID: sess.ID(),
+			ModelName: modelName,
+		}) {
+			return
+		}
+	}
+
+	// 持久化 AI 回复（命中缓存无 token 消耗，usage 记 0）
+	sess.AddMessage("ai", answer)
+	saveCtx := context.Background()
+	if err := s.sessionRepo.SaveMessageWithTokens(saveCtx, sess.ID(), "ai", answer, userID, modelName, model.TokenUsage{}); err != nil {
+		shared.GetLogger().Error("语义缓存命中：保存AI回复失败", zap.Error(err))
+	}
+	if err := s.sessionRepo.Save(sess); err != nil {
+		shared.GetLogger().Error("语义缓存命中：保存会话失败", zap.Error(err))
+	}
+
+	sessionTotal, _ := s.sessionRepo.GetSessionTotalTokens(saveCtx, sess.ID())
+	sendEvent(ctx, outCh, StreamChatResponse{ //nolint:errcheck
+		Type:               "done",
+		SessionID:          sess.ID(),
+		ModelName:          modelName,
+		Usage:              model.TokenUsage{},
+		SessionTotalTokens: sessionTotal,
+	})
 }
 
 // ProcessMessageStream 流式处理聊天消息，通过 channel 逐块返回内容
@@ -180,6 +232,9 @@ func (s *ChatService) ProcessMessageStream(ctx context.Context, req ChatRequest)
 
 	isFirstMessage := len(sess.GetHistory()) <= 1
 
+	// 语义缓存 scope 使用渲染前的原始 System Prompt（避免 current_time 等动态变量导致 scope 漂移）
+	rawSystemPrompt := systemPrompt
+
 	// 渲染 Prompt 模板变量
 	systemPrompt = s.renderPromptTemplate(ctx, systemPrompt, req, "")
 
@@ -202,6 +257,18 @@ func (s *ChatService) ProcessMessageStream(ctx context.Context, req ChatRequest)
 	if s.summarySvc != nil && len(evicted) > 0 {
 		if s.summarySvc.ShouldGenerateSummary(ctx, sess.ID(), len(evicted)) {
 			go s.summarySvc.GenerateIncrementalSummary(context.Background(), sess.ID(), evicted, modelName)
+		}
+	}
+
+	// LLM 语义缓存：仅对首轮对话（无多轮上下文依赖）启用，命中则直接复用历史答案，跳过 LLM 调用
+	var semScope SemanticScope
+	useSemanticCache := s.semanticCacheSvc != nil && isFirstMessage
+	if useSemanticCache {
+		semScope = SemanticScope{ModelName: modelName, SystemPrompt: rawSystemPrompt, KnowledgeBaseID: req.KnowledgeBaseID}
+		if cached, hit := s.semanticCacheSvc.Lookup(ctx, semScope, req.Message); hit {
+			outCh := make(chan StreamChatResponse, 64)
+			go s.replayCachedAnswer(ctx, outCh, sess, modelName, req.UserID, cached)
+			return outCh, nil
 		}
 	}
 
@@ -259,6 +326,11 @@ func (s *ChatService) ProcessMessageStream(ctx context.Context, req ChatRequest)
 		}
 		if err := s.sessionRepo.Save(sess); err != nil {
 			shared.GetLogger().Error("流式保存会话失败", zap.Error(err))
+		}
+
+		// 写入语义缓存（首轮纯对话，异步不阻塞）
+		if useSemanticCache && finalResponse != "" {
+			go s.semanticCacheSvc.Store(context.Background(), semScope, req.Message, finalResponse)
 		}
 
 		sessionTotal, _ := s.sessionRepo.GetSessionTotalTokens(ctx, sess.ID())
@@ -475,6 +547,9 @@ func (s *ChatService) ProcessMessageWithTools(ctx context.Context, req ChatReque
 		}
 	}
 
+	// 语义缓存 scope 使用渲染前的原始 System Prompt（避免动态变量导致 scope 漂移）
+	rawSystemPrompt := systemPrompt
+
 	// 渲染 Prompt 模板变量（RAG 上下文作为内置变量注入）
 	systemPrompt = s.renderPromptTemplate(ctx, systemPrompt, req, ragContext)
 
@@ -497,6 +572,18 @@ func (s *ChatService) ProcessMessageWithTools(ctx context.Context, req ChatReque
 	if s.summarySvc != nil && len(evicted) > 0 {
 		if s.summarySvc.ShouldGenerateSummary(ctx, sess.ID(), len(evicted)) {
 			go s.summarySvc.GenerateIncrementalSummary(context.Background(), sess.ID(), evicted, modelName)
+		}
+	}
+
+	// LLM 语义缓存：仅对首轮对话启用。命中则直接复用历史纯文本答案，跳过整个 ReAct 循环
+	var semScope SemanticScope
+	useSemanticCache := s.semanticCacheSvc != nil && isFirstMessage
+	if useSemanticCache {
+		semScope = SemanticScope{ModelName: modelName, SystemPrompt: rawSystemPrompt, KnowledgeBaseID: req.KnowledgeBaseID}
+		if cached, hit := s.semanticCacheSvc.Lookup(ctx, semScope, req.Message); hit {
+			outCh := make(chan StreamChatResponse, 64)
+			go s.replayCachedAnswer(ctx, outCh, sess, modelName, req.UserID, cached)
+			return outCh, nil
 		}
 	}
 
@@ -528,6 +615,11 @@ func (s *ChatService) ProcessMessageWithTools(ctx context.Context, req ChatReque
 		}
 		if err := s.sessionRepo.Save(sess); err != nil {
 			shared.GetLogger().Error("保存会话失败", zap.Error(err))
+		}
+
+		// 写入语义缓存：仅当本轮未实际调用工具（纯文本回答）时才缓存，避免缓存依赖工具副作用的答案
+		if useSemanticCache && !runner.usedTool && finalContent != "" {
+			go s.semanticCacheSvc.Store(context.Background(), semScope, req.Message, finalContent)
 		}
 
 		sessionTotal, _ := s.sessionRepo.GetSessionTotalTokens(saveCtx, sess.ID())

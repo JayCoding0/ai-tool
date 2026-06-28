@@ -5,12 +5,16 @@ package bootstrap
 
 import (
 	"strings"
+	"time"
 
 	"aiProject/internal/application"
 	"aiProject/internal/config"
 	"aiProject/internal/domain/a2a"
+	domain_cache "aiProject/internal/domain/cache"
+	domain_knowledge "aiProject/internal/domain/knowledge"
 	domain_model "aiProject/internal/domain/model"
 	mysql_a2a "aiProject/internal/infrastructure/a2a/mysql"
+	infra_cache "aiProject/internal/infrastructure/cache"
 	"aiProject/internal/infrastructure/database"
 	mysql_eval "aiProject/internal/infrastructure/eval/mysql"
 	infra_knowledge "aiProject/internal/infrastructure/knowledge"
@@ -65,6 +69,47 @@ func newModelFactory(cfg *config.Config) func(string) domain_model.Generator {
 	return func(modelName string) domain_model.Generator {
 		return newModelGeneratorByName(cfg, modelName)
 	}
+}
+
+// ─── 缓存初始化 ────────────────────────────────────────────────────────────────
+
+// 缓存层（进程级单例）：appCache 为缓存后端，cacheStats 为命中率统计收集器。
+var (
+	appCache   domain_cache.Cache
+	cacheStats *infra_cache.StatsCollector
+)
+
+// initCache 根据配置初始化缓存后端与命中率统计。
+// 未启用或 Redis 不可用时使用空缓存降级，不影响主流程。
+func initCache(appConfig *config.Config) {
+	cacheStats = infra_cache.NewStatsCollector()
+
+	if appConfig == nil || !appConfig.Cache.Enabled {
+		appCache = infra_cache.NewNoopCache()
+		shared.GetLogger().Info("缓存未启用（cache.enabled = false）")
+		return
+	}
+
+	appCache = infra_cache.NewRedisCache(infra_cache.RedisOptions{
+		Addr:     appConfig.Cache.RedisAddr,
+		Password: appConfig.Cache.Password,
+		DB:       appConfig.Cache.RedisDB,
+	})
+	shared.GetLogger().Info("缓存服务已初始化",
+		zap.String("backend", appCache.Backend()),
+		zap.Bool("available", appCache.Available()),
+		zap.String("redis_addr", appConfig.Cache.RedisAddr),
+	)
+}
+
+// wrapEmbedderWithCache 在缓存可用时为 Embedder 套上缓存装饰器，否则原样返回。
+func wrapEmbedderWithCache(appConfig *config.Config, embedder domain_knowledge.Embedder) domain_knowledge.Embedder {
+	if appCache == nil || !appCache.Available() {
+		return embedder
+	}
+	ttl := time.Duration(appConfig.Cache.EmbedTTL) * time.Second
+	shared.GetLogger().Info("Embedding 缓存已启用", zap.Duration("ttl", ttl))
+	return infra_knowledge.NewCachedEmbedder(embedder, appCache, cacheStats, ttl)
 }
 
 // ─── AgentCard 构建 ────────────────────────────────────────────────────────────
@@ -148,6 +193,10 @@ func InitComponents(appConfig *config.Config) (*http_handler.ChatHandler, *appli
 	handler := http_handler.NewChatHandler(frontendChatService, authService, appConfig)
 	handler.SetAgentRegistry(registry)
 
+	// 初始化缓存层（Redis），需在依赖 Embedder 的服务之前
+	initCache(appConfig)
+	handler.SetCacheService(appCache, cacheStats)
+
 	// 初始化 Prompt 模板变量服务（需要数据库已连接）
 	initPromptVarsService(frontendChatService, handler)
 
@@ -159,6 +208,9 @@ func InitComponents(appConfig *config.Config) (*http_handler.ChatHandler, *appli
 
 	// 初始化跨会话向量记忆服务（需要数据库 + RAG Embedder）
 	initMemoryService(appConfig, frontendChatService, handler)
+
+	// 初始化 LLM 语义缓存服务（需要缓存可用 + Embedding 模型）
+	initSemanticCacheService(appConfig, frontendChatService)
 
 	// 初始化 Workflow 工作流服务（需要数据库已连接）
 	initWorkflowService(appConfig, handler, registry)
@@ -213,11 +265,46 @@ func initKnowledgeService(appConfig *config.Config, chatService *application.Cha
 	}
 	embedder := infra_knowledge.NewOpenAIEmbedder(appConfig.Model.OpenAIBaseURL, appConfig.Model.OpenAIAPIKey, embedModel)
 	knowledgeRepo := mysql_knowledge.NewKnowledgeRepository()
-	knowledgeSvc := application.NewKnowledgeService(knowledgeRepo, embedder)
+	knowledgeSvc := application.NewKnowledgeService(knowledgeRepo, wrapEmbedderWithCache(appConfig, embedder))
 	// 注入到前端 ChatService，启用 RAG 能力
 	chatService.SetKnowledgeService(knowledgeSvc)
 	handler.SetKnowledgeService(knowledgeSvc)
 	shared.GetLogger().Info("RAG 知识库服务已启用", zap.String("embed_model", embedModel))
+}
+
+// initSemanticCacheService 初始化 LLM 语义缓存服务
+// 需要缓存后端可用、语义缓存开关开启、且配置了 Embedding 模型（用于问题向量化）
+func initSemanticCacheService(appConfig *config.Config, chatService *application.ChatService) {
+	if appCache == nil || !appCache.Available() {
+		return
+	}
+	if !appConfig.Cache.SemanticEnabled {
+		shared.GetLogger().Info("LLM 语义缓存未启用（cache.semantic_enabled = false）")
+		return
+	}
+	if appConfig.Model.OpenAIAPIKey == "" {
+		shared.GetLogger().Warn("LLM 语义缓存需要 Embedding 模型（未配置 API Key），已跳过")
+		return
+	}
+
+	embedModel := appConfig.RAG.EmbedModel
+	if embedModel == "" {
+		embedModel = infra_knowledge.DefaultEmbedModel
+	}
+	// 复用带缓存的 Embedder，使语义缓存的问题向量化也命中 Embedding 缓存统计
+	embedder := wrapEmbedderWithCache(appConfig,
+		infra_knowledge.NewOpenAIEmbedder(appConfig.Model.OpenAIBaseURL, appConfig.Model.OpenAIAPIKey, embedModel))
+
+	scs := application.NewSemanticCacheService(
+		appCache, embedder, cacheStats,
+		appConfig.Cache.SemanticThreshold,
+		appConfig.Cache.SemanticMaxEntries,
+	)
+	chatService.SetSemanticCacheService(scs)
+	shared.GetLogger().Info("LLM 语义缓存已启用",
+		zap.Float64("threshold", appConfig.Cache.SemanticThreshold),
+		zap.Int("max_entries_per_scope", appConfig.Cache.SemanticMaxEntries),
+	)
 }
 
 // initMemoryService 初始化跨会话向量记忆服务（独立于 RAG，需要数据库 + Embedding 模型）
@@ -242,7 +329,7 @@ func initMemoryService(appConfig *config.Config, chatService *application.ChatSe
 
 	memoryRepo := mysql_memory.NewMemoryRepository()
 	modelGen := newModelGenerator(appConfig)
-	memorySvc := application.NewMemoryService(memoryRepo, embedder, modelGen)
+	memorySvc := application.NewMemoryService(memoryRepo, wrapEmbedderWithCache(appConfig, embedder), modelGen)
 	memorySvc.SetModelFactory(newModelFactory(appConfig), appConfig.Model.Name)
 
 	chatService.SetMemoryService(memorySvc)
@@ -285,7 +372,7 @@ func initEvalService(appConfig *config.Config, handler *http_handler.ChatHandler
 		embedModel = infra_knowledge.DefaultEmbedModel
 	}
 	if appConfig.Model.OpenAIAPIKey != "" {
-		evalSvc.SetEmbedder(infra_knowledge.NewOpenAIEmbedder(appConfig.Model.OpenAIBaseURL, appConfig.Model.OpenAIAPIKey, embedModel))
+		evalSvc.SetEmbedder(wrapEmbedderWithCache(appConfig, infra_knowledge.NewOpenAIEmbedder(appConfig.Model.OpenAIBaseURL, appConfig.Model.OpenAIAPIKey, embedModel)))
 	}
 	handler.SetEvalService(evalSvc)
 	shared.GetLogger().Info("Agent 评估体系服务已启用")
