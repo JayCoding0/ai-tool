@@ -103,6 +103,14 @@ type ModelOption struct {
 	Name  string `yaml:"name"`  // 模型标识，如 qwen-plus
 	Label string `yaml:"label"` // 展示名称，如 通义千问 Plus
 	Type  string `yaml:"type"`  // 模型类型：cloud（云端）或 local（本地Ollama），留空时自动判断
+	// 以下为可选的「按模型」独立凭证，用于接入与全局 OpenAI 配置不同的厂商（如 DeepSeek 官方 API）。
+	// 留空时回退到全局 model.openai_base_url / model.openai_api_key。
+	BaseURL string `yaml:"base_url"` // 该模型专属的 OpenAI 兼容 base_url，如 https://api.deepseek.com
+	APIKey  string `yaml:"api_key"`  // 该模型专属的 api_key
+	// Thinking 是否开启该模型的思考模式（DeepSeek V4 等），开启后请求会注入 thinking: {"type":"enabled"}
+	Thinking bool `yaml:"thinking"`
+	// ReasoningEffort 思考强度（low/medium/high），仅在 Thinking 为 true 时生效，留空则不传
+	ReasoningEffort string `yaml:"reasoning_effort"`
 }
 
 // ToolsConfig 工具配置

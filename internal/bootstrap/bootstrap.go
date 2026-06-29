@@ -51,6 +51,9 @@ func newModelGenerator(cfg *config.Config) domain_model.Generator {
 //   - cfg.Model.Type == "local" → 全部走 Ollama
 //   - 模型名包含 ":" (如 qwen2.5:14b、llama3.2:3b) → Ollama 本地模型
 //   - 其余 → OpenAI 兼容接口
+//
+// 对于走 OpenAI 兼容接口的模型，会优先使用该模型在 available_models 中配置的
+// 专属 base_url / api_key（如 DeepSeek 官方 API），未配置时回退到全局凭证。
 func newModelGeneratorByName(cfg *config.Config, modelName string) domain_model.Generator {
 	isLocal := cfg.Model.Type == "local" || (cfg.Model.Type != "openai" && strings.Contains(modelName, ":"))
 	if isLocal {
@@ -60,11 +63,49 @@ func newModelGeneratorByName(cfg *config.Config, modelName string) domain_model.
 		)
 		return infra_model.NewOllamaGenerator(modelName, cfg.Model.OllamaURL)
 	}
+	baseURL, apiKey := resolveModelCredentials(cfg, modelName)
 	shared.GetLogger().Info("使用OpenAI兼容接口模型",
 		zap.String("model", modelName),
-		zap.String("base_url", cfg.Model.OpenAIBaseURL),
+		zap.String("base_url", baseURL),
 	)
-	return infra_model.NewOpenAIGenerator(cfg.Model.OpenAIBaseURL, cfg.Model.OpenAIAPIKey, modelName)
+	var opts []infra_model.Option
+	if thinking, effort := resolveModelThinking(cfg, modelName); thinking {
+		opts = append(opts, infra_model.WithThinking(true, effort))
+		shared.GetLogger().Info("已开启模型思考模式",
+			zap.String("model", modelName),
+			zap.String("reasoning_effort", effort),
+		)
+	}
+	return infra_model.NewOpenAIGenerator(baseURL, apiKey, modelName, opts...)
+}
+
+// resolveModelThinking 查找指定模型是否开启思考模式及其思考强度。
+func resolveModelThinking(cfg *config.Config, modelName string) (enabled bool, effort string) {
+	for _, m := range cfg.Model.AvailableModels {
+		if m.Name == modelName {
+			return m.Thinking, m.ReasoningEffort
+		}
+	}
+	return false, ""
+}
+
+// resolveModelCredentials 解析指定模型应使用的 OpenAI 兼容 base_url 与 api_key。
+// 优先使用 available_models 中该模型配置的专属凭证，缺省回退到全局配置。
+func resolveModelCredentials(cfg *config.Config, modelName string) (baseURL, apiKey string) {
+	baseURL, apiKey = cfg.Model.OpenAIBaseURL, cfg.Model.OpenAIAPIKey
+	for _, m := range cfg.Model.AvailableModels {
+		if m.Name != modelName {
+			continue
+		}
+		if m.BaseURL != "" {
+			baseURL = m.BaseURL
+		}
+		if m.APIKey != "" {
+			apiKey = m.APIKey
+		}
+		break
+	}
+	return baseURL, apiKey
 }
 
 // newModelFactory 创建模型工厂函数（支持动态切换模型）

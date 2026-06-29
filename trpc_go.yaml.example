@@ -56,6 +56,16 @@ custom:
       - name: "qwen-plus"
         label: "通义千问 Plus"
         type: "cloud"
+      # ☁️ 接入其它 OpenAI 兼容厂商（如 DeepSeek 官方 API）：
+      #    为单个模型单独指定 base_url / api_key，覆盖上面的全局 openai_* 配置。
+      #    未填写时则回退使用全局 openai_base_url / openai_api_key。
+      # - name: "deepseek-v4-pro"
+      #   label: "DeepSeek V4 Pro"
+      #   type: "cloud"
+      #   base_url: "https://api.deepseek.com"
+      #   api_key: "YOUR_DEEPSEEK_API_KEY"
+      #   thinking: true            # 开启思考模式（DeepSeek V4 专有）
+      #   reasoning_effort: "high"  # 思考强度：low / medium / high
       # 🖥️ 本地模型由 Ollama 实时拉取，无需在此配置
 
   # 安全配置

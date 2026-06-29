@@ -15,21 +15,58 @@ import (
 type OpenAIGenerator struct {
 	client    openai.Client
 	modelName string
+	// enableThinking 是否开启 DeepSeek V4 等模型的思考模式。
+	// 开启后会在请求体注入 DeepSeek 专有字段 thinking: {"type": "enabled"}。
+	enableThinking bool
+	// reasoningEffort 思考强度（low/medium/high），仅在 enableThinking 为 true 时生效。
+	reasoningEffort string
+}
+
+// Option OpenAIGenerator 的可选配置项
+type Option func(*OpenAIGenerator)
+
+// WithThinking 开启思考模式（DeepSeek V4 等），可选指定思考强度 effort（low/medium/high，留空则不传）。
+func WithThinking(enabled bool, effort string) Option {
+	return func(g *OpenAIGenerator) {
+		g.enableThinking = enabled
+		g.reasoningEffort = effort
+	}
 }
 
 // NewOpenAIGenerator 创建OpenAI兼容接口的生成器实例
 // baseURL: API地址，例如 https://dashscope.aliyuncs.com/compatible-mode/v1
 // apiKey:  API密钥
 // modelName: 模型名称，例如 qwen-plus、qwen-max 等
-func NewOpenAIGenerator(baseURL, apiKey, modelName string) *OpenAIGenerator {
+// opts: 可选配置，如 WithThinking 开启 DeepSeek 思考模式
+func NewOpenAIGenerator(baseURL, apiKey, modelName string, opts ...Option) *OpenAIGenerator {
 	client := openai.NewClient(
 		option.WithBaseURL(baseURL),
 		option.WithAPIKey(apiKey),
 	)
-	return &OpenAIGenerator{
+	g := &OpenAIGenerator{
 		client:    client,
 		modelName: modelName,
 	}
+	for _, opt := range opts {
+		opt(g)
+	}
+	return g
+}
+
+// requestOptions 构建每次请求附加的 RequestOption。
+// 当开启思考模式时，注入 DeepSeek 专有字段 thinking（及可选的 reasoning_effort）。
+// 这些字段不在标准 OpenAI SDK 参数中，需通过 WithJSONSet 写入原始请求体。
+func (g *OpenAIGenerator) requestOptions() []option.RequestOption {
+	if !g.enableThinking {
+		return nil
+	}
+	reqOpts := []option.RequestOption{
+		option.WithJSONSet("thinking", map[string]string{"type": "enabled"}),
+	}
+	if g.reasoningEffort != "" {
+		reqOpts = append(reqOpts, option.WithJSONSet("reasoning_effort", g.reasoningEffort))
+	}
+	return reqOpts
 }
 
 // Generate 生成模型响应
@@ -39,7 +76,7 @@ func (g *OpenAIGenerator) Generate(ctx context.Context, prompt model.Prompt) (mo
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.UserMessage(string(prompt)),
 		},
-	})
+	}, g.requestOptions()...)
 	if err != nil {
 		return model.GenerateResult{}, fmt.Errorf("OpenAI接口请求失败: %v", err)
 	}
@@ -67,7 +104,7 @@ func (g *OpenAIGenerator) GenerateStream(ctx context.Context, prompt model.Promp
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.UserMessage(string(prompt)),
 		},
-	})
+	}, g.requestOptions()...)
 
 	ch := make(chan model.StreamChunk, 32)
 	go func() {
@@ -144,7 +181,7 @@ func (g *OpenAIGenerator) GenerateStreamWithMessages(ctx context.Context, messag
 	stream := g.client.Chat.Completions.NewStreaming(ctx, openai.ChatCompletionNewParams{
 		Model:    g.modelName,
 		Messages: openaiMessages,
-	})
+	}, g.requestOptions()...)
 
 	ch := make(chan model.StreamChunk, 32)
 	go func() {
@@ -296,7 +333,7 @@ func (g *OpenAIGenerator) GenerateWithToolsOpts(ctx context.Context, messages []
 		}
 	}
 
-	resp, err := g.client.Chat.Completions.New(ctx, params)
+	resp, err := g.client.Chat.Completions.New(ctx, params, g.requestOptions()...)
 	if err != nil {
 		return model.GenerateWithToolsResult{}, fmt.Errorf("OpenAI工具调用请求失败: %v", err)
 	}
