@@ -26,6 +26,7 @@ import (
 	mysql_session "aiProject/internal/infrastructure/session/mysql"
 	infra_token "aiProject/internal/infrastructure/token"
 	infra_tools "aiProject/internal/infrastructure/tools"
+	infra_trace "aiProject/internal/infrastructure/trace"
 	mysql_user "aiProject/internal/infrastructure/user/mysql"
 	mysql_workflow "aiProject/internal/infrastructure/workflow/mysql"
 	http_handler "aiProject/internal/interfaces/http"
@@ -196,6 +197,12 @@ func InitComponents(appConfig *config.Config) (*http_handler.ChatHandler, *appli
 	// 初始化缓存层（Redis），需在依赖 Embedder 的服务之前
 	initCache(appConfig)
 	handler.SetCacheService(appCache, cacheStats)
+
+	// 初始化可观测性 Trace 存储（进程内环形缓冲）
+	traceStore := infra_trace.NewMemoryStore(200)
+	frontendChatService.SetTraceStore(traceStore)
+	handler.SetTraceStore(traceStore)
+	shared.GetLogger().Info("可观测性 Trace 已启用（内存存储，保留最近 200 条）")
 
 	// 初始化 Prompt 模板变量服务（需要数据库已连接）
 	initPromptVarsService(frontendChatService, handler)

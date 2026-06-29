@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>调用链追踪 - 智能Agent平台</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔬</text></svg>">
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .tr-page { max-width: 1200px; margin: 0 auto; padding: 24px 16px; }
+        .tr-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+        .tr-header h1 { font-size: 22px; font-weight: 700; color: #18181b; margin: 0; }
+        .tr-layout { display: grid; grid-template-columns: 380px 1fr; gap: 16px; }
+        .tr-card { background: #fff; border-radius: 12px; border: 1px solid #e8e8f0; padding: 16px; }
+        .tr-item { padding: 10px 12px; border-radius: 8px; cursor: pointer; margin-bottom: 6px; border: 1px solid transparent; transition: all .15s; }
+        .tr-item:hover { background: #f5f5fa; }
+        .tr-item.active { background: #eef0ff; border-color: #c7c7f5; }
+        .tr-item-input { font-size: 13px; color: #333; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .tr-item-meta { font-size: 11px; color: #999; margin-top: 4px; display: flex; gap: 10px; flex-wrap: wrap; }
+        .tr-badge { font-size: 10px; padding: 1px 7px; border-radius: 8px; font-weight: 600; }
+        .b-ok { background:#e6f7ee; color:#27ae60; }
+        .b-err { background:#fde8e8; color:#e74c3c; }
+        .span-row { border:1px solid #ececf5; border-radius:10px; margin-bottom:10px; overflow:hidden; }
+        .span-head { display:flex; align-items:center; gap:10px; padding:10px 14px; cursor:pointer; }
+        .span-head:hover { background:#f8f8fc; }
+        .span-type { font-size:11px; padding:2px 9px; border-radius:8px; font-weight:700; }
+        .t-llm { background:#eef0ff; color:#6366f1; }
+        .t-tool { background:#fff7e6; color:#e67e22; }
+        .t-rag { background:#e6f7ee; color:#27ae60; }
+        .t-memory { background:#f0e6ff; color:#8b5cf6; }
+        .t-agent { background:#fde8f0; color:#d6336c; }
+        .span-name { font-weight:600; font-size:14px; color:#222; flex:1; }
+        .span-dur { font-family:'JetBrains Mono',monospace; font-size:12px; color:#888; }
+        .span-bar-wrap { padding:0 14px 4px; }
+        .span-bar { height:6px; border-radius:3px; background:linear-gradient(90deg,#6366f1,#8b5cf6); }
+        .span-body { padding:10px 14px; border-top:1px dashed #eee; background:#fbfbfe; font-size:12px; }
+        .span-field { margin:5px 0; }
+        .span-field .lbl { color:#999; display:inline-block; min-width:48px; }
+        .span-field pre { margin:4px 0; padding:8px 10px; background:#fff; border:1px solid #eee; border-radius:6px; white-space:pre-wrap; word-break:break-word; max-height:240px; overflow:auto; font-family:'JetBrains Mono',monospace; font-size:12px; }
+        .metric { display:inline-flex; flex-direction:column; align-items:center; background:#f8f8fc; border-radius:10px; padding:8px 16px; margin-right:10px; }
+        .metric-val { font-size:20px; font-weight:800; color:#6366f1; font-family:'JetBrains Mono',monospace; }
+        .metric-label { font-size:11px; color:#888; margin-top:2px; }
+        .nav-bar { background: rgba(255,255,255,0.78); backdrop-filter: saturate(180%) blur(16px); border-bottom: 1px solid #ebebf0; padding: 13px 24px; display: flex; align-items: center; gap: 14px; position: sticky; top: 0; z-index: 50; }
+        .nav-logo { font-size: 18px; font-weight: 800; text-decoration: none; background: linear-gradient(135deg, #6366f1, #8b5cf6 50%, #d946ef); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; margin-right: 6px; }
+        .nav-link { font-size: 14px; color: #52525b; text-decoration: none; padding: 7px 14px; border-radius: 10px; font-weight: 500; }
+        .nav-link:hover { background: #eef0ff; color: #6366f1; }
+        .nav-link.active { background: #eef0ff; color: #6366f1; }
+        .empty-state { text-align: center; padding: 50px 20px; color: #bbb; }
+        .empty-state .empty-icon { font-size: 44px; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+<div id="tr-app">
+    <div class="nav-bar">
+        <a href="/" class="nav-logo">🤖 智能Agent平台</a>
+        <a href="/" class="nav-link">💬 对话</a>
+        <a href="/knowledge.html" class="nav-link">📚 知识库</a>
+        <a href="/workflow.html" class="nav-link">🔀 工作流</a>
+        <a href="/eval.html" class="nav-link">📊 评估</a>
+        <a href="/memory.html" class="nav-link">🧠 记忆</a>
+        <a href="/cache.html" class="nav-link">⚡ 缓存</a>
+        <a href="/trace.html" class="nav-link active">🔬 调用链</a>
+    </div>
+
+    <div class="tr-page">
+        <div class="tr-header">
+            <h1>🔬 调用链追踪 (Trace)</h1>
+            <span>
+                <el-switch v-model="autoRefresh" active-text="自动刷新" style="margin-right:14px;" />
+                <el-button size="small" :icon="Refresh" @click="loadList" :loading="loading">刷新</el-button>
+            </span>
+        </div>
+
+        <div class="tr-layout">
+            <!-- 左侧：trace 列表 -->
+            <div class="tr-card" style="max-height:78vh;overflow-y:auto;">
+                <div v-if="traces.length === 0" class="empty-state">
+                    <div class="empty-icon">📭</div>
+                    <div>暂无调用链。发起一次对话后将记录在此。</div>
+                </div>
+                <div v-for="t in traces" :key="t.id" class="tr-item" :class="{active: detail && detail.id === t.id}" @click="openDetail(t.id)">
+                    <div class="tr-item-input">{{ t.input || '(空)' }}</div>
+                    <div class="tr-item-meta">
+                        <span class="tr-badge" :class="t.status==='ok'?'b-ok':'b-err'">{{ t.status }}</span>
+                        <span>⏱ {{ t.duration_ms }}ms</span>
+                        <span>🧠 {{ t.llm_calls }} LLM</span>
+                        <span>🔧 {{ t.tool_calls }} 工具</span>
+                        <span>🎟 {{ t.total_tokens }} tok</span>
+                    </div>
+                    <div class="tr-item-meta"><span>{{ t.model }} · {{ t.start_time }}</span></div>
+                </div>
+            </div>
+
+            <!-- 右侧：trace 详情（span 时间线） -->
+            <div class="tr-card" style="max-height:78vh;overflow-y:auto;">
+                <div v-if="!detail" class="empty-state">
+                    <div class="empty-icon">👈</div>
+                    <div>选择左侧一条调用链查看详细步骤</div>
+                </div>
+                <template v-else>
+                    <div style="margin-bottom:16px;">
+                        <div style="font-size:15px;font-weight:700;margin-bottom:10px;">{{ detail.input }}</div>
+                        <span class="metric"><span class="metric-val">{{ detail.duration_ms }}</span><span class="metric-label">总耗时(ms)</span></span>
+                        <span class="metric"><span class="metric-val">{{ detail.total_tokens }}</span><span class="metric-label">总 Tokens</span></span>
+                        <span class="metric"><span class="metric-val">{{ detail.llm_calls }}</span><span class="metric-label">LLM 调用</span></span>
+                        <span class="metric"><span class="metric-val">{{ detail.tool_calls }}</span><span class="metric-label">工具调用</span></span>
+                    </div>
+
+                    <div v-for="(s, i) in (detail.spans || [])" :key="i" class="span-row">
+                        <div class="span-head" @click="toggle(i)">
+                            <span class="span-type" :class="'t-' + s.type">{{ s.type }}</span>
+                            <span class="span-name">{{ s.name }}</span>
+                            <span class="span-dur">{{ s.duration_ms }}ms<span v-if="s.total_tokens"> · {{ s.total_tokens }}tok</span></span>
+                        </div>
+                        <div class="span-bar-wrap"><div class="span-bar" :style="{width: barWidth(s) + '%'}"></div></div>
+                        <div v-if="expanded[i]" class="span-body">
+                            <div v-if="s.input" class="span-field"><span class="lbl">输入</span><pre>{{ s.input }}</pre></div>
+                            <div v-if="s.output" class="span-field"><span class="lbl">输出</span><pre>{{ s.output }}</pre></div>
+                            <div v-if="s.error" class="span-field"><span class="lbl">错误</span><pre style="color:#e74c3c;">{{ s.error }}</pre></div>
+                            <div v-if="s.total_tokens" class="span-field"><span class="lbl">Token</span> 输入 {{ s.prompt_tokens }} / 输出 {{ s.completion_tokens }} / 合计 {{ s.total_tokens }}</div>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script src="https://unpkg.com/@element-plus/icons-vue"></script>
+<script src="https://unpkg.com/element-plus/dist/index.full.js"></script>
+<script>
+const { createApp, ref, reactive, onMounted, onUnmounted, watch } = Vue;
+const { ElMessage } = ElementPlus;
+const { Refresh } = ElementPlusIconsVue;
+
+createApp({
+    setup() {
+        const traces = ref([]);
+        const detail = ref(null);
+        const expanded = reactive({});
+        const loading = ref(false);
+        const autoRefresh = ref(false);
+        let timer = null;
+
+        const api = async (url) => {
+            const r = await fetch(url);
+            if (r.status === 401) { window.location.href = '/login.html'; throw new Error('未登录'); }
+            const data = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(data.error || '请求失败');
+            return data;
+        };
+
+        const loadList = async () => {
+            loading.value = true;
+            try { traces.value = (await api('/api/traces?limit=50')).traces || []; }
+            catch (e) { if (e.message !== '未登录') ElMessage.error(e.message); }
+            finally { loading.value = false; }
+        };
+
+        const openDetail = async (id) => {
+            try {
+                detail.value = await api('/api/traces/' + id);
+                Object.keys(expanded).forEach(k => delete expanded[k]);
+            } catch (e) { ElMessage.error(e.message); }
+        };
+
+        const toggle = (i) => { expanded[i] = !expanded[i]; };
+
+        // 以最长 span 为基准计算耗时占比条
+        const barWidth = (s) => {
+            if (!detail.value || !detail.value.spans || !detail.value.spans.length) return 0;
+            const max = Math.max(...detail.value.spans.map(x => x.duration_ms || 0), 1);
+            return Math.max(2, ((s.duration_ms || 0) / max) * 100);
+        };
+
+        watch(autoRefresh, (v) => {
+            if (timer) { clearInterval(timer); timer = null; }
+            if (v) timer = setInterval(loadList, 3000);
+        });
+
+        onMounted(loadList);
+        onUnmounted(() => { if (timer) clearInterval(timer); });
+
+        return { traces, detail, expanded, loading, autoRefresh, loadList, openDetail, toggle, barWidth, Refresh };
+    }
+}).use(ElementPlus).mount('#tr-app');
+</script>
+</body>
+</html>

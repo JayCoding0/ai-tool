@@ -211,14 +211,16 @@
 - **预估工作量**: 2 个月
 
 ### 7. Agent 可观测性 / 调试面板
-- **现状**: 仅有 zap 日志，无结构化 trace
+- **现状**: 已落地结构化 Trace（调用链）+ 前端调试面板
 - **主流做法**: LangSmith/Dify 提供完整的 LLM 调用链追踪、token 消耗分析、延迟分布
 - **改进方案**:
-  - [ ] 集成 OpenTelemetry，记录每次 LLM 调用的 input/output/latency/tokens
-  - [ ] 记录 ReAct 循环的每一步（思考→工具调用→观察→回答）
-  - [ ] 前端提供调试面板：查看完整的推理链路、token 消耗、耗时分布
-  - [ ] 支持 Prompt 调试（查看实际发送给模型的完整 messages）
-- **预估工作量**: 1.5 个月
+  - [x] 结构化 Trace 领域模型（Trace/Span）+ 进程内环形缓冲存储（保留最近 200 条）+ context 传播
+  - [x] 记录 ReAct 循环每一步（LLM 工具决策轮 / 工具执行 / 流式回复 / RAG 检索 / 语义缓存命中），含 input/output/latency/tokens
+  - [x] 前端调试面板 `trace.html`：调用链列表 + span 时间线（耗时占比条）+ 输入/输出/token 展开
+  - [x] Trace 查询 API（`GET /api/traces` 概要列表、`GET /api/traces/{id}` 详情）
+  - [ ] 集成 OpenTelemetry 导出（对接外部 APM，可选）
+- **相关文件**: `domain/trace/trace.go`, `infrastructure/trace/memory_store.go`, `application/agent_runner.go` + `chat_service.go`（埋点）, `interfaces/http/trace_handler.go`, `frontend/trace.html`
+- **预估工作量**: 1.5 个月 → MVP（内存 Trace + 面板）已完成
 
 ### 8. 错误恢复 / 重试机制
 - **现状**: ReAct 循环中工具执行失败直接返回错误文本给模型，无重试机制

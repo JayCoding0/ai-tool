@@ -5,10 +5,12 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"time"
 
 	"aiProject/internal/domain/model"
 	"aiProject/internal/domain/session"
 	"aiProject/internal/domain/tool"
+	"aiProject/internal/domain/trace"
 	"aiProject/internal/shared"
 	"go.uber.org/zap"
 )
@@ -75,6 +77,7 @@ type ChatService struct {
 	summarySvc       *SummaryService       // 会话摘要服务（可选）
 	memorySvc        *MemoryService        // 跨会话向量记忆服务（可选）
 	semanticCacheSvc *SemanticCacheService // LLM 语义缓存服务（可选）
+	traceStore       trace.Store           // 可观测性 Trace 存储（可选）
 	maxContextTokens int                   // 模型最大上下文 token 数（从配置获取）
 }
 
@@ -121,6 +124,33 @@ func (s *ChatService) SetMemoryService(ms *MemoryService) {
 // SetSemanticCacheService 注入 LLM 语义缓存服务（启用相似问题答案复用）
 func (s *ChatService) SetSemanticCacheService(scs *SemanticCacheService) {
 	s.semanticCacheSvc = scs
+}
+
+// SetTraceStore 注入可观测性 Trace 存储（启用调用链记录）
+func (s *ChatService) SetTraceStore(store trace.Store) {
+	s.traceStore = store
+}
+
+// startTrace 在 ctx 中创建并注入一个新 Trace（仅当配置了存储且 ctx 中尚无 Trace 时）。
+// 返回新的 ctx 和 Trace 指针（可能为 nil，调用方据此决定是否在结束时保存）。
+func (s *ChatService) startTrace(ctx context.Context, sessID, model, input string, userID int64) (context.Context, *trace.Trace) {
+	if s.traceStore == nil {
+		return ctx, nil
+	}
+	if _, ok := trace.FromContext(ctx); ok {
+		return ctx, nil // 已存在（子 Agent 场景），复用上层 Trace
+	}
+	tr := trace.New(sessID, model, input, userID)
+	return trace.WithTrace(ctx, tr), tr
+}
+
+// finishTrace 结束并保存 Trace（tr 为 nil 时无操作）
+func (s *ChatService) finishTrace(tr *trace.Trace) {
+	if tr == nil || s.traceStore == nil {
+		return
+	}
+	tr.Finish()
+	s.traceStore.Save(tr)
 }
 
 // SetMaxContextTokens 设置模型最大上下文 token 数
@@ -232,6 +262,9 @@ func (s *ChatService) ProcessMessageStream(ctx context.Context, req ChatRequest)
 
 	isFirstMessage := len(sess.GetHistory()) <= 1
 
+	// 启动可观测性 Trace（贯穿本轮请求，下游通过 ctx 记录各步骤 span）
+	ctx, tr := s.startTrace(ctx, string(sess.ID()), modelName, req.Message, req.UserID)
+
 	// 语义缓存 scope 使用渲染前的原始 System Prompt（避免 current_time 等动态变量导致 scope 漂移）
 	rawSystemPrompt := systemPrompt
 
@@ -266,6 +299,10 @@ func (s *ChatService) ProcessMessageStream(ctx context.Context, req ChatRequest)
 	if useSemanticCache {
 		semScope = SemanticScope{ModelName: modelName, SystemPrompt: rawSystemPrompt, KnowledgeBaseID: req.KnowledgeBaseID}
 		if cached, hit := s.semanticCacheSvc.Lookup(ctx, semScope, req.Message); hit {
+			if tr != nil {
+				tr.AddSpan(trace.Span{Name: "语义缓存命中", Type: trace.SpanLLM, StartTime: time.Now(), Output: cached})
+				s.finishTrace(tr)
+			}
 			outCh := make(chan StreamChatResponse, 64)
 			go s.replayCachedAnswer(ctx, outCh, sess, modelName, req.UserID, cached)
 			return outCh, nil
@@ -321,6 +358,15 @@ func (s *ChatService) ProcessMessageStream(ctx context.Context, req ChatRequest)
 		finalResponse := fullContent.String()
 		sess.AddMessage("ai", finalResponse)
 
+		// 记录流式 LLM span
+		if tr != nil {
+			tr.AddSpan(trace.Span{
+				Name: "LLM 流式回复", Type: trace.SpanLLM, StartTime: tr.StartTime,
+				DurationMs: time.Since(tr.StartTime).Milliseconds(), Output: finalResponse,
+				PromptTokens: usage.PromptTokens, CompletionTokens: usage.CompletionTokens, TotalTokens: usage.TotalTokens,
+			})
+		}
+
 		if err := s.sessionRepo.SaveMessageWithTokens(ctx, sess.ID(), "ai", finalResponse, req.UserID, modelName, usage); err != nil {
 			shared.GetLogger().Error("流式保存AI回复失败", zap.Error(err))
 		}
@@ -351,6 +397,7 @@ func (s *ChatService) ProcessMessageStream(ctx context.Context, req ChatRequest)
 		if s.memorySvc != nil && req.UserID > 0 {
 			go s.memorySvc.ExtractMemories(context.Background(), req.UserID, string(sess.ID()), sess.GetHistory(), modelName)
 		}
+		s.finishTrace(tr)
 	}()
 
 	return outCh, nil
@@ -568,6 +615,12 @@ func (s *ChatService) ProcessMessageWithTools(ctx context.Context, req ChatReque
 	messages, evicted := buildMessagesWithContext(sess.GetHistory(), systemPrompt, ragContext, sessionSummary, memoryContext, s.maxContextTokens)
 	isFirstMessage := len(sess.GetHistory()) <= 1
 
+	// 启动可观测性 Trace（贯穿本轮请求，agentRunner 通过 ctx 记录 LLM/工具 span）
+	ctx, tr := s.startTrace(ctx, string(sess.ID()), modelName, req.Message, req.UserID)
+	if tr != nil && ragContext != "" {
+		tr.AddSpan(trace.Span{Name: "RAG 检索", Type: trace.SpanRAG, StartTime: time.Now(), Output: ragContext})
+	}
+
 	// 异步触发摘要生成（如果有消息被裁剪）
 	if s.summarySvc != nil && len(evicted) > 0 {
 		if s.summarySvc.ShouldGenerateSummary(ctx, sess.ID(), len(evicted)) {
@@ -581,6 +634,10 @@ func (s *ChatService) ProcessMessageWithTools(ctx context.Context, req ChatReque
 	if useSemanticCache {
 		semScope = SemanticScope{ModelName: modelName, SystemPrompt: rawSystemPrompt, KnowledgeBaseID: req.KnowledgeBaseID}
 		if cached, hit := s.semanticCacheSvc.Lookup(ctx, semScope, req.Message); hit {
+			if tr != nil {
+				tr.AddSpan(trace.Span{Name: "语义缓存命中", Type: trace.SpanLLM, StartTime: time.Now(), Output: cached})
+				s.finishTrace(tr)
+			}
 			outCh := make(chan StreamChatResponse, 64)
 			go s.replayCachedAnswer(ctx, outCh, sess, modelName, req.UserID, cached)
 			return outCh, nil
@@ -596,6 +653,7 @@ func (s *ChatService) ProcessMessageWithTools(ctx context.Context, req ChatReque
 		finalContent, totalUsage, runErr := runner.runReActLoop(ctx, messages, toolDefs)
 		if runErr != nil {
 			sendEvent(ctx, outCh, StreamChatResponse{Type: "error", Error: runErr.Error()})
+			s.finishTrace(tr)
 			return
 		}
 
@@ -639,6 +697,8 @@ func (s *ChatService) ProcessMessageWithTools(ctx context.Context, req ChatReque
 		if s.memorySvc != nil && req.UserID > 0 {
 			go s.memorySvc.ExtractMemories(context.Background(), req.UserID, string(sess.ID()), sess.GetHistory(), modelName)
 		}
+
+		s.finishTrace(tr)
 	}()
 
 	return outCh, nil

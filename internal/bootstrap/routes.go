@@ -41,6 +41,9 @@ func RegisterRoutes(chatHandler *http_handler.ChatHandler, appConfig *config.Con
 	// 缓存监控接口
 	mux.HandleFunc("/api/cache/stats", chatHandler.HandleCacheStats)
 	mux.HandleFunc("/api/cache/clear", chatHandler.HandleCacheClear)
+	// 可观测性 Trace 接口
+	mux.HandleFunc("/api/traces", chatHandler.HandleListTraces)
+	mux.HandleFunc("/api/traces/", chatHandler.HandleGetTrace)
 	// Prompt 模板变量接口
 	mux.HandleFunc("/api/prompt-vars", chatHandler.HandleListPromptVariables)
 	mux.HandleFunc("/api/prompt-vars/user/set", chatHandler.HandleSetUserVar)

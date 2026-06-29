@@ -12,6 +12,7 @@ import (
 	"aiProject/internal/config"
 	domain_cache "aiProject/internal/domain/cache"
 	"aiProject/internal/domain/session"
+	domain_trace "aiProject/internal/domain/trace"
 	"aiProject/internal/shared"
 	"go.uber.org/zap"
 )
@@ -117,6 +118,7 @@ type ChatHandler struct {
 	workflowHandler *WorkflowHandler               // Workflow 工作流处理程序
 	cache          domain_cache.Cache             // 缓存后端（用于监控/管理）
 	cacheStats     domain_cache.StatsRecorder     // 缓存命中率统计
+	traceStore     domain_trace.Store             // 可观测性 Trace 存储
 	appConfig      *config.Config
 	logger         *zap.Logger
 }

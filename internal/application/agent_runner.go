@@ -10,6 +10,7 @@ import (
 	"aiProject/internal/domain/model"
 	"aiProject/internal/domain/session"
 	"aiProject/internal/domain/tool"
+	domain_trace "aiProject/internal/domain/trace"
 	"aiProject/internal/shared"
 	"go.uber.org/zap"
 )
@@ -51,8 +52,16 @@ func (r *agentRunner) runReActLoop(ctx context.Context, messages []model.Message
 
 	for round := 0; round < maxToolCallRounds; round++ {
 		// 调用模型（带工具定义）
+		llmStart := time.Now()
 		result, callErr := r.modelGen.GenerateWithTools(ctx, messages, toolDefs)
 		if callErr != nil {
+			if tr, ok := domain_trace.FromContext(ctx); ok {
+				tr.AddSpan(domain_trace.Span{
+					Name: fmt.Sprintf("LLM 工具决策 (round %d)", round+1), Type: domain_trace.SpanLLM,
+					Step: round + 1, StartTime: llmStart, DurationMs: time.Since(llmStart).Milliseconds(),
+					Error: callErr.Error(),
+				})
+			}
 			logger.Error("[ReAct] 模型调用失败",
 				zap.Int("round", round),
 				zap.Error(callErr),
@@ -63,6 +72,24 @@ func (r *agentRunner) runReActLoop(ctx context.Context, messages []model.Message
 		totalUsage.PromptTokens += result.Usage.PromptTokens
 		totalUsage.CompletionTokens += result.Usage.CompletionTokens
 		totalUsage.TotalTokens += result.Usage.TotalTokens
+
+		// 记录 LLM 决策轮 span
+		if tr, ok := domain_trace.FromContext(ctx); ok {
+			toolNames := make([]string, len(result.ToolCalls))
+			for i, tc := range result.ToolCalls {
+				toolNames[i] = tc.Name
+			}
+			output := result.Content
+			if len(toolNames) > 0 {
+				output = fmt.Sprintf("决定调用工具: %v\n%s", toolNames, result.Content)
+			}
+			tr.AddSpan(domain_trace.Span{
+				Name: fmt.Sprintf("LLM 工具决策 (round %d)", round+1), Type: domain_trace.SpanLLM,
+				Step: round + 1, StartTime: llmStart, DurationMs: time.Since(llmStart).Milliseconds(),
+				Output: output, PromptTokens: result.Usage.PromptTokens,
+				CompletionTokens: result.Usage.CompletionTokens, TotalTokens: result.Usage.TotalTokens,
+			})
+		}
 
 		logger.Info("[ReAct] 轮次结果",
 			zap.Int("round", round),
@@ -165,6 +192,7 @@ func (r *agentRunner) runReActLoop(ctx context.Context, messages []model.Message
 // streamFinalReply 流式输出最终回复，返回完整内容和 token 用量
 func (r *agentRunner) streamFinalReply(ctx context.Context, messages []model.Message) (string, model.TokenUsage, error) {
 	var usage model.TokenUsage
+	start := time.Now()
 	streamCh, err := r.modelGen.GenerateStreamWithMessages(ctx, messages)
 	if err != nil {
 		return "", usage, err
@@ -196,6 +224,15 @@ func (r *agentRunner) streamFinalReply(ctx context.Context, messages []model.Mes
 				return content, usage, nil
 			}
 		}
+	}
+	// 记录流式回复 span
+	if tr, ok := domain_trace.FromContext(ctx); ok {
+		tr.AddSpan(domain_trace.Span{
+			Name: "LLM 流式回复", Type: domain_trace.SpanLLM,
+			StartTime: start, DurationMs: time.Since(start).Milliseconds(),
+			Output: content, PromptTokens: usage.PromptTokens,
+			CompletionTokens: usage.CompletionTokens, TotalTokens: usage.TotalTokens,
+		})
 	}
 	return content, usage, nil
 }
@@ -232,6 +269,18 @@ func (r *agentRunner) executeToolsConcurrently(ctx context.Context, toolCalls []
 			}))
 			res, execErr := tool.Execute(callCtx, call)
 			duration := time.Since(start)
+			// 记录工具执行 span
+			if tr, ok := domain_trace.FromContext(ctx); ok {
+				span := domain_trace.Span{
+					Name: call.Name, Type: domain_trace.SpanTool, Step: step,
+					StartTime: start, DurationMs: duration.Milliseconds(),
+					Input: call.Arguments, Output: res,
+				}
+				if execErr != nil {
+					span.Error = execErr.Error()
+				}
+				tr.AddSpan(span)
+			}
 			if execErr != nil {
 				shared.GetLogger().Error("[ReAct] 工具执行失败",
 					zap.String("tool", call.Name),
