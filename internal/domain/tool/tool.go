@@ -46,6 +46,13 @@ func Get(name string) (*Tool, bool) {
 	return t, ok
 }
 
+// Unregister 注销一个工具（用于动态卸载，如移除外部 MCP Server 的工具）
+func Unregister(name string) {
+	globalRegistry.mu.Lock()
+	defer globalRegistry.mu.Unlock()
+	delete(globalRegistry.tools, name)
+}
+
 // toolAliases 工具名别名映射（旧名/短名 → 注册名）
 // 用于兼容数据库中存储的旧工具名
 var toolAliases = map[string]string{

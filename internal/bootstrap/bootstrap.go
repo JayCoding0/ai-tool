@@ -4,6 +4,7 @@
 package bootstrap
 
 import (
+	"context"
 	"strings"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	mysql_eval "aiProject/internal/infrastructure/eval/mysql"
 	infra_knowledge "aiProject/internal/infrastructure/knowledge"
 	mysql_knowledge "aiProject/internal/infrastructure/knowledge/mysql"
+	"aiProject/internal/infrastructure/mcpclient"
 	mysql_memory "aiProject/internal/infrastructure/memory/mysql"
 	infra_model "aiProject/internal/infrastructure/model"
 	mysql_promptvars "aiProject/internal/infrastructure/promptvars/mysql"
@@ -204,6 +206,9 @@ func InitComponents(appConfig *config.Config) (*http_handler.ChatHandler, *appli
 	handler.SetTraceStore(traceStore)
 	shared.GetLogger().Info("可观测性 Trace 已启用（内存存储，保留最近 200 条）")
 
+	// 初始化 MCP Client（接入外部 MCP Server 的工具）
+	initMCPClient(appConfig, handler)
+
 	// 初始化 Prompt 模板变量服务（需要数据库已连接）
 	initPromptVarsService(frontendChatService, handler)
 
@@ -277,6 +282,29 @@ func initKnowledgeService(appConfig *config.Config, chatService *application.Cha
 	chatService.SetKnowledgeService(knowledgeSvc)
 	handler.SetKnowledgeService(knowledgeSvc)
 	shared.GetLogger().Info("RAG 知识库服务已启用", zap.String("embed_model", embedModel))
+}
+
+// initMCPClient 初始化 MCP Client：创建管理器并自动连接配置中的外部 MCP Server。
+// 即使部分 Server 连接失败也不阻断启动（容错），管理器注入 handler 供后续动态增删。
+func initMCPClient(appConfig *config.Config, handler *http_handler.ChatHandler) {
+	mgr := mcpclient.NewManager()
+	handler.SetMCPManager(mgr)
+
+	for _, entry := range appConfig.MCPClient.Servers {
+		if entry.Name == "" || entry.URL == "" {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		count, err := mgr.AddServer(ctx, mcpclient.ServerConfig{Name: entry.Name, URL: entry.URL})
+		cancel()
+		if err != nil {
+			shared.GetLogger().Warn("自动接入外部 MCP Server 失败（已跳过）",
+				zap.String("name", entry.Name), zap.String("url", entry.URL), zap.Error(err))
+			continue
+		}
+		shared.GetLogger().Info("自动接入外部 MCP Server 成功",
+			zap.String("name", entry.Name), zap.Int("tools", count))
+	}
 }
 
 // initSemanticCacheService 初始化 LLM 语义缓存服务

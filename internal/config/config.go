@@ -20,6 +20,19 @@ type Config struct {
 	RAG      RAGConfig      `yaml:"rag"`
 	Memory   MemoryConfig   `yaml:"memory"`
 	Cache    CacheConfig    `yaml:"cache"`
+	MCPClient MCPClientConfig `yaml:"mcp_client"`
+}
+
+// MCPClientConfig 外部 MCP Server 接入配置（MCP Client）
+type MCPClientConfig struct {
+	// Servers 启动时自动连接的外部 MCP Server 列表
+	Servers []MCPServerEntry `yaml:"servers"`
+}
+
+// MCPServerEntry 单个外部 MCP Server 条目
+type MCPServerEntry struct {
+	Name string `yaml:"name"`
+	URL  string `yaml:"url"`
 }
 
 // CacheConfig 缓存配置（Redis）
@@ -409,4 +422,8 @@ func mergeConfig(dst, src *Config) {
 	}
 	dst.Cache.SemanticEnabled = src.Cache.SemanticEnabled
 	dst.Cache.Enabled = src.Cache.Enabled
+	// MCPClient
+	if len(src.MCPClient.Servers) > 0 {
+		dst.MCPClient.Servers = src.MCPClient.Servers
+	}
 }

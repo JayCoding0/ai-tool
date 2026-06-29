@@ -13,6 +13,7 @@ import (
 	domain_cache "aiProject/internal/domain/cache"
 	"aiProject/internal/domain/session"
 	domain_trace "aiProject/internal/domain/trace"
+	"aiProject/internal/infrastructure/mcpclient"
 	"aiProject/internal/shared"
 	"go.uber.org/zap"
 )
@@ -119,6 +120,7 @@ type ChatHandler struct {
 	cache          domain_cache.Cache             // 缓存后端（用于监控/管理）
 	cacheStats     domain_cache.StatsRecorder     // 缓存命中率统计
 	traceStore     domain_trace.Store             // 可观测性 Trace 存储
+	mcpManager     *mcpclient.Manager             // 外部 MCP Server 接入管理
 	appConfig      *config.Config
 	logger         *zap.Logger
 }

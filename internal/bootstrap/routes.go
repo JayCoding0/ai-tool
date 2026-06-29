@@ -44,6 +44,18 @@ func RegisterRoutes(chatHandler *http_handler.ChatHandler, appConfig *config.Con
 	// 可观测性 Trace 接口
 	mux.HandleFunc("/api/traces", chatHandler.HandleListTraces)
 	mux.HandleFunc("/api/traces/", chatHandler.HandleGetTrace)
+	// 外部 MCP Server 接入管理（MCP Client）
+	mux.HandleFunc("/api/mcp/servers", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			chatHandler.HandleListMCPServers(w, r)
+		case http.MethodPost:
+			chatHandler.HandleAddMCPServer(w, r)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/api/mcp/servers/delete", chatHandler.HandleDeleteMCPServer)
 	// Prompt 模板变量接口
 	mux.HandleFunc("/api/prompt-vars", chatHandler.HandleListPromptVariables)
 	mux.HandleFunc("/api/prompt-vars/user/set", chatHandler.HandleSetUserVar)

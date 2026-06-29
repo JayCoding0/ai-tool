@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCP 接入 - 智能Agent平台</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔌</text></svg>">
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .mc-page { max-width: 1000px; margin: 0 auto; padding: 24px 16px; }
+        .mc-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+        .mc-header h1 { font-size: 22px; font-weight: 700; color: #18181b; margin: 0; }
+        .mc-card { background: #fff; border-radius: 12px; border: 1px solid #e8e8f0; padding: 18px; margin-bottom: 16px; }
+        .mc-srv { border:1px solid #ececf5; border-radius:10px; padding:14px 16px; margin-bottom:12px; }
+        .mc-srv-top { display:flex; align-items:center; justify-content:space-between; }
+        .mc-srv-name { font-weight:700; font-size:15px; color:#222; }
+        .mc-srv-url { font-size:12px; color:#999; font-family:'JetBrains Mono',monospace; margin-top:2px; }
+        .mc-tools { margin-top:10px; display:flex; flex-wrap:wrap; gap:6px; }
+        .mc-tool { font-size:11px; padding:2px 9px; border-radius:8px; background:#eef0ff; color:#6366f1; font-family:'JetBrains Mono',monospace; }
+        .dot { display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px; }
+        .dot-on { background:#27ae60; } .dot-off { background:#e74c3c; }
+        .nav-bar { background: rgba(255,255,255,0.78); backdrop-filter: saturate(180%) blur(16px); border-bottom: 1px solid #ebebf0; padding: 13px 24px; display: flex; align-items: center; gap: 14px; position: sticky; top: 0; z-index: 50; }
+        .nav-logo { font-size: 18px; font-weight: 800; text-decoration: none; background: linear-gradient(135deg, #6366f1, #8b5cf6 50%, #d946ef); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; margin-right: 6px; }
+        .nav-link { font-size: 14px; color: #52525b; text-decoration: none; padding: 7px 14px; border-radius: 10px; font-weight: 500; }
+        .nav-link:hover { background: #eef0ff; color: #6366f1; }
+        .nav-link.active { background: #eef0ff; color: #6366f1; }
+        .empty-state { text-align: center; padding: 50px 20px; color: #bbb; }
+        .empty-state .empty-icon { font-size: 44px; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+<div id="mc-app">
+    <div class="nav-bar">
+        <a href="/" class="nav-logo">🤖 智能Agent平台</a>
+        <a href="/" class="nav-link">💬 对话</a>
+        <a href="/knowledge.html" class="nav-link">📚 知识库</a>
+        <a href="/workflow.html" class="nav-link">🔀 工作流</a>
+        <a href="/eval.html" class="nav-link">📊 评估</a>
+        <a href="/memory.html" class="nav-link">🧠 记忆</a>
+        <a href="/cache.html" class="nav-link">⚡ 缓存</a>
+        <a href="/trace.html" class="nav-link">🔬 调用链</a>
+        <a href="/mcp.html" class="nav-link active">🔌 MCP</a>
+    </div>
+
+    <div class="mc-page">
+        <div class="mc-header">
+            <h1>🔌 外部 MCP Server 接入</h1>
+            <span>
+                <el-button size="small" :icon="Refresh" @click="load">刷新</el-button>
+                <el-button type="primary" :icon="Plus" @click="showAdd=true">接入 Server</el-button>
+            </span>
+        </div>
+
+        <div class="mc-card" style="background:#f8f8fc;font-size:13px;color:#666;line-height:1.7;">
+            接入第三方 MCP Server 后，其工具会自动注册到工具列表（名称形如 <code>mcp_&lt;server&gt;_&lt;tool&gt;</code>），
+            可在对话的工具选择中启用，纳入 ReAct 循环与工作流调用。当前支持 <b>streamable-http</b> 传输。
+        </div>
+
+        <div class="mc-card">
+            <div v-if="servers.length === 0" class="empty-state">
+                <div class="empty-icon">🔍</div>
+                <div>暂无接入的 MCP Server，点击「接入 Server」添加</div>
+            </div>
+            <div v-for="s in servers" :key="s.name" class="mc-srv">
+                <div class="mc-srv-top">
+                    <div>
+                        <div class="mc-srv-name"><span class="dot" :class="s.connected?'dot-on':'dot-off'"></span>{{ s.name }}
+                            <el-tag size="small" :type="s.connected?'success':'danger'">{{ s.connected?'已连接':'异常' }}</el-tag>
+                            <span style="font-size:12px;color:#999;font-weight:normal;">· {{ s.tool_count }} 个工具</span>
+                        </div>
+                        <div class="mc-srv-url">{{ s.url }}<span v-if="s.connected_at"> · 接入于 {{ s.connected_at }}</span></div>
+                    </div>
+                    <el-button size="small" type="danger" plain @click="remove(s)">移除</el-button>
+                </div>
+                <div v-if="s.error" style="color:#e74c3c;font-size:12px;margin-top:6px;">{{ s.error }}</div>
+                <div class="mc-tools">
+                    <span v-for="t in s.tools" :key="t" class="mc-tool">{{ t }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <el-dialog v-model="showAdd" title="接入外部 MCP Server" width="500px">
+        <el-form label-width="80px">
+            <el-form-item label="名称"><el-input v-model="form.name" placeholder="如：github（用作工具名前缀）" /></el-form-item>
+            <el-form-item label="URL"><el-input v-model="form.url" placeholder="http://localhost:8001/mcp" /></el-form-item>
+        </el-form>
+        <template #footer>
+            <el-button @click="showAdd=false">取消</el-button>
+            <el-button type="primary" @click="add" :loading="adding">连接并接入</el-button>
+        </template>
+    </el-dialog>
+</div>
+
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script src="https://unpkg.com/@element-plus/icons-vue"></script>
+<script src="https://unpkg.com/element-plus/dist/index.full.js"></script>
+<script>
+const { createApp, ref, reactive, onMounted } = Vue;
+const { ElMessage, ElMessageBox } = ElementPlus;
+const { Plus, Refresh } = ElementPlusIconsVue;
+
+createApp({
+    setup() {
+        const servers = ref([]);
+        const showAdd = ref(false);
+        const adding = ref(false);
+        const form = reactive({ name: '', url: '' });
+
+        const api = async (url, opts) => {
+            const r = await fetch(url, opts);
+            if (r.status === 401) { window.location.href = '/login.html'; throw new Error('未登录'); }
+            const data = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(data.error || '请求失败');
+            return data;
+        };
+
+        const load = async () => {
+            try { servers.value = (await api('/api/mcp/servers')).servers || []; }
+            catch (e) { if (e.message !== '未登录') ElMessage.error(e.message); }
+        };
+
+        const add = async () => {
+            if (!form.name.trim() || !form.url.trim()) { ElMessage.warning('名称和 URL 不能为空'); return; }
+            adding.value = true;
+            try {
+                const data = await api('/api/mcp/servers', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: form.name, url: form.url }),
+                });
+                ElMessage.success('接入成功，发现 ' + data.tool_count + ' 个工具');
+                showAdd.value = false; form.name = ''; form.url = '';
+                load();
+            } catch (e) { ElMessage.error(e.message); }
+            finally { adding.value = false; }
+        };
+
+        const remove = async (s) => {
+            try { await ElMessageBox.confirm('确定移除 MCP Server「' + s.name + '」及其工具？', '确认', { type: 'warning' }); } catch { return; }
+            try { await api('/api/mcp/servers/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: s.name }) });
+                ElMessage.success('已移除'); load();
+            } catch (e) { ElMessage.error(e.message); }
+        };
+
+        onMounted(load);
+        return { servers, showAdd, adding, form, load, add, remove, Plus, Refresh };
+    }
+}).use(ElementPlus).mount('#mc-app');
+</script>
+</body>
+</html>

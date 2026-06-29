@@ -253,14 +253,16 @@
 - **预估工作量**: 1.5 个月
 
 ### 27. 🆕 MCP Client（消费外部 MCP 工具）
-- **现状**: 已实现 MCP Server（对外暴露自身工具），但无 MCP Client，无法接入第三方 MCP 服务器的工具
+- **现状**: 已实现 MCP Client，可接入第三方 MCP Server 并注册其工具
 - **主流做法**: Claude Desktop / Cursor / Cline 作为 MCP Client 接入海量第三方 MCP Server
 - **改进方案**:
-  - [ ] 实现 MCP Client（stdio / SSE / streamable-http 传输）
-  - [ ] 配置化接入外部 MCP Server，自动发现并注册其 tools 到工具注册表
-  - [ ] 外部 MCP 工具纳入 ReAct 循环与 Workflow 工具节点
-  - [ ] 前端 MCP Server 管理页（添加/启停/查看工具列表）
-- **预估工作量**: 1 个月
+  - [x] 实现 MCP Client（streamable-http 传输；出于命令执行安全考虑暂不支持 stdio 进程拉起）
+  - [x] 配置化接入外部 MCP Server（`mcp_client.servers`），启动自动连接、Initialize、ListTools，自动发现并注册其 tools 到工具注册表（名称前缀 `mcp_<server>_<tool>`，openapi3 schema → ToolParameters 转换）
+  - [x] 外部 MCP 工具纳入 ReAct 循环与 Workflow 工具节点（注册到全局工具注册表，调用经由 client.CallTool）
+  - [x] 前端 MCP Server 管理页 `mcp.html`（添加/移除/查看工具列表 + 连接状态）+ 管理 API（GET/POST/DELETE `/api/mcp/servers`）
+  - [ ] SSE / stdio 传输支持（stdio 需评估命令执行安全策略）
+- **相关文件**: `infrastructure/mcpclient/manager.go`, `domain/tool/tool.go`（新增 Unregister）, `interfaces/http/mcp_handler.go`, `bootstrap.go`（initMCPClient）, `config/config.go`（MCPClientConfig）, `frontend/mcp.html`
+- **预估工作量**: 1 个月 → MVP（streamable-http）已完成
 
 ### 28. 🆕 语义缓存 / Prompt 缓存
 - **现状**: ~~无任何缓存层~~ → 已落地 Redis 缓存基础设施 + Embedding 缓存 + 命中率监控页
