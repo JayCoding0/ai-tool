@@ -58,11 +58,21 @@ const APP_TEMPLATE = `
         </div>
 
         <div class="sidebar-footer">
-            <div class="footer-nav">
-                <a href="/knowledge.html" class="footer-nav-link">📚 知识库</a>
-                <a href="/workflow.html" class="footer-nav-link">🔀 工作流</a>
-                <a href="/eval.html" class="footer-nav-link">📊 评估</a>
-            </div>
+            <details class="footer-nav-details">
+                <summary class="footer-nav-summary">
+                    <span class="fn-summary-label">🧩 扩展功能</span>
+                    <span class="fn-summary-arrow">▾</span>
+                </summary>
+                <div class="footer-nav">
+                    <a href="/knowledge.html" class="footer-nav-link">📚 知识库</a>
+                    <a href="/workflow.html" class="footer-nav-link">🔀 工作流</a>
+                    <a href="/eval.html" class="footer-nav-link">📊 评估</a>
+                    <a href="/memory.html" class="footer-nav-link">🧠 记忆</a>
+                    <a href="/cache.html" class="footer-nav-link">⚡ 缓存</a>
+                    <a href="/trace.html" class="footer-nav-link">🔬 调用链</a>
+                    <a href="/mcp.html" class="footer-nav-link">🔌 MCP</a>
+                </div>
+            </details>
             <div class="theme-toggle-row">
                 <span>外观</span>
                 <button class="theme-toggle-btn" @click="toggleTheme">
