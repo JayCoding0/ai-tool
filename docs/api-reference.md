@@ -10,8 +10,13 @@
 - [模型 & 工具](#模型--工具)
 - [Agent 管理](#agent-管理)
 - [知识库（RAG）](#知识库rag)
+- [长期记忆（Memory）](#长期记忆memory)
+- [缓存监控（Cache）](#缓存监控cache)
+- [调用链追踪（Trace）](#调用链追踪trace)
+- [外部 MCP Server（MCP Client）](#外部-mcp-servermcp-client)
 - [A2A 协议](#a2a-协议)
 - [Workflow 工作流](#workflow-工作流)
+- [健康检查](#健康检查)
 
 ---
 
@@ -506,6 +511,191 @@ file: <文件>
 
 ---
 
+## 长期记忆（Memory）
+
+### GET /api/memory
+
+列出当前用户的记忆，支持按类型筛选与分页。
+
+**Query 参数**
+
+| 参数 | 说明 |
+|------|------|
+| `type` | 记忆类型筛选：`fact` / `preference` / `episode` / `summary`（可选） |
+| `page` | 页码，默认 1 |
+| `page_size` | 每页条数，默认 20 |
+
+**响应**
+
+```json
+{
+  "memories": [
+    {
+      "id": 1,
+      "content": "用户偏好简洁的回答",
+      "memory_type": "preference",
+      "source_session_id": "sess_xxx",
+      "importance": 0.8,
+      "access_count": 3,
+      "created_at": "2026-06-30 10:00:00",
+      "updated_at": "2026-06-30 10:00:00"
+    }
+  ],
+  "total": 1
+}
+```
+
+---
+
+### POST /api/memory
+
+手动创建一条记忆。
+
+**请求体**
+
+```json
+{
+  "content": "用户在深圳工作",
+  "memory_type": "fact",
+  "importance": 0.7
+}
+```
+
+> `memory_type` 取值：`fact`（事实）/ `preference`（偏好）/ `episode`（事件）/ `summary`（摘要）；`importance` 取值 0~1。返回 `201` 与新建记忆对象。
+
+---
+
+### PUT /api/memory/update?id=123
+
+更新指定记忆的内容（仅限本人记忆）。请求体 `{ "content": "新内容" }`。也兼容 `POST`。
+
+---
+
+### DELETE /api/memory/delete?id=123
+
+删除指定记忆（仅限本人记忆）。也兼容 `POST`。
+
+---
+
+### POST /api/memory/search
+
+对当前用户的记忆做语义检索。
+
+**请求体**
+
+```json
+{ "query": "我在哪里工作", "top_k": 5 }
+```
+
+---
+
+## 缓存监控（Cache）
+
+### GET /api/cache/stats
+
+获取缓存命中率统计与后端状态（未启用缓存时返回 `503`）。
+
+**响应**
+
+```json
+{
+  "backend": "redis",
+  "available": true,
+  "entry_count": 128,
+  "total_hits": 340,
+  "total_miss": 60,
+  "hit_rate": 0.85,
+  "categories": {
+    "embedding": { "hits": 200, "misses": 20 },
+    "semantic":  { "hits": 140, "misses": 40 }
+  }
+}
+```
+
+> `entry_count` 为 `-1` 表示后端不可用或无法获取条目数。
+
+---
+
+### POST /api/cache/clear
+
+清空缓存并重置命中率统计（需登录）。
+
+---
+
+## 调用链追踪（Trace）
+
+### GET /api/traces?limit=50
+
+列出最近的调用链概要（需登录；未启用可观测性时返回 `503`）。
+
+**响应**
+
+```json
+{
+  "traces": [
+    {
+      "id": "trace_xxx",
+      "session_id": "sess_xxx",
+      "model": "qwen-plus",
+      "input": "今天天气如何",
+      "duration_ms": 1234,
+      "total_tokens": 856,
+      "llm_calls": 2,
+      "tool_calls": 1,
+      "span_count": 5,
+      "status": "ok",
+      "start_time": "2026-06-30 10:00:00"
+    }
+  ]
+}
+```
+
+---
+
+### GET /api/traces/{id}
+
+获取单条调用链详情，包含全部 span（LLM / 工具 / RAG 调用）。trace 不存在或已过期返回 `404`。
+
+---
+
+## 外部 MCP Server（MCP Client）
+
+### GET /api/mcp/servers
+
+列出已接入的外部 MCP Server（需登录；MCP Client 未启用时返回 `503`）。
+
+**响应**
+
+```json
+{ "servers": [ { "name": "my-mcp", "url": "http://localhost:9000", "tool_count": 4 } ] }
+```
+
+---
+
+### POST /api/mcp/servers
+
+接入一个外部 MCP Server：连接 → 发现工具 → 注册到 ReAct/工作流可用工具集。
+
+**请求体**
+
+```json
+{ "name": "my-mcp", "url": "http://localhost:9000" }
+```
+
+**响应**
+
+```json
+{ "message": "接入成功", "tool_count": 4 }
+```
+
+---
+
+### POST /api/mcp/servers/delete
+
+移除一个外部 MCP Server。请求体 `{ "name": "my-mcp" }`。
+
+---
+
 ## A2A 协议
 
 ### GET /.well-known/agent.json
@@ -798,3 +988,17 @@ data: {"type":"workflow_done","output":"你好，世界！","run_id":"uuid-xxx",
 ### GET /api/workflow-runs/{run_id}
 
 获取单次执行记录详情（含各节点执行结果）。
+
+---
+
+## 健康检查
+
+> 健康检查端点注册在中间件链之外，不受认证 / 限流影响，供 Kubernetes 等探针使用。
+
+### GET /healthz
+
+存活探针（liveness）。进程存活即返回 `200`。
+
+### GET /readyz
+
+就绪探针（readiness）。依赖（如数据库）就绪时返回 `200`，否则返回 `503`。

@@ -27,7 +27,7 @@
 
 | 功能                 | 说明                                                                                     |
 | -------------------- | ---------------------------------------------------------------------------------------- |
-| **多模型切换**       | 同时接入云端模型（阿里云 DashScope / OpenAI 兼容接口）与本地 Ollama 模型，运行时自由切换 |
+| **多模型切换**       | 同时接入云端模型（阿里云 DashScope / DeepSeek / OpenAI 兼容接口）与本地 Ollama 模型，运行时自由切换；支持**按模型独立配置** `base_url` / `api_key`，并可开启 DeepSeek **思考模式**（`thinking` + `reasoning_effort`） |
 | **Function Calling** | ReAct 循环架构，AI 自主决策调用工具（计算器、天气、HTTP、命令执行、文件操作、MySQL 等）  |
 | **多 Agent 编排**    | 主 Agent 编排多个子 Agent 协同完成复杂任务，思考/工具调用过程实时透传                    |
 | **Workflow 编排**    | 可视化 DAG 工作流引擎，7 种节点类型，拓扑排序执行，SSE 流式推送执行事件                  |
@@ -165,6 +165,20 @@ custom:
   model:
     openai_api_key: "YOUR_API_KEY"        # ⚠️ 必填：AI 模型 API Key
     openai_base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    available_models:                      # 前端可切换的模型列表
+      - name: "qwen-plus"
+        label: "通义千问 Plus"
+        type: "cloud"
+      # 接入其它 OpenAI 兼容厂商（如 DeepSeek 官方 API）：
+      # 为单个模型单独指定 base_url / api_key，覆盖全局配置；
+      # 可选开启思考模式（DeepSeek V4 等）。
+      - name: "deepseek-v4-pro"
+        label: "DeepSeek V4 Pro"
+        type: "cloud"
+        base_url: "https://api.deepseek.com"
+        api_key: "YOUR_DEEPSEEK_API_KEY"
+        thinking: true                     # 开启思考模式
+        reasoning_effort: "high"           # 思考强度：low / medium / high
   server:
     http_port: 8080                        # HTTP 服务端口
     mcp_port: 8001                         # MCP 服务端口
@@ -235,7 +249,7 @@ docker-compose up -d
 
 | 技术                | 用途                     |
 | ------------------- | ------------------------ |
-| **OpenAI 兼容接口** | 云端模型（DashScope 等） |
+| **OpenAI 兼容接口** | 云端模型（DashScope / DeepSeek 等） |
 | **Ollama**          | 本地模型推理             |
 | **A2A 协议**        | Agent 间通信             |
 | **MCP 协议**        | 模型上下文协议           |
@@ -251,10 +265,15 @@ aiProject/
 ├── main.go                              # 程序入口
 ├── trpc_go.yaml.example                 # 配置文件模板
 ├── frontend/                            # 🖥️ 前端（Vue 3 CDN，零构建）
-│   ├── index.html                       # 主聊天界面
+│   ├── index.html                       # 主聊天界面（侧边栏含可折叠「扩展功能」面板）
 │   ├── login.html                       # 登录/注册页面
 │   ├── knowledge.html                   # 知识库管理页面
 │   ├── workflow.html                    # 工作流可视化编辑器
+│   ├── eval.html                        # Agent 评估体系页面
+│   ├── memory.html                      # 长期记忆管理页面
+│   ├── cache.html                       # 缓存命中率监控页面
+│   ├── trace.html                       # 调用链追踪调试面板
+│   ├── mcp.html                         # MCP Server 管理页面
 │   ├── style.css                        # 全局样式（含暗色主题）
 │   └── js/                              # 模块化 JS（10 个模块）
 ├── internal/                            # ⚙️ 后端核心（DDD 分层）

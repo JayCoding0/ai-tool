@@ -116,8 +116,36 @@ custom:
 | 服务 | `openai_base_url` |
 |------|-------------------|
 | 阿里云 DashScope | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
+| DeepSeek 官方 API | `https://api.deepseek.com` |
 | OpenAI | `https://api.openai.com/v1` |
 | 其他 OpenAI 兼容接口 | 对应的 Base URL |
+
+#### 按模型独立凭证（多厂商混用）
+
+全局的 `openai_base_url` / `openai_api_key` 对所有云端模型生效。如果某个模型来自**不同厂商**（如同时使用 DashScope 的通义千问和 DeepSeek 官方 API），可在 `available_models` 中为该模型单独指定 `base_url` 和 `api_key`，**覆盖全局配置**；未指定时回退到全局值。
+
+```yaml
+available_models:
+  - name: "qwen-plus"          # 使用全局 DashScope 配置
+    label: "通义千问 Plus"
+    type: "cloud"
+  - name: "deepseek-v4-pro"    # 使用 DeepSeek 官方 API（独立凭证）
+    label: "DeepSeek V4 Pro"
+    type: "cloud"
+    base_url: "https://api.deepseek.com"   # 覆盖全局 openai_base_url
+    api_key: "YOUR_DEEPSEEK_API_KEY"       # 覆盖全局 openai_api_key
+    thinking: true                          # 开启思考模式（见下）
+    reasoning_effort: "high"                # 思考强度：low / medium / high
+```
+
+| 字段 | 说明 |
+|------|------|
+| `base_url` | 该模型专属的 OpenAI 兼容地址，留空回退全局 `openai_base_url` |
+| `api_key` | 该模型专属的 API Key，留空回退全局 `openai_api_key` |
+| `thinking` | 是否开启思考模式（DeepSeek V4 等），开启后请求注入专有字段 `thinking: {"type":"enabled"}` |
+| `reasoning_effort` | 思考强度 `low` / `medium` / `high`，仅在 `thinking: true` 时生效，留空则不传 |
+
+> 思考过程通过 SSE 的 `thinking` 事件流式返回（解析模型响应中的 `reasoning_content` 字段）。思考模式仅对配置了该字段的模型生效，不影响其他模型。
 
 #### 本地模型（Ollama）
 

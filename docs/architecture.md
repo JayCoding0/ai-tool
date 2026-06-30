@@ -38,10 +38,13 @@ graph TB
     subgraph Infrastructure["基础设施层 (Infrastructure)"]
         direction LR
         MySQL["MySQL 持久化"]
-        OpenAI["OpenAI 接口"]
+        OpenAI["OpenAI 接口<br/>(按模型解析凭证)"]
         Ollama["Ollama 本地"]
         Embedder["向量化引擎"]
         ToolLoader["工具加载器"]
+        Cache["Redis 缓存<br/>(Embedding/语义)"]
+        TraceStore["Trace 存储<br/>调用链追踪"]
+        MCPClient["MCP Client<br/>外部 Server 接入"]
     end
 
     Interfaces --> Application

@@ -23,6 +23,12 @@ frontend/
 ├── index.html          # 主聊天界面
 ├── login.html          # 登录/注册页面
 ├── knowledge.html      # 知识库管理页面
+├── workflow.html       # 工作流可视化编辑器
+├── eval.html           # Agent 评估体系页面
+├── memory.html         # 长期记忆管理页面
+├── cache.html          # 缓存命中率监控页面
+├── trace.html          # 调用链追踪调试面板
+├── mcp.html            # MCP Server 管理页面
 ├── style.css           # 全局样式（含暗色主题）
 └── js/
     ├── app.js          # Vue 3 主应用入口
@@ -36,6 +42,8 @@ frontend/
     ├── template.js     # Vue 模板
     └── utils.js        # 工具函数
 ```
+
+> 主聊天界面侧边栏底部提供可折叠的「🧩 扩展功能」面板（默认收起），聚合 知识库 / 工作流 / 评估 / 记忆 / 缓存 / 调用链 / MCP 等功能入口。
 
 ---
 
