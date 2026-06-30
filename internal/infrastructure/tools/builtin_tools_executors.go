@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"aiProject/internal/domain/tool"
 )
@@ -107,29 +108,10 @@ func makePublicIPExecutor(baiduAK string) tool.ExecuteFunc {
 }
 
 func executeGetPublicIPWithAK(ctx context.Context, baiduAK string) (string, error) {
-	// 1. 通过 ip-api.com 获取公网 IP 及归属地（lang=zh-CN 返回中文）
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		"http://ip-api.com/json/?lang=zh-CN&fields=status,message,country,regionName,city,district,lat,lon,query", nil)
+	// 1. 获取公网 IP 及归属地（含主源 ip-api.com + 兜底源 ipapi.co）
+	ipInfo, err := fetchPublicIPInfo(ctx)
 	if err != nil {
-		return "", fmt.Errorf("构建 IP 查询请求失败: %v", err)
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("查询公网 IP 失败: %v", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("读取 IP 响应失败: %v", err)
-	}
-
-	var ipInfo ipAPIResponse
-	if err := json.Unmarshal(body, &ipInfo); err != nil {
-		return "", fmt.Errorf("解析 IP JSON 失败: %v", err)
-	}
-	if ipInfo.Status != "success" {
-		return "", fmt.Errorf("IP 查询失败: %s", ipInfo.Message)
+		return "", err
 	}
 
 	// 2. 通过百度地图逆地理编码 API，用经纬度查询 district_id（adcode）
@@ -199,7 +181,120 @@ func executeGetPublicIPWithAK(ctx context.Context, baiduAK string) (string, erro
 	return string(out), nil
 }
 
-// ─── 天气查询工具 ──────────────────────────────────────────────────────────────
+// ipQueryClient 公网 IP 查询专用客户端（带超时，避免请求长时间挂起）
+var ipQueryClient = &http.Client{Timeout: 8 * time.Second}
+
+// fetchPublicIPInfo 获取公网 IP 及归属地。
+// 优先使用 ip-api.com（HTTP，含中文归属地与经纬度），失败时回退到 ipapi.co（HTTPS）。
+func fetchPublicIPInfo(ctx context.Context) (ipAPIResponse, error) {
+	info, primaryErr := fetchFromIPAPI(ctx)
+	if primaryErr == nil {
+		return info, nil
+	}
+	info, fallbackErr := fetchFromIPAPICo(ctx)
+	if fallbackErr == nil {
+		return info, nil
+	}
+	return ipAPIResponse{}, fmt.Errorf("公网 IP 查询失败（主源: %v；兜底源: %v）", primaryErr, fallbackErr)
+}
+
+// fetchFromIPAPI 主源 ip-api.com（免费版 HTTP-only，限流 45 次/分钟）
+func fetchFromIPAPI(ctx context.Context) (ipAPIResponse, error) {
+	const url = "http://ip-api.com/json/?lang=zh-CN&fields=status,message,country,regionName,city,district,lat,lon,query"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return ipAPIResponse{}, fmt.Errorf("构建 IP 查询请求失败: %v", err)
+	}
+	resp, err := ipQueryClient.Do(req)
+	if err != nil {
+		return ipAPIResponse{}, fmt.Errorf("查询公网 IP 失败: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return ipAPIResponse{}, fmt.Errorf("读取 IP 响应失败: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return ipAPIResponse{}, fmt.Errorf("ip-api.com 返回状态码 %d（可能被限流）: %s", resp.StatusCode, snippet(body))
+	}
+
+	var ipInfo ipAPIResponse
+	if err := json.Unmarshal(body, &ipInfo); err != nil {
+		return ipAPIResponse{}, fmt.Errorf("解析 IP JSON 失败: %v（原始响应: %s）", err, snippet(body))
+	}
+	if ipInfo.Status != "success" {
+		reason := ipInfo.Message
+		if reason == "" {
+			reason = snippet(body)
+		}
+		return ipAPIResponse{}, fmt.Errorf("ip-api.com 查询未成功: %s", reason)
+	}
+	return ipInfo, nil
+}
+
+// ipAPICoResponse ipapi.co/json 响应结构（兜底源，HTTPS）
+type ipAPICoResponse struct {
+	IP          string  `json:"ip"`
+	City        string  `json:"city"`
+	Region      string  `json:"region"`
+	CountryName string  `json:"country_name"`
+	Latitude    float64 `json:"latitude"`
+	Longitude   float64 `json:"longitude"`
+	Error       bool    `json:"error"`
+	Reason      string  `json:"reason"`
+}
+
+// fetchFromIPAPICo 兜底源 ipapi.co（HTTPS，无 district 字段）
+func fetchFromIPAPICo(ctx context.Context) (ipAPIResponse, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://ipapi.co/json/", nil)
+	if err != nil {
+		return ipAPIResponse{}, fmt.Errorf("构建兜底 IP 查询请求失败: %v", err)
+	}
+	resp, err := ipQueryClient.Do(req)
+	if err != nil {
+		return ipAPIResponse{}, fmt.Errorf("兜底查询公网 IP 失败: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return ipAPIResponse{}, fmt.Errorf("读取兜底 IP 响应失败: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return ipAPIResponse{}, fmt.Errorf("ipapi.co 返回状态码 %d: %s", resp.StatusCode, snippet(body))
+	}
+
+	var co ipAPICoResponse
+	if err := json.Unmarshal(body, &co); err != nil {
+		return ipAPIResponse{}, fmt.Errorf("解析兜底 IP JSON 失败: %v（原始响应: %s）", err, snippet(body))
+	}
+	if co.Error || co.IP == "" {
+		return ipAPIResponse{}, fmt.Errorf("ipapi.co 查询失败: %s", co.Reason)
+	}
+	return ipAPIResponse{
+		Status:     "success",
+		Country:    co.CountryName,
+		RegionName: co.Region,
+		City:       co.City,
+		Lat:        co.Latitude,
+		Lon:        co.Longitude,
+		Query:      co.IP,
+	}, nil
+}
+
+// snippet 截取响应体片段用于错误日志，避免过长
+func snippet(b []byte) string {
+	const max = 200
+	s := strings.TrimSpace(string(b))
+	if s == "" {
+		return "(空响应)"
+	}
+	if len(s) > max {
+		return s[:max] + "..."
+	}
+	return s
+}
 
 // baiduWeatherResponse 百度天气 API 响应结构
 type baiduWeatherResponse struct {
